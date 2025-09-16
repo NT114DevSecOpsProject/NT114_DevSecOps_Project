@@ -1,0 +1,419 @@
+/* Global CSS cho theme system */
+/* Các styles toàn cục để hỗ trợ theme switching và transitions */
+
+/* Root variables cho theme system với high contrast */
+:root {
+  /* Transition duration cho theme switching */
+  --theme-transition-duration: 0.2s;
+  --theme-transition-timing: ease-in-out;
+  
+  /* Light mode high contrast colors */
+  --color-bg-canvas: #ffffff;
+  --color-bg-surface: #ffffff;
+  --color-bg-elevated: #f8f9fa;
+  --color-bg-muted: #f1f3f4;
+  --color-bg-subtle: #e8eaed;
+  
+  --color-text-primary: #1a202c;
+  --color-text-secondary: #2d3748;
+  --color-text-muted: #4a5568;
+  --color-text-inverse: #ffffff;
+  --color-text-disabled: #a0aec0;
+  
+  --color-border-default: #e2e8f0;
+  --color-border-muted: #f1f5f9;
+  --color-border-strong: #cbd5e0;
+  
+  --color-interactive-primary: #3182ce;
+  --color-interactive-primary-hover: #2c5aa0;
+  --color-interactive-secondary: #718096;
+  --color-interactive-secondary-hover: #4a5568;
+}
+
+/* Dark mode high contrast colors */
+html[data-theme="dark"] {
+  --color-bg-canvas: #0f1419;
+  --color-bg-surface: #1a202c;
+  --color-bg-elevated: #2d3748;
+  --color-bg-muted: #374151;
+  --color-bg-subtle: #4a5568;
+  
+  --color-text-primary: #f7fafc;
+  --color-text-secondary: #e2e8f0;
+  --color-text-muted: #a0aec0;
+  --color-text-inverse: #1a202c;
+  --color-text-disabled: #4a5568;
+  
+  --color-border-default: #4a5568;
+  --color-border-muted: #374151;
+  --color-border-strong: #718096;
+  
+  --color-interactive-primary: #63b3ed;
+  --color-interactive-primary-hover: #90cdf4;
+  --color-interactive-secondary: #a0aec0;
+  --color-interactive-secondary-hover: #cbd5e0;
+}
+
+/* Smooth transitions cho theme switching */
+* {
+  transition: 
+    background-color var(--theme-transition-duration) var(--theme-transition-timing),
+    border-color var(--theme-transition-duration) var(--theme-transition-timing),
+    color var(--theme-transition-duration) var(--theme-transition-timing),
+    box-shadow var(--theme-transition-duration) var(--theme-transition-timing);
+}
+
+/* Disable transitions khi user prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
+/* Theme-specific styles với high contrast */
+html[data-theme="light"] {
+  color-scheme: light;
+  background-color: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  background-color: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+}
+
+/* Custom scrollbar cho dark mode */
+html[data-theme="dark"] {
+  scrollbar-color: #4a5568 #2d3748;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: #2d3748;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+/* Light mode scrollbar */
+html[data-theme="light"] {
+  scrollbar-color: #cbd5e0 #f7fafc;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #f7fafc;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 4px;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+/* Focus styles cho accessibility với high contrast */
+html[data-theme="light"] *:focus-visible {
+  outline: 2px solid var(--color-interactive-primary);
+  outline-offset: 2px;
+}
+
+html[data-theme="dark"] *:focus-visible {
+  outline: 2px solid var(--color-interactive-primary);
+  outline-offset: 2px;
+}
+
+/* Selection styles với high contrast */
+html[data-theme="light"] ::selection {
+  background-color: var(--color-interactive-primary);
+  color: var(--color-text-inverse);
+}
+
+html[data-theme="dark"] ::selection {
+  background-color: var(--color-interactive-primary);
+  color: var(--color-text-inverse);
+}
+
+/* Link styles với high contrast */
+html[data-theme="light"] a {
+  color: var(--color-interactive-primary);
+}
+
+html[data-theme="light"] a:hover {
+  color: var(--color-interactive-primary-hover);
+}
+
+html[data-theme="dark"] a {
+  color: var(--color-interactive-primary);
+}
+
+html[data-theme="dark"] a:hover {
+  color: var(--color-interactive-primary-hover);
+}
+
+/* Button styles với high contrast */
+html[data-theme="light"] button:not([data-chakra-component]) {
+  background-color: var(--color-interactive-primary);
+  color: var(--color-text-inverse);
+  border: 2px solid var(--color-interactive-primary);
+}
+
+html[data-theme="light"] button:not([data-chakra-component]):hover {
+  background-color: var(--color-interactive-primary-hover);
+  border-color: var(--color-interactive-primary-hover);
+}
+
+html[data-theme="dark"] button:not([data-chakra-component]) {
+  background-color: var(--color-interactive-primary);
+  color: var(--color-text-inverse);
+  border: 2px solid var(--color-interactive-primary);
+}
+
+html[data-theme="dark"] button:not([data-chakra-component]):hover {
+  background-color: var(--color-interactive-primary-hover);
+  border-color: var(--color-interactive-primary-hover);
+}
+
+/* Input styles với high contrast */
+html[data-theme="light"] input:not([data-chakra-component]),
+html[data-theme="light"] textarea:not([data-chakra-component]) {
+  background-color: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+  border: 2px solid var(--color-border-default);
+}
+
+html[data-theme="light"] input:not([data-chakra-component]):focus,
+html[data-theme="light"] textarea:not([data-chakra-component]):focus {
+  border-color: var(--color-interactive-primary);
+  box-shadow: 0 0 0 1px var(--color-interactive-primary);
+}
+
+html[data-theme="dark"] input:not([data-chakra-component]),
+html[data-theme="dark"] textarea:not([data-chakra-component]) {
+  background-color: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+  border: 2px solid var(--color-border-default);
+}
+
+html[data-theme="dark"] input:not([data-chakra-component]):focus,
+html[data-theme="dark"] textarea:not([data-chakra-component]):focus {
+  border-color: var(--color-interactive-primary);
+  box-shadow: 0 0 0 1px var(--color-interactive-primary);
+}
+
+/* Print styles */
+@media print {
+  * {
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  html[data-theme="light"] {
+    --color-text-primary: #000000;
+    --color-text-secondary: #000000;
+    --color-bg-canvas: #ffffff;
+    --color-bg-surface: #ffffff;
+    --color-interactive-primary: #0000ff;
+    --color-border-default: #000000;
+    --chakra-colors-border-default: #000000;
+    --chakra-colors-text-primary: #000000;
+  }
+  
+  html[data-theme="dark"] {
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #ffffff;
+    --color-bg-canvas: #000000;
+    --color-bg-surface: #000000;
+    --color-interactive-primary: #00ffff;
+    --color-border-default: #ffffff;
+    --chakra-colors-border-default: #ffffff;
+    --chakra-colors-text-primary: #ffffff;
+  }
+}
+
+/* Animation cho theme toggle button */
+.theme-toggle-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-toggle-button::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s ease, height 0.3s ease;
+}
+
+.theme-toggle-button:hover::before {
+  width: 100px;
+  height: 100px;
+}
+
+/* Loading skeleton animation */
+@keyframes skeleton-loading {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200px 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+html[data-theme="dark"] .skeleton {
+  background: linear-gradient(90deg, #2d3748 25%, #4a5568 50%, #2d3748 75%);
+  background-size: 200px 100%;
+}
+
+/* Utility classes cho theme-aware components với high contrast */
+.theme-surface {
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-default);
+  color: var(--color-text-primary);
+}
+
+.theme-text-primary {
+  color: var(--color-text-primary) !important;
+}
+
+.theme-text-secondary {
+  color: var(--color-text-secondary) !important;
+}
+
+.theme-text-muted {
+  color: var(--color-text-muted) !important;
+}
+
+.theme-text-inverse {
+  color: var(--color-text-inverse) !important;
+}
+
+.theme-bg-canvas {
+  background-color: var(--color-bg-canvas) !important;
+}
+
+.theme-bg-surface {
+  background-color: var(--color-bg-surface) !important;
+}
+
+.theme-bg-elevated {
+  background-color: var(--color-bg-elevated) !important;
+}
+
+.theme-bg-muted {
+  background-color: var(--color-bg-muted) !important;
+}
+
+.theme-border-default {
+  border-color: var(--color-border-default) !important;
+}
+
+.theme-interactive-primary {
+  color: var(--color-interactive-primary) !important;
+}
+
+.theme-interactive-primary-bg {
+  background-color: var(--color-interactive-primary) !important;
+  color: var(--color-text-inverse) !important;
+}
+
+/* High contrast card component */
+.theme-card {
+  background-color: var(--color-bg-surface);
+  border: 2px solid var(--color-border-default);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  transition: all 0.2s ease;
+}
+
+.theme-card:hover {
+  border-color: var(--color-interactive-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+html[data-theme="dark"] .theme-card:hover {
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.1);
+}
+
+/* High contrast button component */
+.theme-button {
+  background-color: var(--color-interactive-primary);
+  color: var(--color-text-inverse);
+  border: 2px solid var(--color-interactive-primary);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.theme-button:hover {
+  background-color: var(--color-interactive-primary-hover);
+  border-color: var(--color-interactive-primary-hover);
+  transform: translateY(-1px);
+}
+
+.theme-button:focus {
+  outline: 2px solid var(--color-interactive-primary);
+  outline-offset: 2px;
+}
+
+.theme-button:disabled {
+  background-color: var(--color-bg-muted);
+  color: var(--color-text-disabled);
+  border-color: var(--color-border-default);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* High contrast input component */
+.theme-input {
+  background-color: var(--color-bg-canvas);
+  color: var(--color-text-primary);
+  border: 2px solid var(--color-border-default);
+  border-radius: 6px;
+  padding: 8px 12px;
+  transition: all 0.2s ease;
+}
+
+.theme-input:focus {
+  border-color: var(--color-interactive-primary);
+  box-shadow: 0 0 0 1px var(--color-interactive-primary);
+  outline: none;
+}
+
+.theme-input::placeholder {
+  color: var(--color-text-muted);
+}
