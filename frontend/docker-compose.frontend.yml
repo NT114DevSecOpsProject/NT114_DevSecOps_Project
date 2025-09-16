@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # Frontend Only - Connect to external API
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:5001}
+        - VITE_APP_TITLE=${VITE_APP_TITLE:-CodeLand.io}
+        - VITE_APP_ENV=${VITE_APP_ENV:-development}
+    container_name: codeland-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:5001}
+      - VITE_APP_TITLE=${VITE_APP_TITLE:-CodeLand.io}
+      - VITE_APP_ENV=${VITE_APP_ENV:-development}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - frontend-network
+
+networks:
+  frontend-network:
+    driver: bridge
