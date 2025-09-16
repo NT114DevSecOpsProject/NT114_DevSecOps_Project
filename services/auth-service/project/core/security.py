@@ -10,12 +10,13 @@ def hash_password(raw: str) -> str:
 def verify_password(raw: str, hashed: str) -> bool:
     return bcrypt.verify(raw, hashed)
 
-def create_access_token(sub: str, extra: Dict[str, Any] | None = None, exp_minutes: int = 60) -> str:
+def create_access_token(sub: str, role: str = "student", extra: Dict[str, Any] | None = None) -> str:
     payload = {
         "sub": sub,
+        "role": role,
         "aud": settings.JWT_AUDIENCE,
         "iss": settings.JWT_ISSUER,
-        "exp": datetime.utcnow() + timedelta(minutes=exp_minutes),
+        "exp": datetime.utcnow() + timedelta(minutes=settings.JWT_EXPIRES_MIN),
         **(extra or {}),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALG)

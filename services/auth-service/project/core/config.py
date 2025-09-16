@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "devsecret"
     JWT_AUDIENCE: str = "e-learning"
     JWT_ISSUER: str = "auth-service"
+    JWT_EXPIRES_MIN: int = 60
 
     CORS_ORIGINS: str = "*"
 
