@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { hasCorrectAnswers, getCorrectAnswersCount, getResultsCount } from '../utils/scoreUtils';
 
 // Mock data that simulates real API responses
 const mockUsers = [
@@ -37,10 +38,10 @@ describe('Dashboard Integration Tests with Real Data', () => {
       const totalAttempts = userScores.length;
       const correctAnswers = userScores.filter(score => score.all_correct).length;
       const partialAnswers = userScores.filter(score => 
-        !score.all_correct && score.results && score.results.some(r => r === true)
+        !score.all_correct && hasCorrectAnswers(score)
       ).length;
       const incorrectAnswers = userScores.filter(score => 
-        score.results && score.results.every(r => r === false)
+        getCorrectAnswersCount(score.results) === 0 && getResultsCount(score.results) > 0
       ).length;
       const successRate = totalAttempts > 0 ? (correctAnswers / totalAttempts) * 100 : 0;
 
@@ -53,10 +54,10 @@ describe('Dashboard Integration Tests with Real Data', () => {
 
     it('should calculate test case accuracy correctly', () => {
       const totalTestCases = userScores.reduce((sum, score) => 
-        sum + (score.results ? score.results.length : 0), 0
+        sum + getResultsCount(score.results), 0
       );
       const correctTestCases = userScores.reduce((sum, score) => 
-        sum + (score.results ? score.results.filter(r => r === true).length : 0), 0
+        sum + getCorrectAnswersCount(score.results), 0
       );
       const testCaseAccuracy = totalTestCases > 0 ? (correctTestCases / totalTestCases) * 100 : 0;
 
@@ -130,10 +131,10 @@ describe('Dashboard Integration Tests with Real Data', () => {
 
       // Calculate average test case accuracy across all users
       const totalTestCases = mockScores.reduce((sum, score) => 
-        sum + (score.results ? score.results.length : 0), 0
+        sum + getResultsCount(score.results), 0
       );
       const correctTestCases = mockScores.reduce((sum, score) => 
-        sum + (score.results ? score.results.filter(r => r === true).length : 0), 0
+        sum + getCorrectAnswersCount(score.results), 0
       );
       const platformTestCaseAccuracy = totalTestCases > 0 ? (correctTestCases / totalTestCases) * 100 : 0;
 
@@ -220,9 +221,9 @@ describe('Dashboard Integration Tests with Real Data', () => {
         .map(score => ({
           exerciseId: score.exercise_id,
           status: score.all_correct ? 'Hoàn thành' : 
-                  score.results?.some(r => r) ? 'Một phần' : 'Chưa đúng',
-          testCasesPassed: score.results ? score.results.filter(r => r).length : 0,
-          totalTestCases: score.results ? score.results.length : 0,
+                  hasCorrectAnswers(score) ? 'Một phần' : 'Chưa đúng',
+          testCasesPassed: getCorrectAnswersCount(score.results),
+          totalTestCases: getResultsCount(score.results),
         }));
 
       expect(recentActivity).toHaveLength(3);
@@ -308,8 +309,8 @@ describe('Dashboard Integration Tests with Real Data', () => {
         if (score.all_correct) {
           stats.correctAnswers++;
         }
-        stats.totalTestCases += score.results ? score.results.length : 0;
-        stats.correctTestCases += score.results ? score.results.filter(r => r === true).length : 0;
+        stats.totalTestCases += getResultsCount(score.results);
+        stats.correctTestCases += getCorrectAnswersCount(score.results);
       });
 
       // Convert to array and calculate accuracy

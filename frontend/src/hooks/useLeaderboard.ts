@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { scoreService } from '../services/scores';
 import { userService } from '../services/users';
 import { exerciseService } from '../services/exercises';
+import { calculateAccuracy } from '../utils/scoreUtils';
 import type { User, Score, Exercise } from '../types/api';
 
 export interface LeaderboardUser {
@@ -62,10 +63,8 @@ const calculateLeaderboard = (users: User[], scores: Score[], exercises: Exercis
     if (!existingScore) {
       userScores.set(score.exercise_id, score);
     } else {
-      const existingAccuracy = existingScore.results ? 
-        existingScore.results.filter((r: boolean) => r === true).length / existingScore.results.length : 0;
-      const currentAccuracy = score.results ? 
-        score.results.filter((r: boolean) => r === true).length / score.results.length : 0;
+      const existingAccuracy = calculateAccuracy(existingScore.results) / 100;
+      const currentAccuracy = calculateAccuracy(score.results) / 100;
       
       // Prioritize completed > accuracy > newer attempt
       if (score.all_correct && !existingScore.all_correct) {
@@ -95,8 +94,7 @@ const calculateLeaderboard = (users: User[], scores: Score[], exercises: Exercis
 
       totalAttempts++;
       
-      const accuracy = score.results && score.results.length > 0 ? 
-        score.results.filter((r: boolean) => r === true).length / score.results.length : 0;
+      const accuracy = calculateAccuracy(score.results) / 100;
       
       totalAccuracy += accuracy;
       

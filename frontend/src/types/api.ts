@@ -1,6 +1,20 @@
 // API response types cho CodeLand.io platform
 
-// Base API response interface
+// Base// Test case types
+export interface TestCase {
+  input: string;
+  expected: string;
+}
+
+// Exercise types  
+export interface Exercise {
+  id: number;
+  title: string;
+  body: string;
+  difficulty: number; // 0=easy, 1=medium, 2=hard
+  test_cases: (string | TestCase)[];
+  solutions: string[];
+}
 export interface ApiResponse<T = any> {
   status: 'success' | 'fail' | 'error';
   message: string;
@@ -55,21 +69,11 @@ export interface UserLogin {
   password: string;
 }
 
-// Exercise-related types
-export interface Exercise {
-  id: number;
-  title: string;
-  body: string;
-  difficulty: number; // 0=easy, 1=medium, 2=hard
-  test_cases: string[];
-  solutions: string[];
-}
-
 export interface ExerciseCreate {
   title: string;
   body: string;
   difficulty: number;
-  test_cases: string[];
+  test_cases: (string | TestCase)[];
   solutions: string[];
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Box,
   Heading,
@@ -23,30 +23,54 @@ import {
   Spacer,
   SimpleGrid,
   Progress,
-} from '@chakra-ui/react';
-import { FiCode, FiPlay, FiCheckCircle, FiArrowLeft, FiSave, FiTarget, FiRefreshCw } from 'react-icons/fi';
-import { useParams, Link } from '@tanstack/react-router';
-import { useExercise } from '../../hooks/queries/useExerciseQueries';
-import { useUserScore, useCreateScore } from '../../hooks/queries/useScoreQueries';
-import { useAuth } from '../../hooks/useAuth';
-import { exerciseService } from '../../services/exercises';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import QueryErrorBoundary from '../../components/common/QueryErrorBoundary';
-import CodeEditor from '../../components/common/CodeEditor';
+} from "@chakra-ui/react";
+import {
+  FiCode,
+  FiPlay,
+  FiCheckCircle,
+  FiArrowLeft,
+  FiSave,
+  FiTarget,
+  FiRefreshCw,
+} from "react-icons/fi";
+import { useParams, Link } from "@tanstack/react-router";
+import { useExercise } from "../../hooks/queries/useExerciseQueries";
+import type { TestCase, ExerciseValidationResponse } from "../../types/api";
+import {
+  useUserScore,
+  useCreateScore,
+} from "../../hooks/queries/useScoreQueries";
+import { useAuth } from "../../hooks/useAuth";
+import { exerciseService } from "../../services/exercises";
+import {
+  hasCorrectAnswers,
+  mapResults,
+  getCorrectAnswersCount,
+  getResultsCount,
+} from "../../utils/scoreUtils";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
+import QueryErrorBoundary from "../../components/common/QueryErrorBoundary";
+import CodeEditor from "../../components/common/CodeEditor";
 
 const ExerciseDetail: React.FC = () => {
   // Router and navigation
-  const { exerciseId } = useParams({ from: '/exercises/$exerciseId' });
+  const { exerciseId } = useParams({ from: "/exercises/$exerciseId" });
 
   const toast = useToast();
 
   // State management
-  const [userSolution, setUserSolution] = useState('');
+  const [userSolution, setUserSolution] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [validationResult, setValidationResult] = useState<any>(null);
+  const [validationResult, setValidationResult] =
+    useState<ExerciseValidationResponse | null>(null);
 
   // Data fetching
-  const { data: exercise, isLoading, error, refetch } = useExercise(Number(exerciseId));
+  const {
+    data: exercise,
+    isLoading,
+    error,
+    refetch,
+  } = useExercise(Number(exerciseId));
   const { user } = useAuth();
   const { data: userScore } = useUserScore(Number(exerciseId));
 
@@ -55,7 +79,7 @@ const ExerciseDetail: React.FC = () => {
 
   // Generate template from exercise
   const generateTemplate = React.useCallback(() => {
-    if (!exercise) return '';
+    if (!exercise) return "";
 
     return `# ${exercise.title}
 
@@ -84,26 +108,26 @@ ${exercise.body}
     setUserSolution(generateTemplate());
     setValidationResult(null);
     toast({
-      title: 'Đã reset template',
-      description: 'Template hướng dẫn đã được tải lại.',
-      status: 'info',
+      title: "Đã reset template",
+      description: "Template hướng dẫn đã được tải lại.",
+      status: "info",
       duration: 2000,
       isClosable: true,
     });
   };
 
   // Theme colors
-  const cardBg = useColorModeValue('white', 'gray.800');
-  const codeBg = useColorModeValue('gray.50', 'gray.700');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const cardBg = useColorModeValue("white", "gray.800");
+  const codeBg = useColorModeValue("gray.50", "gray.700");
+  const borderColor = useColorModeValue("gray.200", "gray.600");
 
   // Handle solution validation and submission
   const handleSubmitSolution = async () => {
     if (!user) {
       toast({
-        title: 'Cần đăng nhập',
-        description: 'Bạn cần đăng nhập để nộp bài giải.',
-        status: 'warning',
+        title: "Cần đăng nhập",
+        description: "Bạn cần đăng nhập để nộp bài giải.",
+        status: "warning",
         duration: 3000,
         isClosable: true,
       });
@@ -112,9 +136,9 @@ ${exercise.body}
 
     if (!userSolution.trim()) {
       toast({
-        title: 'Thiếu lời giải',
-        description: 'Vui lòng nhập lời giải của bạn.',
-        status: 'warning',
+        title: "Thiếu lời giải",
+        description: "Vui lòng nhập lời giải của bạn.",
+        status: "warning",
         duration: 3000,
         isClosable: true,
       });
@@ -141,21 +165,24 @@ ${exercise.body}
       });
 
       toast({
-        title: validationResponse.all_correct ? 'Chính xác!' : 'Chưa hoàn toàn đúng',
+        title: validationResponse.all_correct
+          ? "Chính xác!"
+          : "Chưa hoàn toàn đúng",
         description: validationResponse.all_correct
-          ? 'Chúc mừng! Bạn đã giải đúng tất cả test cases.'
-          : `Bạn đã đúng ${validationResponse.results.filter(r => r).length}/${validationResponse.results.length} test cases.`,
-        status: validationResponse.all_correct ? 'success' : 'warning',
+          ? "Chúc mừng! Bạn đã giải đúng tất cả test cases."
+          : `Bạn đã đúng ${getCorrectAnswersCount(
+              validationResponse.results
+            )}/${getResultsCount(validationResponse.results)} test cases.`,
+        status: validationResponse.all_correct ? "success" : "warning",
         duration: 5000,
         isClosable: true,
       });
-
     } catch (error) {
-      console.error('Error submitting solution:', error);
+      console.error("Error submitting solution:", error);
       toast({
-        title: 'Lỗi nộp bài',
-        description: 'Có lỗi xảy ra khi nộp bài giải. Vui lòng thử lại.',
-        status: 'error',
+        title: "Lỗi nộp bài",
+        description: "Có lỗi xảy ra khi nộp bài giải. Vui lòng thử lại.",
+        status: "error",
         duration: 5000,
         isClosable: true,
       });
@@ -166,7 +193,7 @@ ${exercise.body}
 
   // Get difficulty info
   const getDifficultyInfo = () => {
-    if (!exercise) return { label: '', color: 'gray' };
+    if (!exercise) return { label: "", color: "gray" };
     return {
       label: exerciseService.getDifficultyLabel(exercise.difficulty),
       color: exerciseService.getDifficultyColor(exercise.difficulty),
@@ -176,7 +203,7 @@ ${exercise.body}
   // Get completion status
   const isCompleted = userScore?.all_correct === true;
   const isAttempted = userScore !== undefined;
-  const hasPartialSuccess = userScore && userScore.results && userScore.results.some(r => r === true);
+  const hasPartialSuccess = userScore && hasCorrectAnswers(userScore);
   const difficultyInfo = getDifficultyInfo();
 
   // Loading state
@@ -235,9 +262,7 @@ ${exercise.body}
         <HStack spacing={3} mb={2}>
           <Icon as={FiCode} boxSize={6} color="blue.500" />
           <VStack align="flex-start" spacing={1}>
-            <Heading size="xl">
-              {exercise.title}
-            </Heading>
+            <Heading size="xl">{exercise.title}</Heading>
             <HStack spacing={3}>
               <Text fontSize="sm" color="text.secondary">
                 Bài #{exercise.id}
@@ -275,27 +300,53 @@ ${exercise.body}
         </CardHeader>
         <CardBody pt={0}>
           <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-            {exercise.test_cases.map((testCase, index) => (
-              <Box key={index}>
-                <Text fontSize="sm" color="text.secondary" mb={2}>
-                  Test case {index + 1}:
-                </Text>
-                <VStack align="stretch" spacing={2}>
-                  <Box bg={codeBg} p={3} borderRadius="md" border="1px solid" borderColor={borderColor}>
-                    <Text fontSize="xs" color="text.secondary" mb={1}>Đầu vào:</Text>
-                    <Code fontSize="sm" colorScheme="blue">
-                      {testCase}
-                    </Code>
-                  </Box>
-                  <Box bg={codeBg} p={3} borderRadius="md" border="1px solid" borderColor={borderColor}>
-                    <Text fontSize="xs" color="text.secondary" mb={1}>Kết quả mong đợi:</Text>
-                    <Code fontSize="sm" colorScheme="green">
-                      {exercise.solutions[index]}
-                    </Code>
-                  </Box>
-                </VStack>
-              </Box>
-            ))}
+            {exercise.test_cases.map((testCase, index) => {
+              // Handle both string and object formats
+              const isObject =
+                typeof testCase === "object" && testCase !== null;
+              const input = isObject ? (testCase as TestCase).input : testCase;
+              const expectedOutput = isObject
+                ? (testCase as TestCase).expected
+                : exercise.solutions[index];
+
+              return (
+                <Box key={index}>
+                  <Text fontSize="sm" color="text.secondary" mb={2}>
+                    Test case {index + 1}:
+                  </Text>
+                  <VStack align="stretch" spacing={2}>
+                    <Box
+                      bg={codeBg}
+                      p={3}
+                      borderRadius="md"
+                      border="1px solid"
+                      borderColor={borderColor}
+                    >
+                      <Text fontSize="xs" color="text.secondary" mb={1}>
+                        Đầu vào:
+                      </Text>
+                      <Code fontSize="sm" colorScheme="blue">
+                        {String(input)}
+                      </Code>
+                    </Box>
+                    <Box
+                      bg={codeBg}
+                      p={3}
+                      borderRadius="md"
+                      border="1px solid"
+                      borderColor={borderColor}
+                    >
+                      <Text fontSize="xs" color="text.secondary" mb={1}>
+                        Kết quả mong đợi:
+                      </Text>
+                      <Code fontSize="sm" colorScheme="green">
+                        {String(expectedOutput)}
+                      </Code>
+                    </Box>
+                  </VStack>
+                </Box>
+              );
+            })}
           </SimpleGrid>
         </CardBody>
       </Card>
@@ -320,7 +371,9 @@ ${exercise.body}
               onChange={setUserSolution}
               language="python"
               height="400px"
-              placeholder={!user ? "# Cần đăng nhập để viết code..." : exercise.body}
+              placeholder={
+                !user ? "# Cần đăng nhập để viết code..." : exercise.body
+              }
               readOnly={!user}
               fontSize={14}
               minimap={false}
@@ -348,7 +401,7 @@ ${exercise.body}
                     _hover: {
                       bg: "blue.600",
                       color: "white",
-                    }
+                    },
                   }}
                 >
                   Chạy và kiểm tra
@@ -360,9 +413,9 @@ ${exercise.body}
                   onClick={() => {
                     // Save draft functionality could be added here
                     toast({
-                      title: 'Đã lưu nháp',
-                      description: 'Lời giải đã được lưu tạm thời.',
-                      status: 'info',
+                      title: "Đã lưu nháp",
+                      description: "Lời giải đã được lưu tạm thời.",
+                      status: "info",
                       duration: 2000,
                       isClosable: true,
                     });
@@ -395,53 +448,73 @@ ${exercise.body}
             <HStack justify="space-between">
               <Heading size="md">Kết quả kiểm tra</Heading>
               <Badge
-                colorScheme={validationResult.all_correct ? 'green' : 'orange'}
+                colorScheme={validationResult.all_correct ? "green" : "orange"}
                 variant="subtle"
-                px={3} py={1}
+                px={3}
+                py={1}
               >
-                {validationResult.results.filter((r: boolean) => r).length}/{validationResult.results.length} đúng
+                {getCorrectAnswersCount(validationResult.results)}/
+                {getResultsCount(validationResult.results)} đúng
               </Badge>
             </HStack>
           </CardHeader>
           <CardBody pt={0}>
             <VStack align="stretch" spacing={4}>
               <Progress
-                value={(validationResult.results.filter((r: boolean) => r).length / validationResult.results.length) * 100}
-                colorScheme={validationResult.all_correct ? 'green' : 'orange'}
+                value={
+                  (getCorrectAnswersCount(validationResult.results) /
+                    getResultsCount(validationResult.results)) *
+                  100
+                }
+                colorScheme={validationResult.all_correct ? "green" : "orange"}
                 size="lg"
                 borderRadius="md"
               />
 
               <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-                {validationResult.results.map((isCorrect: boolean, index: number) => (
-                  <Box
-                    key={index}
-                    p={3}
-                    borderRadius="md"
-                    border="1px solid"
-                    borderColor={isCorrect ? 'green.200' : 'red.200'}
-                    bg={isCorrect ? 'black.50' : 'black.50'}
-                  >
-                    <HStack justify="space-between" mb={2}>
-                      <Text fontSize="sm" fontWeight="medium">
-                        Test case {index + 1}
-                      </Text>
-                      <Badge colorScheme={isCorrect ? 'green' : 'red'} variant="subtle">
-                        {isCorrect ? 'Đúng' : 'Sai'}
-                      </Badge>
-                    </HStack>
-                    <VStack align="stretch" spacing={2}>
-                      <Box>
-                        <Text fontSize="xs" color="text.secondary">Kết quả của bạn:</Text>
-                        <Code fontSize="sm">{validationResult.user_results[index]}</Code>
-                      </Box>
-                      <Box>
-                        <Text fontSize="xs" color="color: 'text.inverse">Kết quả mong đợi:</Text>
-                        <Code fontSize="sm" colorScheme="green">{exercise!.solutions[index]}</Code>
-                      </Box>
-                    </VStack>
-                  </Box>
-                ))}
+                {mapResults(
+                  validationResult.results,
+                  (isCorrect: boolean, index: number) => (
+                    <Box
+                      key={index}
+                      p={3}
+                      borderRadius="md"
+                      border="1px solid"
+                      borderColor={isCorrect ? "green.200" : "red.200"}
+                      bg={isCorrect ? "black.50" : "black.50"}
+                    >
+                      <HStack justify="space-between" mb={2}>
+                        <Text fontSize="sm" fontWeight="medium">
+                          Test case {index + 1}
+                        </Text>
+                        <Badge
+                          colorScheme={isCorrect ? "green" : "red"}
+                          variant="subtle"
+                        >
+                          {isCorrect ? "Đúng" : "Sai"}
+                        </Badge>
+                      </HStack>
+                      <VStack align="stretch" spacing={2}>
+                        <Box>
+                          <Text fontSize="xs" color="text.secondary">
+                            Kết quả của bạn:
+                          </Text>
+                          <Code fontSize="sm">
+                            {String(validationResult.user_results[index])}
+                          </Code>
+                        </Box>
+                        <Box>
+                          <Text fontSize="xs" color="color: 'text.inverse">
+                            Kết quả mong đợi:
+                          </Text>
+                          <Code fontSize="sm" colorScheme="green">
+                            {String(exercise!.solutions[index])}
+                          </Code>
+                        </Box>
+                      </VStack>
+                    </Box>
+                  )
+                )}
               </SimpleGrid>
             </VStack>
           </CardBody>
@@ -451,20 +524,28 @@ ${exercise.body}
       {/* Status Alert */}
       {isAttempted && !validationResult && (
         <Alert
-          status={isCompleted ? 'success' : hasPartialSuccess ? 'warning' : 'info'}
+          status={
+            isCompleted ? "success" : hasPartialSuccess ? "warning" : "info"
+          }
           borderRadius="md"
         >
           <AlertIcon />
           <Box>
             <AlertTitle>
-              {isCompleted ? 'Hoàn thành!' : hasPartialSuccess ? 'Một phần đúng' : 'Đã thử'}
+              {isCompleted
+                ? "Hoàn thành!"
+                : hasPartialSuccess
+                ? "Một phần đúng"
+                : "Đã thử"}
             </AlertTitle>
             <AlertDescription>
               {isCompleted
-                ? 'Bạn đã giải đúng tất cả test cases. Chúc mừng!'
+                ? "Bạn đã giải đúng tất cả test cases. Chúc mừng!"
                 : hasPartialSuccess
-                  ? `Bạn đã đúng ${userScore!.results.filter(r => r).length}/${userScore!.results.length} test cases.`
-                  : 'Bạn đã thử bài tập này nhưng chưa đúng hoàn toàn.'}
+                ? `Bạn đã đúng ${getCorrectAnswersCount(
+                    userScore!.results
+                  )}/${getResultsCount(userScore!.results)} test cases.`
+                : "Bạn đã thử bài tập này nhưng chưa đúng hoàn toàn."}
             </AlertDescription>
           </Box>
         </Alert>

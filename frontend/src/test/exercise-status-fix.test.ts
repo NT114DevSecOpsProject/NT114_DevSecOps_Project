@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { mapResults, hasCorrectAnswers } from '../utils/scoreUtils';
 
 describe('Exercise Status Fix - API Inconsistency', () => {
   it('should calculate all_correct based on results when API is inconsistent', () => {
@@ -13,8 +14,8 @@ describe('Exercise Status Fix - API Inconsistency', () => {
     };
 
     // Simulate the fixed logic
-    const results = mockScore.results.map(r => Boolean(r));
-    const calculatedAllCorrect = results.length > 0 && results.every(r => r === true);
+    const results = mapResults(mockScore.results, (r: unknown) => Boolean(r));
+    const calculatedAllCorrect = hasCorrectAnswers(mockScore);
 
     // Test assertions
     expect(mockScore.all_correct).toBe(false); // API value is wrong
@@ -36,8 +37,8 @@ describe('Exercise Status Fix - API Inconsistency', () => {
       user_results: ["5", "wrong", "10"]
     };
 
-    const results = mockScore.results.map(r => Boolean(r));
-    const calculatedAllCorrect = results.length > 0 && results.every(r => r === true);
+    const results = mapResults(mockScore.results, (r: unknown) => Boolean(r));
+    const calculatedAllCorrect = hasCorrectAnswers(mockScore);
 
     expect(mockScore.all_correct).toBe(true); // API value is wrong
     expect(calculatedAllCorrect).toBe(false); // Our calculation is correct
@@ -57,8 +58,8 @@ describe('Exercise Status Fix - API Inconsistency', () => {
       user_results: []
     };
 
-    const results = mockScore.results.map(r => Boolean(r));
-    const calculatedAllCorrect = results.length > 0 && results.every(r => r === true);
+    const results = mapResults(mockScore.results, (r: unknown) => Boolean(r));
+    const calculatedAllCorrect = hasCorrectAnswers(mockScore);
 
     expect(calculatedAllCorrect).toBe(false); // Empty array should not be completed
   });
@@ -73,8 +74,8 @@ describe('Exercise Status Fix - API Inconsistency', () => {
       user_results: ["1", "2", "3"]
     };
 
-    const results = mockScore.results.map(r => Boolean(r));
-    const calculatedAllCorrect = results.length > 0 && results.every(r => r === true);
+    const results = mapResults(mockScore.results, (r: unknown) => Boolean(r));
+    const calculatedAllCorrect = hasCorrectAnswers(mockScore);
 
     // String "true" should convert to boolean true
     expect(results).toEqual([true, true, true]);
@@ -103,8 +104,8 @@ describe('Exercise Status Fix - API Inconsistency', () => {
     let bestScore = null;
 
     mockScores.forEach(score => {
-      const results = score.results.map(r => Boolean(r));
-      const calculatedAllCorrect = results.length > 0 && results.every(r => r === true);
+      const results = mapResults(score.results, (r: unknown) => Boolean(r));
+      const calculatedAllCorrect = hasCorrectAnswers(score);
 
       if (calculatedAllCorrect) {
         isCompleted = true;
@@ -136,7 +137,7 @@ describe('Exercise Status Fix - API Inconsistency', () => {
       
       if (isAttempted && bestScore) {
         const hasPartialSuccess = !bestScore.all_correct && 
-          bestScore.results.some((r: boolean) => r === true);
+          hasCorrectAnswers(bestScore);
         
         if (hasPartialSuccess) {
           return 'Một phần đúng';

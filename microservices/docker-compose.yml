@@ -1,0 +1,197 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database for User Management Service
+  user-management-db:
+    image: postgres:15-alpine
+    container_name: user_management_postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: user_management_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - user_management_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # User Management Service (Auth + Users)
+  user-management-service:
+    build:
+      context: ./user-management-service
+      dockerfile: Dockerfile
+    container_name: user_management_service
+    environment:
+      - FLASK_ENV=development
+      - SECRET_KEY=your-secret-key-change-in-production
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=user-management-db
+      - DB_PORT=5432
+      - DB_NAME=user_management_db
+    ports:
+      - "5001:5001"
+    depends_on:
+      user-management-db:
+        condition: service_healthy
+    volumes:
+      - ./user-management-service/logs:/app/logs
+    networks:
+      - microservices_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/auth/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api_gateway
+    environment:
+      - FLASK_ENV=development
+      - SECRET_KEY=your-secret-key-change-in-production
+      - USER_MANAGEMENT_SERVICE_URL=http://host.docker.internal:5001
+      - EXERCISES_SERVICE_URL=http://host.docker.internal:5002
+      - SCORES_SERVICE_URL=http://host.docker.internal:5003
+      - RATE_LIMIT_PER_MINUTE=100
+      - REQUEST_TIMEOUT=30
+    ports:
+      - "8000:8000"
+    depends_on:
+      user-management-service:
+        condition: service_healthy
+      exercises-service:
+        condition: service_healthy
+      scores-service:
+        condition: service_healthy
+    volumes:
+      - ./api-gateway/logs:/app/logs
+    networks:
+      - microservices_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Exercises PostgreSQL Database
+  exercises-db:
+    image: postgres:15-alpine
+    container_name: exercises_postgres
+    environment:
+      - POSTGRES_DB=exercises_db
+      - POSTGRES_USER=exercises_user
+      - POSTGRES_PASSWORD=exercises_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - exercises_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exercises_user -d exercises_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Exercises Management Service
+  exercises-service:
+    build:
+      context: ./exercises-service
+      dockerfile: Dockerfile
+    container_name: exercises_service
+    environment:
+      - FLASK_ENV=development
+      - SECRET_KEY=your-secret-key-change-in-production
+      - DATABASE_URL=postgresql://exercises_user:exercises_password@exercises-db:5432/exercises_db
+      - USER_MANAGEMENT_SERVICE_URL=http://host.docker.internal:5001
+    ports:
+      - "5002:5002"
+    depends_on:
+      exercises-db:
+        condition: service_healthy
+    volumes:
+      - ./exercises-service/logs:/app/logs
+    networks:
+      - microservices_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Scores PostgreSQL Database
+  scores-db:
+    image: postgres:15-alpine
+    container_name: scores_postgres
+    environment:
+      - POSTGRES_DB=scores_db
+      - POSTGRES_USER=scores_user
+      - POSTGRES_PASSWORD=scores_password
+    ports:
+      - "5435:5432"
+    volumes:
+      - scores_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scores_user -d scores_db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Scores Management Service
+  scores-service:
+    build:
+      context: ./scores-service
+      dockerfile: Dockerfile
+    container_name: scores_service
+    environment:
+      - FLASK_ENV=development
+      - SECRET_KEY=your-secret-key-change-in-production
+      - DATABASE_URL=postgresql://scores_user:scores_password@scores-db:5432/scores_db
+      - USER_MANAGEMENT_SERVICE_URL=http://host.docker.internal:5001
+    ports:
+      - "5003:5003"
+    depends_on:
+      scores-db:
+        condition: service_healthy
+    volumes:
+      - ./scores-service/logs:/app/logs
+    networks:
+      - microservices_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  user_management_db_data:
+  exercises_db_data:
+  scores_db_data:
+
+networks:
+  microservices_network:
+    driver: bridge

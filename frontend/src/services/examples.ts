@@ -6,6 +6,7 @@ import {
   userService,
   ApiError,
 } from './index';
+import { hasCorrectAnswers } from '../utils/scoreUtils';
 
 // Ví dụ sử dụng Authentication Service
 export const authExamples = {
@@ -165,7 +166,7 @@ export const scoreExamples = {
       
       scores.forEach(score => {
         const status = score.all_correct ? 'Đúng' : 
-                      (score.results && score.results.some(r => r)) ? 'Một phần đúng' : 'Sai';
+                      hasCorrectAnswers(score) ? 'Một phần đúng' : 'Sai';
         console.log(`- Bài ${score.exercise_id}: ${status}`);
       });
       
