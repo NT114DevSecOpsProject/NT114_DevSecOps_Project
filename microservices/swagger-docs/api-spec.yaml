@@ -1,0 +1,1030 @@
+openapi: 3.0.3
+info:
+  title: Microservices API
+  description: |
+    Comprehensive API documentation for Codedao microservices platform.
+
+    ## Authentication
+    Most endpoints require JWT authentication. To authenticate:
+    1. Login using `POST /auth/login` 
+    2. Copy the `auth_token` from response
+    3. Add `Authorization: Bearer {token}` header to subsequent requests
+
+    ## Services
+    - **API Gateway** (Port 8000): Main entry point
+    - **User Management** (Port 5001): Users and authentication 
+    - **Exercises Service** (Port 5002): Programming exercises
+    - **Scores Service** (Port 5003): User scores and results
+
+  version: 1.0.0
+  contact:
+    name: Development Team
+    email: dev@gmail.com
+
+servers:
+  - url: http://localhost:8000
+    description: API Gateway (Recommended)
+  - url: http://localhost:5001
+    description: User Management Service (Direct)
+  - url: http://localhost:5002
+    description: Exercises Service (Direct)
+  - url: http://localhost:5003
+    description: Scores Service (Direct)
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization
+  - name: Users
+    description: User management operations
+  - name: Exercises
+    description: Programming exercises management
+  - name: Scores
+    description: User scores and results
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  # Health Check
+  /health:
+    get:
+      tags:
+        - Health
+      summary: API Gateway health check
+      description: Check the health status of API Gateway and all connected services
+      responses:
+        "200":
+          description: Services are healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  services:
+                    type: object
+                    properties:
+                      user_management_service:
+                        type: string
+                        example: healthy
+                      exercises_service:
+                        type: string
+                        example: healthy
+                      scores_service:
+                        type: string
+                        example: healthy
+
+  # Authentication Endpoints
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: Create a new user account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+                - password
+              properties:
+                username:
+                  type: string
+                  example: johndoe
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  format: password
+                  example: securepass123
+                admin:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Invalid payload or user already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user and receive JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  format: password
+                  example: securepass123
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    get:
+      tags:
+        - Authentication
+      summary: User logout
+      description: Logout current user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/status:
+    get:
+      tags:
+        - Authentication
+      summary: Get user status
+      description: Get current authenticated user information
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: success
+                  data:
+                    $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # Users Endpoints
+  /users/:
+    get:
+      tags:
+        - Users
+      summary: Get all users
+      description: Retrieve list of all users (Admin required)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      users:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags:
+        - Users
+      summary: Create new user
+      description: Create a new user (Admin required)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+                - password
+              properties:
+                username:
+                  type: string
+                  example: newuser
+                email:
+                  type: string
+                  format: email
+                  example: newuser@example.com
+                password:
+                  type: string
+                  format: password
+                  example: password123
+                admin:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: User was added!
+                  data:
+                    $ref: "#/components/schemas/User"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users/{userId}:
+    get:
+      tags:
+        - Users
+      summary: Get user by ID
+      description: Retrieve specific user information
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User ID
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: User retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # Exercises Endpoints
+  /exercises/:
+    get:
+      tags:
+        - Exercises
+      summary: Get all exercises
+      description: Retrieve list of all programming exercises
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Exercises retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      exercises:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Exercise"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    post:
+      tags:
+        - Exercises
+      summary: Create new exercise
+      description: Create a new programming exercise (Admin required)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - body
+                - difficulty
+                - test_cases
+                - solutions
+              properties:
+                title:
+                  type: string
+                  example: "Hello World"
+                body:
+                  type: string
+                  example: "Write a function that returns 'Hello World'"
+                difficulty:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  example: 1
+                test_cases:
+                  type: array
+                  items:
+                    type: object
+                  example: [{ "input": "", "expected": "Hello World" }]
+                solutions:
+                  type: array
+                  items:
+                    type: object
+                  example:
+                    [
+                      {
+                        "language": "python",
+                        "code": "def hello():\n    return 'Hello World'",
+                      },
+                    ]
+      responses:
+        "201":
+          description: Exercise created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Exercise was added!
+                  data:
+                    $ref: "#/components/schemas/Exercise"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /exercises/{exerciseId}:
+    get:
+      tags:
+        - Exercises
+      summary: Get exercise by ID
+      description: Retrieve specific exercise information
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          description: Exercise ID
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: Exercise retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: "#/components/schemas/Exercise"
+        "404":
+          description: Exercise not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      tags:
+        - Exercises
+      summary: Update exercise
+      description: Update an existing exercise (Admin required)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          description: Exercise ID
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  example: "Updated Hello World"
+                body:
+                  type: string
+                  example: "Write a function that returns 'Hello World' with improvement"
+                difficulty:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  example: 2
+                test_cases:
+                  type: array
+                  items:
+                    type: object
+                  example: [{ "input": "", "expected": "Hello World" }]
+                solutions:
+                  type: array
+                  items:
+                    type: object
+                  example:
+                    [
+                      {
+                        "language": "python",
+                        "code": "def hello():\n    return 'Hello World'",
+                      },
+                    ]
+      responses:
+        "200":
+          description: Exercise updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Exercise was updated!
+                  data:
+                    $ref: "#/components/schemas/Exercise"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - Admin privileges required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Exercise not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /exercises/validate_code:
+    post:
+      tags:
+        - Exercises
+      summary: Validate user code
+      description: Validate user's code submission against exercise test cases
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - exercise_id
+                - answer
+              properties:
+                exercise_id:
+                  type: integer
+                  example: 1
+                  description: ID of the exercise to validate against
+                answer:
+                  type: string
+                  example: "def hello():\n    return 'Hello World'"
+                  description: User's code solution
+      responses:
+        "200":
+          description: Code validation completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  results:
+                    type: array
+                    items:
+                      type: boolean
+                    example: [true, true, false]
+                    description: Array of boolean results for each test case
+                  user_results:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      ["Hello World", "Hello World", "Error: Invalid syntax"]
+                    description: Array of user code outputs for each test case
+                  all_correct:
+                    type: boolean
+                    example: false
+                    description: Whether all test cases passed
+        "400":
+          description: Invalid payload or code compilation failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: fail
+                  message:
+                    type: string
+                    example: "Code compilation failed: Invalid syntax"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Exercise not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # Scores Endpoints
+  /scores/:
+    get:
+      tags:
+        - Scores
+      summary: Get all scores
+      description: Retrieve list of all scores
+      responses:
+        "200":
+          description: Scores retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      scores:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Score"
+
+    post:
+      tags:
+        - Scores
+      summary: Create new score
+      description: Submit a new score for an exercise
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - exercise_id
+              properties:
+                exercise_id:
+                  type: integer
+                  example: 1
+                answer:
+                  type: string
+                  example: "def hello():\n    return 'Hello World'"
+                results:
+                  type: object
+                  example: { "passed": true, "score": 100 }
+                user_results:
+                  type: object
+                  example: { "time_taken": 30 }
+      responses:
+        "201":
+          description: Score created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: New score was added!
+                  data:
+                    $ref: "#/components/schemas/Score"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /scores/user:
+    get:
+      tags:
+        - Scores
+      summary: Get current user scores
+      description: Retrieve scores for the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: User scores retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    type: object
+                    properties:
+                      scores:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Score"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /scores/user/{scoreId}:
+    get:
+      tags:
+        - Scores
+      summary: Get user score by ID
+      description: Retrieve specific score for the authenticated user
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: scoreId
+          in: path
+          required: true
+          description: Score ID
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: Score retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  data:
+                    $ref: "#/components/schemas/Score"
+        "404":
+          description: Score not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /scores/{exerciseId}:
+    put:
+      tags:
+        - Scores
+      summary: Update score by exercise ID
+      description: Update an existing score for a specific exercise
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          description: Exercise ID
+          schema:
+            type: integer
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                answer:
+                  type: string
+                  example: "def hello():\n    return 'Hello Updated World'"
+                results:
+                  type: object
+                  example: { "passed": true, "score": 95 }
+                user_results:
+                  type: object
+                  example: { "time_taken": 25 }
+      responses:
+        "200":
+          description: Score updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Score was updated!
+                  data:
+                    $ref: "#/components/schemas/Score"
+        "400":
+          description: Score not found or invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /scores/ping:
+    get:
+      tags:
+        - Scores
+      summary: Ping scores service
+      description: Health check for scores service
+      responses:
+        "200":
+          description: Pong response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: pong!
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        username:
+          type: string
+          example: johndoe
+        email:
+          type: string
+          format: email
+          example: john@example.com
+        active:
+          type: boolean
+          example: true
+        admin:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-09-29T12:41:34.455406"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-09-29T12:41:34.455413"
+
+    Exercise:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: "Hello World"
+        body:
+          type: string
+          example: "Write a function that returns 'Hello World'"
+        difficulty:
+          type: integer
+          example: 1
+        test_cases:
+          type: array
+          items:
+            type: object
+          example: [{ "input": "", "expected": "Hello World" }]
+        solutions:
+          type: array
+          items:
+            type: object
+          example:
+            [
+              {
+                "language": "python",
+                "code": "def hello():\n    return 'Hello World'",
+              },
+            ]
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-09-29T12:41:34.455406"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-09-29T12:41:34.455413"
+
+    Score:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        user_id:
+          type: integer
+          example: 1
+        exercise_id:
+          type: integer
+          example: 1
+        answer:
+          type: string
+          example: "def hello():\n    return 'Hello World'"
+        results:
+          type: object
+          example: { "passed": true, "score": 100 }
+        user_results:
+          type: object
+          example: { "time_taken": 30 }
+        created_at:
+          type: string
+          format: date-time
+          example: "2025-09-29T19:10:00.309037"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2025-09-29T19:10:00.309047"
+
+    AuthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Successfully logged in.
+        auth_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        data:
+          $ref: "#/components/schemas/User"
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Operation completed successfully
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: fail
+        message:
+          type: string
+          example: Error description

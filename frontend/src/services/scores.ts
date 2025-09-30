@@ -1,5 +1,6 @@
 // Score service cho CodeLand.io platform
 import { apiClient, ApiError } from './api';
+import { hasCorrectAnswers, allAnswersIncorrect } from '../utils/scoreUtils';
 import type {
   Score,
   ScoreCreate,
@@ -25,7 +26,7 @@ export class ScoreService {
   // Lấy tất cả điểm số (admin only)
   async getAll(): Promise<Score[]> {
     try {
-      const response = await apiClient.get<ScoresResponse>('/scores/');
+      const response = await apiClient.get<ScoresResponse>('/scores/', true);
       return response.data.scores;
     } catch (error) {
       if (error instanceof ApiError) {
@@ -132,6 +133,8 @@ export class ScoreService {
     }
   }
 
+
+
   // Tính toán thống kê điểm số của user
   async getUserStats(): Promise<{
     totalExercises: number;
@@ -147,10 +150,10 @@ export class ScoreService {
       const completedExercises = userScores.length;
       const correctAnswers = userScores.filter(score => score.all_correct === true).length;
       const partialAnswers = userScores.filter(score => 
-        !score.all_correct && score.results && score.results.some(r => r === true)
+        !score.all_correct && hasCorrectAnswers(score)
       ).length;
       const incorrectAnswers = userScores.filter(score => 
-        score.results && score.results.every(r => r === false)
+        allAnswersIncorrect(score)
       ).length;
       const accuracy = completedExercises > 0 ? (correctAnswers / completedExercises) * 100 : 0;
 

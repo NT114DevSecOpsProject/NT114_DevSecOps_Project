@@ -7,6 +7,7 @@ import {
   useScores as useAllScores,
 } from './queries/useScoreQueries';
 import { useExercises } from './queries/useExerciseQueries';
+import { getCorrectAnswersCount, getResultsCount, calculateAccuracy } from '../utils/scoreUtils';
 import type { Score, ScoreCreate } from '../types/api';
 
 /**
@@ -54,8 +55,7 @@ export const useScores = () => {
     // Exercise progress với thông tin chi tiết
     const exerciseProgress = exercises.map(exercise => {
       const score = scoresByExercise.get(exercise.id);
-      const accuracy = score && score.results ? 
-        (score.results.filter(r => r === true).length / score.results.length) * 100 : 0;
+      const accuracy = score ? calculateAccuracy(score.results) : 0;
       
       return {
         exercise,
@@ -75,7 +75,7 @@ export const useScores = () => {
       .slice(0, 10)
       .map(score => {
         const exercise = exercises.find(ex => ex.id === score.exercise_id);
-        const accuracy = score.results ? (score.results.filter(r => r === true).length / score.results.length) * 100 : 0;
+        const accuracy = calculateAccuracy(score.results);
         
         return {
           score,
@@ -112,9 +112,7 @@ export const useScores = () => {
     const score = getScoreForExercise(exerciseId);
     if (!score) return 0;
     
-    const correct = score.results ? score.results.filter(r => r === true).length : 0;
-    const total = score.results ? score.results.length : 0;
-    return total > 0 ? Math.round((correct / total) * 100) : 0;
+    return Math.round(calculateAccuracy(score.results));
   };
 
   const submitScore = async (scoreData: ScoreCreate) => {

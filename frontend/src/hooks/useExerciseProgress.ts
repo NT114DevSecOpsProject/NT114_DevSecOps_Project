@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useUserScores } from './queries/useScoreQueries';
 import { useExercises } from './queries/useExerciseQueries';
+import { getCorrectAnswersCount, getResultsArray, hasCorrectAnswers } from '../utils/scoreUtils';
 
 export interface ExerciseProgress {
   exerciseId: number;
@@ -51,18 +52,14 @@ export const useExerciseProgress = () => {
         currentProgress.isAttempted = true;
 
         // Ensure proper type conversion
-        const results = (score.results || []).map(r => Boolean(r));
         const userResults = score.user_results || [];
 
         // Calculate all_correct based on results (don't trust API field)
-        const calculatedAllCorrect = results.length > 0 && results.every(r => r === true);
-
-        // Use calculated value instead of API value
-        const allCorrect = calculatedAllCorrect;
+        const allCorrect = hasCorrectAnswers(score);
 
         // Debug log to see the difference
-        if (Boolean(score.all_correct) !== calculatedAllCorrect) {
-          console.log(`Exercise ${exerciseId} Score ${score.id}: API all_correct=${score.all_correct}, Calculated=${calculatedAllCorrect}, Results=${JSON.stringify(results)}`);
+        if (Boolean(score.all_correct) !== allCorrect) {
+          console.log(`Exercise ${exerciseId} Score ${score.id}: API all_correct=${score.all_correct}, Calculated=${allCorrect}, Results=${JSON.stringify(score.results)}`);
         }
 
         // Cập nhật lần thử gần nhất
@@ -70,7 +67,7 @@ export const useExerciseProgress = () => {
           currentProgress.lastAttempt = {
             id: score.id,
             all_correct: allCorrect,
-            results: results,
+            results: getResultsArray(score.results),
             user_results: userResults,
           };
         }
@@ -80,13 +77,13 @@ export const useExerciseProgress = () => {
           (allCorrect && !currentProgress.bestScore.all_correct) ||
           (allCorrect && currentProgress.bestScore.all_correct && score.id > currentProgress.bestScore.id) ||
           (!allCorrect && !currentProgress.bestScore.all_correct &&
-            (results.filter(r => r).length > currentProgress.bestScore.results.filter(r => r).length ||
-              (results.filter(r => r).length === currentProgress.bestScore.results.filter(r => r).length &&
+            (getCorrectAnswersCount(score.results) > getCorrectAnswersCount(currentProgress.bestScore.results) ||
+              (getCorrectAnswersCount(score.results) === getCorrectAnswersCount(currentProgress.bestScore.results) &&
                 score.id > currentProgress.bestScore.id)))) {
           currentProgress.bestScore = {
             id: score.id,
             all_correct: allCorrect,
-            results: results,
+            results: getResultsArray(score.results),
             user_results: userResults,
           };
         }

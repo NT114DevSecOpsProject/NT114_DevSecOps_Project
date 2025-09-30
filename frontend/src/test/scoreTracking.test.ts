@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { scoreService } from '../services/scores';
 import type { ScoreCreate } from '../types/api';
+import { filterResults, hasCorrectAnswers, allAnswersIncorrect } from '../utils/scoreUtils';
 
 describe('Score Tracking System', () => {
   describe('ScoreService', () => {
@@ -60,7 +61,8 @@ describe('Score Tracking System', () => {
         all_correct: false
       };
 
-      const accuracy = (mockScore.results.filter(r => r === true).length / mockScore.results.length) * 100;
+      const correctResults = filterResults(mockScore.results, (r: unknown) => r === true);
+      const accuracy = (correctResults.length / mockScore.results.length) * 100;
       expect(accuracy).toBe(75); // 3/4 = 75%
     });
 
@@ -89,10 +91,10 @@ describe('Score Tracking System', () => {
       const totalAttempts = mockScores.length;
       const correctAnswers = mockScores.filter(s => s.all_correct).length;
       const partialAnswers = mockScores.filter(s => 
-        !s.all_correct && s.results.some(r => r === true)
+        !s.all_correct && hasCorrectAnswers(s)
       ).length;
       const incorrectAnswers = mockScores.filter(s => 
-        s.results.every(r => r === false)
+        allAnswersIncorrect(s)
       ).length;
 
       expect(totalAttempts).toBe(4);
@@ -203,10 +205,10 @@ export const testScoreTracking = {
     const totalAttempts = scores.length;
     const correctAnswers = scores.filter(s => s.all_correct).length;
     const partialAnswers = scores.filter(s => 
-      !s.all_correct && s.results.some(r => r === true)
+      !s.all_correct && hasCorrectAnswers(s)
     ).length;
     const incorrectAnswers = scores.filter(s => 
-      s.results.every(r => r === false)
+      allAnswersIncorrect(s)
     ).length;
     
     return {

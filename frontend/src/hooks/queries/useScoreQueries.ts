@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { scoreService } from '../../services/scores';
 import { queryKeys } from '../../lib/queryClient';
+import { hasCorrectAnswers, allAnswersIncorrect, getCorrectCount } from '../../utils/scoreUtils';
 import type { ScoreCreate } from '../../types/api';
 import React from 'react';
 
@@ -91,10 +92,10 @@ export const useUserProgress = () => {
     const totalAttempts = userScores.length;
     const correctAnswers = userScores.filter(score => score.all_correct === true).length;
     const partialAnswers = userScores.filter(score => 
-      !score.all_correct && score.results && score.results.some(r => r === true)
+      !score.all_correct && hasCorrectAnswers(score)
     ).length;
     const incorrectAnswers = userScores.filter(score => 
-      score.results && score.results.every(r => r === false)
+      allAnswersIncorrect(score)
     ).length;
     
     const successRate = totalAttempts > 0 ? (correctAnswers / totalAttempts) * 100 : 0;
@@ -139,10 +140,10 @@ export const useUserStatistics = () => {
     const totalAttempts = userScores.length;
     const correctAnswers = userScores.filter(score => score.all_correct === true).length;
     const partialAnswers = userScores.filter(score => 
-      !score.all_correct && score.results && score.results.some(r => r === true)
+      !score.all_correct && hasCorrectAnswers(score)
     ).length;
     const incorrectAnswers = userScores.filter(score => 
-      score.results && score.results.every(r => r === false)
+      allAnswersIncorrect(score)
     ).length;
     
     const successRate = totalAttempts > 0 ? (correctAnswers / totalAttempts) * 100 : 0;
@@ -185,7 +186,7 @@ export const useUserStatistics = () => {
       sum + (score.results ? score.results.length : 0), 0
     );
     const correctTestCases = userScores.reduce((sum, score) => 
-      sum + (score.results ? score.results.filter(r => r === true).length : 0), 0
+      sum + getCorrectCount(score.results), 0
     );
     const testCaseAccuracy = totalTestCases > 0 ? (correctTestCases / totalTestCases) * 100 : 0;
     
@@ -247,8 +248,7 @@ export const useProgressOverTime = (days: number = 7) => {
       
       // Calculate correct scores using our fixed logic
       dateRange[todayIndex].correct = userScores.filter(score => {
-        const results = (score.results || []).map(r => Boolean(r));
-        return results.length > 0 && results.every(r => r === true);
+        return hasCorrectAnswers(score);
       }).length;
       
       dateRange[todayIndex].accuracy = dateRange[todayIndex].attempts > 0 
@@ -296,7 +296,7 @@ export const useLeaderboard = (limit: number = 10) => {
         stats.correctAnswers++;
       }
       stats.totalTestCases += score.results ? score.results.length : 0;
-      stats.correctTestCases += score.results ? score.results.filter(r => r === true).length : 0;
+      stats.correctTestCases += getCorrectCount(score.results);
     });
     
     // Convert to array và tính accuracy

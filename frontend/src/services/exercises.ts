@@ -27,7 +27,7 @@ export class ExerciseService {
   // Lấy tất cả bài tập
   async getAll(): Promise<Exercise[]> {
     try {
-      const response = await apiClient.get<ExercisesResponse>('/exercises/');
+      const response = await apiClient.get<ExercisesResponse>('/exercises/', true);
       return response.data.exercises;
     } catch (error) {
       if (error instanceof ApiError) {
@@ -40,7 +40,7 @@ export class ExerciseService {
   // Lấy bài tập theo ID
   async getById(id: number): Promise<Exercise> {
     try {
-      const response = await apiClient.get<ExerciseResponse>(`/exercises/${id}`);
+      const response = await apiClient.get<ExerciseResponse>(`/exercises/${id}`, true);
       return response.data;
     } catch (error) {
       if (error instanceof ApiError) {
@@ -116,7 +116,7 @@ export class ExerciseService {
   // Validate code của user
   async validateCode(request: ExerciseValidationRequest): Promise<ExerciseValidationResponse> {
     try {
-      return await apiClient.post<ExerciseValidationResponse>('/exercises/validate_code', request);
+      return await apiClient.post<ExerciseValidationResponse>('/exercises/validate_code', request, true);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;

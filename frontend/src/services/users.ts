@@ -26,7 +26,7 @@ export class UserService {
   // Lấy tất cả người dùng
   async getAll(): Promise<User[]> {
     try {
-      const response = await apiClient.get<UsersResponse>('/users/');
+      const response = await apiClient.get<UsersResponse>('/users/', true);
       return response.data.users;
     } catch (error) {
       if (error instanceof ApiError) {
@@ -39,7 +39,7 @@ export class UserService {
   // Lấy người dùng theo ID
   async getById(userId: number): Promise<User> {
     try {
-      const response = await apiClient.get<UserResponse>(`/users/${userId}`);
+      const response = await apiClient.get<UserResponse>(`/users/${userId}`, true);
       return response.data;
     } catch (error) {
       if (error instanceof ApiError) {

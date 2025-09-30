@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  auth-db:
+    image: postgres:15-alpine
+    container_name: auth_postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - auth_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build: .
+    container_name: auth_service
+    environment:
+      - FLASK_ENV=development
+      - SECRET_KEY=your-secret-key-change-in-production
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=auth-db
+      - DB_PORT=5432
+      - DB_NAME=auth_db
+    ports:
+      - "5001:5001"
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - auth_network
+    restart: unless-stopped
+
+volumes:
+  auth_db_data:
+
+networks:
+  auth_network:
+    driver: bridge

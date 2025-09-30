@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 import {
   Box,
   Heading,
@@ -25,25 +25,32 @@ import {
   SimpleGrid,
   CircularProgress,
   CircularProgressLabel,
-} from '@chakra-ui/react';
-import { 
-  useUserScores, 
+} from "@chakra-ui/react";
+import {
+  useUserScores,
   useUserStatistics,
-} from '../../hooks/queries/useScoreQueries';
-import { useExercises } from '../../hooks/queries/useExerciseQueries';
-import LoadingSpinner from '../../components/common/LoadingSpinner';
-import QueryErrorBoundary from '../../components/common/QueryErrorBoundary';
-import ProgressSummary from '../../components/dashboard/ProgressSummary';
-import ScoreProgressBar from '../../components/dashboard/ScoreProgressBar';
-import { FiTrendingUp, FiTarget, FiAward, FiActivity } from 'react-icons/fi';
+} from "../../hooks/queries/useScoreQueries";
+import { useExercises } from "../../hooks/queries/useExerciseQueries";
+import {
+  getCorrectAnswersCount,
+  getResultsCount,
+  calculateAccuracy,
+  mapResults,
+} from "../../utils/scoreUtils";
+import LoadingSpinner from "../../components/common/LoadingSpinner";
+import QueryErrorBoundary from "../../components/common/QueryErrorBoundary";
+import ProgressSummary from "../../components/dashboard/ProgressSummary";
+import ScoreProgressBar from "../../components/dashboard/ScoreProgressBar";
+import { FiTrendingUp, FiTarget, FiAward, FiActivity } from "react-icons/fi";
 
 const ScoreHistory: React.FC = () => {
   const { data: scores, isLoading, error, refetch } = useUserScores();
   const { statistics, isLoading: statsLoading } = useUserStatistics();
   const { data: exercises } = useExercises();
 
-  const cardBg = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const cardBg = useColorModeValue("white", "gray.800");
+  const borderColor = useColorModeValue("gray.200", "gray.600");
+  const recentActivityBg = useColorModeValue("gray.50", "gray.700");
 
   if (isLoading || statsLoading) {
     return <LoadingSpinner message="Đang tải lịch sử điểm số..." />;
@@ -55,25 +62,27 @@ const ScoreHistory: React.FC = () => {
 
   // Helper function để lấy tên exercise
   const getExerciseTitle = (exerciseId: number) => {
-    const exercise = exercises?.find(ex => ex.id === exerciseId);
+    const exercise = exercises?.find((ex) => ex.id === exerciseId);
     return exercise?.title || `Bài tập #${exerciseId}`;
   };
 
   // Helper function để format difficulty
   const getDifficultyLabel = (difficulty: number) => {
     switch (difficulty) {
-      case 0: return { label: 'Dễ', color: 'green' };
-      case 1: return { label: 'Trung bình', color: 'yellow' };
-      case 2: return { label: 'Khó', color: 'red' };
-      default: return { label: 'Không xác định', color: 'gray' };
+      case 0:
+        return { label: "Dễ", color: "green" };
+      case 1:
+        return { label: "Trung bình", color: "yellow" };
+      case 2:
+        return { label: "Khó", color: "red" };
+      default:
+        return { label: "Không xác định", color: "gray" };
     }
   };
 
   // Helper function để tính accuracy của một score
-  const getScoreAccuracy = (score: any) => {
-    if (!score.results || score.results.length === 0) return 0;
-    const correct = score.results.filter((r: boolean) => r === true).length;
-    return Math.round((correct / score.results.length) * 100);
+  const getScoreAccuracy = (score: { results: unknown }) => {
+    return Math.round(calculateAccuracy(score.results));
   };
 
   return (
@@ -119,7 +128,11 @@ const ScoreHistory: React.FC = () => {
                 </StatLabel>
                 <StatNumber>{statistics.successRate}%</StatNumber>
                 <StatHelpText>
-                  <StatArrow type={statistics.successRate >= 70 ? 'increase' : 'decrease'} />
+                  <StatArrow
+                    type={
+                      statistics.successRate >= 70 ? "increase" : "decrease"
+                    }
+                  />
                   Độ chính xác test cases: {statistics.testCaseAccuracy}%
                 </StatHelpText>
               </Stat>
@@ -153,19 +166,19 @@ const ScoreHistory: React.FC = () => {
                   </Flex>
                 </StatLabel>
                 <StatNumber>
-                  <CircularProgress 
-                    value={statistics.successRate} 
-                    size="60px" 
-                    color={statistics.successRate >= 70 ? 'green.400' : 'orange.400'}
+                  <CircularProgress
+                    value={statistics.successRate}
+                    size="60px"
+                    color={
+                      statistics.successRate >= 70 ? "green.400" : "orange.400"
+                    }
                   >
                     <CircularProgressLabel fontSize="sm">
                       {Math.round(statistics.successRate)}%
                     </CircularProgressLabel>
                   </CircularProgress>
                 </StatNumber>
-                <StatHelpText>
-                  Tổng thể
-                </StatHelpText>
+                <StatHelpText>Tổng thể</StatHelpText>
               </Stat>
             </CardBody>
           </Card>
@@ -173,14 +186,11 @@ const ScoreHistory: React.FC = () => {
       )}
 
       {/* Progress Summary */}
-      <ProgressSummary 
-        title="Tổng Quan Tiến Độ 7 Ngày"
-        days={7}
-      />
+      <ProgressSummary title="Tổng Quan Tiến Độ 7 Ngày" days={7} />
 
       {/* Progress Bar Visualization */}
       {statistics && (
-        <ScoreProgressBar 
+        <ScoreProgressBar
           progress={{
             totalAttempts: statistics.totalAttempts,
             correctAnswers: statistics.correctAnswers,
@@ -199,7 +209,9 @@ const ScoreHistory: React.FC = () => {
       {/* Score History Table */}
       <Card bg={cardBg} borderColor={borderColor}>
         <CardBody>
-          <Heading size="md" mb={4}>Lịch sử chi tiết</Heading>
+          <Heading size="md" mb={4}>
+            Lịch sử chi tiết
+          </Heading>
           {scores && scores.length > 0 ? (
             <TableContainer>
               <Table variant="simple" size="sm">
@@ -213,11 +225,16 @@ const ScoreHistory: React.FC = () => {
                   </Tr>
                 </Thead>
                 <Tbody>
-                  {scores.slice(0, 20).map((score) => { // Hiển thị 20 kết quả gần nhất
-                    const exercise = exercises?.find(ex => ex.id === score.exercise_id);
+                  {scores.slice(0, 20).map((score) => {
+                    // Hiển thị 20 kết quả gần nhất
+                    const exercise = exercises?.find(
+                      (ex) => ex.id === score.exercise_id
+                    );
                     const accuracy = getScoreAccuracy(score);
-                    const difficulty = getDifficultyLabel(exercise?.difficulty || 0);
-                    
+                    const difficulty = getDifficultyLabel(
+                      exercise?.difficulty || 0
+                    );
+
                     return (
                       <Tr key={score.id}>
                         <Td>
@@ -231,32 +248,52 @@ const ScoreHistory: React.FC = () => {
                           </Box>
                         </Td>
                         <Td>
-                          <Badge 
-                            colorScheme={score.all_correct ? 'green' : accuracy > 0 ? 'yellow' : 'red'}
+                          <Badge
+                            colorScheme={
+                              score.all_correct
+                                ? "green"
+                                : accuracy > 0
+                                ? "yellow"
+                                : "red"
+                            }
                             variant="subtle"
                           >
-                            {score.all_correct ? 'Hoàn thành' : accuracy > 0 ? 'Một phần' : 'Chưa đúng'}
+                            {score.all_correct
+                              ? "Hoàn thành"
+                              : accuracy > 0
+                              ? "Một phần"
+                              : "Chưa đúng"}
                           </Badge>
                         </Td>
                         <Td>
-                          <Text fontWeight="bold" color={accuracy >= 70 ? 'green.500' : accuracy > 0 ? 'yellow.500' : 'red.500'}>
+                          <Text
+                            fontWeight="bold"
+                            color={
+                              accuracy >= 70
+                                ? "green.500"
+                                : accuracy > 0
+                                ? "yellow.500"
+                                : "red.500"
+                            }
+                          >
                             {accuracy}%
                           </Text>
                         </Td>
                         <Td>
                           <Text fontSize="sm">
-                            {score.results ? score.results.filter(r => r === true).length : 0}/{score.results ? score.results.length : 0}
+                            {getCorrectAnswersCount(score.results)}/
+                            {getResultsCount(score.results)}
                           </Text>
                         </Td>
                         <Td>
                           <Flex gap={1}>
-                            {score.results && score.results.map((result, index) => (
+                            {mapResults(score.results, (result, index) => (
                               <Box
                                 key={index}
                                 w="8px"
                                 h="8px"
                                 borderRadius="full"
-                                bg={result ? 'green.400' : 'red.400'}
+                                bg={result ? "green.400" : "red.400"}
                               />
                             ))}
                           </Flex>
@@ -281,25 +318,39 @@ const ScoreHistory: React.FC = () => {
       {statistics?.recentActivity && statistics.recentActivity.length > 0 && (
         <Card bg={cardBg} borderColor={borderColor}>
           <CardBody>
-            <Heading size="md" mb={4}>Hoạt động gần đây</Heading>
+            <Heading size="md" mb={4}>
+              Hoạt động gần đây
+            </Heading>
             <Stack gap={3}>
               {statistics.recentActivity.slice(0, 5).map((score) => {
                 const accuracy = getScoreAccuracy(score);
-                
+
                 return (
-                  <Box key={score.id} p={3} borderRadius="md" bg={useColorModeValue('gray.50', 'gray.700')}>
+                  <Box
+                    key={score.id}
+                    p={3}
+                    borderRadius="md"
+                    bg={recentActivityBg}
+                  >
                     <Flex justify="space-between" align="center">
                       <Box>
                         <Text fontWeight="medium">
                           {getExerciseTitle(score.exercise_id)}
                         </Text>
                         <Text fontSize="sm" color="text.secondary">
-                          {score.results ? score.results.filter(r => r === true).length : 0}/{score.results ? score.results.length : 0} test cases đúng
+                          {getCorrectAnswersCount(score.results)}/
+                          {getResultsCount(score.results)} test cases đúng
                         </Text>
                       </Box>
                       <Box textAlign="right">
-                        <Badge 
-                          colorScheme={score.all_correct ? 'green' : accuracy > 0 ? 'yellow' : 'red'}
+                        <Badge
+                          colorScheme={
+                            score.all_correct
+                              ? "green"
+                              : accuracy > 0
+                              ? "yellow"
+                              : "red"
+                          }
                           mb={1}
                         >
                           {accuracy}%

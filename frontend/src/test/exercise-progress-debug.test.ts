@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { hasCorrectAnswers } from '../utils/scoreUtils';
 
 describe('Exercise Progress Debug', () => {
   it('should correctly identify completed exercises', () => {
@@ -129,7 +130,7 @@ describe('Exercise Progress Debug', () => {
     const isAttempted = progress.isAttempted;
     const hasPartialSuccess = isAttempted && progress.bestScore && 
       !progress.bestScore.all_correct && 
-      progress.bestScore.results.some(r => r === true);
+      hasCorrectAnswers(progress.bestScore);
 
     expect(isCompleted).toBe(false);
     expect(isAttempted).toBe(true);
@@ -226,7 +227,7 @@ describe('Exercise Progress Debug', () => {
       status = 'Hoàn thành';
     } else if (isAttempted && progress.bestScore) {
       const hasPartialSuccess = !progress.bestScore.all_correct && 
-        progress.bestScore.results.some(r => r === true);
+        hasCorrectAnswers(progress.bestScore);
       
       if (hasPartialSuccess) {
         status = 'Một phần đúng';

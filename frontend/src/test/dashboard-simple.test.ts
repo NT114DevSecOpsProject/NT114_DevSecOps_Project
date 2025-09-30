@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { filterResults } from '../utils/scoreUtils';
 
 describe('Dashboard Components - Simple Tests', () => {
   it('should pass basic test', () => {
@@ -34,7 +35,7 @@ describe('Dashboard Components - Simple Tests', () => {
       sum + (score.results ? score.results.length : 0), 0
     );
     const correctTestCases = mockScores.reduce((sum, score) => 
-      sum + (score.results ? score.results.filter(r => r === true).length : 0), 0
+      sum + (score.results ? filterResults(score.results, (r: unknown) => r === true).length : 0), 0
     );
     const testCaseAccuracy = totalTestCases > 0 ? (correctTestCases / totalTestCases) * 100 : 0;
 

@@ -44,7 +44,18 @@ class ApiClient {
       const token = this.getAuthToken();
       if (token) {
         headers.Authorization = `Bearer ${token}`;
+        // Debug log in development
+        if (import.meta.env.DEV) {
+          console.log('🔐 API Request with auth token:', `${token.substring(0, 20)}...`);
+        }
+      } else {
+        console.warn('⚠️ API Request requires auth but no token found');
       }
+    }
+
+    // Debug log in development
+    if (import.meta.env.DEV) {
+      console.log('📡 API Headers:', headers);
     }
 
     return headers;
