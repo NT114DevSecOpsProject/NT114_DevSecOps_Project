@@ -1,10 +1,10 @@
 name: EKS Terraform Deployment
 on:
- # push:
-    #branches:
-    #  - main
-   # paths:
-     # - 'terraform/eks_nodegroup/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/eks_nodegroup/**'
   pull_request:
     branches:
       - main
