@@ -2,39 +2,47 @@ name: SonarQube Analysis
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
 
 jobs:
   sonar:
-    runs-on: ubuntu-latest
+    name: SonarQube Scan
+    # BẮT BUỘC: cho job chạy trên self-hosted runner của bạn
+    runs-on: [ self-hosted, linux ]
+
+    env:
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}   # set trong repo secrets
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Print runner info (debug)
+        run: |
+          echo "RUNNER: $(hostname)"; uname -a
+          echo "Checking access to Sonar at $SONAR_HOST_URL"
+          curl -v --max-time 10 $SONAR_HOST_URL/api/server/version || true
+
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Sonar Scanner
+      - name: Download Sonar Scanner
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-          unzip sonar-scanner.zip -d $HOME
-          export PATH="$HOME/sonar-scanner-5.0.1.3006-linux/bin:$PATH"
-          echo "$HOME/sonar-scanner-5.0.1.3006-linux/bin" >> $GITHUB_PATH
+          mkdir -p $HOME/sonar-scanner
+          curl -sSLo $HOME/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+          unzip -q $HOME/sonar-scanner.zip -d $HOME/sonar-scanner
 
-      - name: Run SonarQube scan
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Run SonarQube Scanner
         run: |
-          sonar-scanner \
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
             -Dsonar.projectKey=nt114-project \
             -Dsonar.sources=. \
-            -Dsonar.host.url=http://127.0.0.1:9000 \
-            -Dsonar.login=$SONAR_TOKEN
-#test
+            -Dsonar.host.url=${SONAR_HOST_URL} \
+            -Dsonar.login=${SONAR_TOKEN}
+
