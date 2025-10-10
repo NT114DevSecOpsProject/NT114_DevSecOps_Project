@@ -1,43 +1,41 @@
 name: SonarQube Analysis
-
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
-
+    branches:
+      - main
 jobs:
   sonar:
     name: SonarQube Scan
     # BẮT BUỘC: cho job chạy trên self-hosted runner của bạn
-    runs-on: [ self-hosted, linux ]
-
+    runs-on:
+      - self-hosted
+      - linux
     env:
-      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}   # set trong repo secrets
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }} # set trong repo secrets
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Print runner info (debug)
         run: |
           echo "RUNNER: $(hostname)"; uname -a
           echo "Checking access to Sonar at $SONAR_HOST_URL"
           curl -v --max-time 10 $SONAR_HOST_URL/api/server/version || true
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
-
+          java-version: "17"
+          distribution: temurin
+      - name: Remove old sonar-scanner folder if exists
+        run: rm -rf $HOME/sonar-scanner
       - name: Download Sonar Scanner
         run: |
           mkdir -p $HOME/sonar-scanner
           curl -sSLo $HOME/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
           unzip -q $HOME/sonar-scanner.zip -d $HOME/sonar-scanner
-
       - name: Run SonarQube Scanner
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
