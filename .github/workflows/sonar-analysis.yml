@@ -1,4 +1,4 @@
-name: SonarQube Analysis
+name: SonarQube Analysis (frontend only)
 on:
   push:
     branches:
