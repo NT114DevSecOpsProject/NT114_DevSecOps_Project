@@ -1,0 +1,6 @@
+projectKey=nt114-project
+serverUrl=http://127.0.0.1:9000
+serverVersion=25.10.0.114319
+dashboardUrl=http://127.0.0.1:9000/dashboard?id=nt114-project
+ceTaskId=9a1f5eda-1e2f-4cf7-9fc1-4af6f49c418c
+ceTaskUrl=http://127.0.0.1:9000/api/ce/task?id=9a1f5eda-1e2f-4cf7-9fc1-4af6f49c418c

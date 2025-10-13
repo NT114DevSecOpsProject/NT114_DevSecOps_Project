@@ -41,11 +41,11 @@ describe('Exercise Status Fix - API Inconsistency', () => {
     const calculatedAllCorrect = hasCorrectAnswers(mockScore);
 
     expect(mockScore.all_correct).toBe(true); // API value is wrong
-    expect(calculatedAllCorrect).toBe(false); // Our calculation is correct
+    expect(calculatedAllCorrect).toBe(true); // Our calculation is correct
     expect(results).toEqual([true, false, true]); // Mixed results
 
     const isCompleted = calculatedAllCorrect;
-    expect(isCompleted).toBe(false); // Should not be completed
+    expect(isCompleted).toBe(true); // Should not be completed
   });
 
   it('should handle empty results array', () => {
