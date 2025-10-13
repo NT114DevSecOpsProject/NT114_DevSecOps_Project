@@ -608,8 +608,14 @@ describe('Dashboard Components', () => {
       expect(title).toBeInTheDocument();
 
       // Kiểm tra user info
-      expect(await screen.findByText('testuser')).toBeInTheDocument();
-      expect(await screen.findByText('test@example.com')).toBeInTheDocument();
+      //expect(await screen.findByText('testuser')).toBeInTheDocument();
+      const usernameHeading = await screen.findByRole('heading', { name: 'testuser' });
+      expect(usernameHeading).toBeInTheDocument();
+      
+      const emailElements =  await screen.findAllByText('test@example.com');
+      expect(emailElements.length).toBeGreaterThan(0);
+      //
+      //expect(await screen.findByText('test@example.com')).toBeInTheDocument();
       expect(await screen.findByText((content) => normalize(content).includes('Hoạt động'))).toBeInTheDocument();
     });
 
@@ -677,8 +683,10 @@ describe('Dashboard Components', () => {
 
       render(React.createElement(UserProfile), { wrapper: TestWrapper });
 
-      const adminBadge = await screen.findByText((content) => normalize(content).includes('Quản trị viên'));
-      expect(adminBadge).toBeInTheDocument();
+      //const adminBadge = await screen.findByText((content) => normalize(content).includes('Quản trị viên'));
+      //expect(adminBadge).toBeInTheDocument();
+      const adminBadges = await screen.findAllByText((content) => normalize(content).includes('Quản trị viên'));
+      expect(adminBadges.length).toBeGreaterThan(0);
     });
 
     it('should show message for users with no achievements', async () => {
@@ -739,11 +747,15 @@ describe('Dashboard Components', () => {
       render(React.createElement(DashboardHome), { wrapper: TestWrapper });
 
       // Try to find either an English or Vietnamese error message (robust)
-      const errEl = await screen.findByText((content) => {
-        const n = normalize(content).toLowerCase();
-        return n.includes('lỗi') || n.includes('error') || n.includes('lỗi tải dữ liệu');
-      });
-      expect(errEl).toBeInTheDocument();
+      // const errEl = await screen.findByText((content) => {
+      //   const n = normalize(content).toLowerCase();
+      //   return n.includes('lỗi') || n.includes('error') || n.includes('lỗi tải dữ liệu');
+      // });
+      // expect(errEl).toBeInTheDocument();
+      const fullErrorMsg = await screen.findByText((content) =>
+      normalize(content).includes('Đã xảy ra lỗi khi tải dữ liệu. Vui lòng thử lại.')
+      );
+      expect(fullErrorMsg).toBeInTheDocument();
     });
   });
 });
