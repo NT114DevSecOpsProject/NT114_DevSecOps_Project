@@ -78,4 +78,70 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
-#tesst
+      - name: Install Exercise-Service Dependencies
+        working-directory: microservices/exercise-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Pytest and Generate Coverage for Exercise-Service
+        working-directory: microservices/exercise-service
+        run: |
+          pytest --cov=. --cov-report=xml || true
+
+      - name: Run SonarQube Scanner - EXERCISE-SERVICE
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-exercises-service \
+            -Dsonar.sources=microservices/exercise-service \
+            -Dsonar.host.url=${SONAR_HOST_URL} \
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=microservices/exercise-service/requirements.txt,microservices/exercise-service/Dockerfile,microservices/exercise-service/coverage.xml \
+            -Dsonar.python.coverage.reportPaths=microservices/exercise-service/coverage.xml
+
+      - name: Install Scores-Service Dependencies
+        working-directory: microservices/scores-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Pytest and Generate Coverage for Scores-Service
+        working-directory: microservices/scores-service
+        run: |
+          pytest --cov=. --cov-report=xml || true
+
+      - name: Run SonarQube Scanner - SCORES-SERVICE
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-scores-service \
+            -Dsonar.sources=microservices/scores-service \
+            -Dsonar.host.url=${SONAR_HOST_URL} \
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=microservices/scores-service/requirements.txt,microservices/scores-service/Dockerfile,microservices/scores-service/coverage.xml \
+            -Dsonar.python.coverage.reportPaths=microservices/scores-service/coverage.xml
+      - name: Install User-Management-Service Dependencies
+        working-directory: microservices/user-management-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Pytest and Generate Coverage for User-Management-Service
+        working-directory: microservices/user-management-service
+        run: |
+          pytest --cov=. --cov-report=xml || true
+
+      - name: Run SonarQube Scanner - USER-MANAGEMENT-SERVICE
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-user-service \
+            -Dsonar.sources=microservices/user-management-service \
+            -Dsonar.host.url=${SONAR_HOST_URL} \
+            -Dsonar.token=${SONAR_TOKEN} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=microservices/user-management-service/requirements.txt,microservices/user-management-service/Dockerfile,microservices/user-management-service/coverage.xml \
+            -Dsonar.python.coverage.reportPaths=microservices/user-management-service/coverage.xml
