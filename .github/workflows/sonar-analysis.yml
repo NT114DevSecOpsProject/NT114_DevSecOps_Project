@@ -70,7 +70,7 @@ jobs:
       - name: Run SonarQube Scanner - API-GATEWAY
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
-            -Dsonar.projectKey=nt114-api-gateway \
+            -Dsonar.projectKey=NT114-api-gateway \
             -Dsonar.sources=microservices/api-gateway \
             -Dsonar.host.url=${SONAR_HOST_URL} \
             -Dsonar.token=${SONAR_TOKEN} \
@@ -78,4 +78,4 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
-#test
+#tesst
