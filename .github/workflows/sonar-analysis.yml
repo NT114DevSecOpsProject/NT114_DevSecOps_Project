@@ -85,7 +85,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Pytest and Generate Coverage for Exercise-Service
-        working-directory: microservices/exercise-service
+        working-directory: microservices/exercises-service
         run: |
           pytest --cov=. --cov-report=xml || true
 
