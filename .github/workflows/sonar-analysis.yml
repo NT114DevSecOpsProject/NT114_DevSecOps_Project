@@ -48,7 +48,7 @@ jobs:
             -Dsonar.projectKey=nt114-project \
             -Dsonar.sources=. \
             -Dsonar.host.url=${SONAR_HOST_URL} \
-            -Dsonar.login=${SONAR_TOKEN}
+            -Dsonar.login=${SONAR_TOKEN} \
             -Dsonar.language=js \
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=frontend/node_modules/**,frontend/dist/**,frontend/coverage/** \
@@ -73,7 +73,7 @@ jobs:
             -Dsonar.projectKey=nt114-api-gateway \
             -Dsonar.sources=./api-gateway \
             -Dsonar.host.url=${SONAR_HOST_URL} \
-            -Dsonar.login=${SONAR_TOKEN}
+            -Dsonar.login=${SONAR_TOKEN} \
             -Dsonar.language=py \
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
