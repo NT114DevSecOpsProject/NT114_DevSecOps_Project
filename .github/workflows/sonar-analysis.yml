@@ -1,4 +1,4 @@
-name: SonarQube Analysis (frontend only)
+name: SonarQube Analysis (frontend and api-gateway)
 on:
   push:
     branches:
@@ -36,11 +36,46 @@ jobs:
           mkdir -p $HOME/sonar-scanner
           curl -sSLo $HOME/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
           unzip -q $HOME/sonar-scanner.zip -d $HOME/sonar-scanner
-      - name: Run SonarQube Scanner
+      - name: Setup Node and Install Frontend Dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "yarn"
+      - name: Run SonarQube Scanner - FRONTEND
+        working-directory: ./frontend
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
             -Dsonar.projectKey=nt114-project \
             -Dsonar.sources=. \
             -Dsonar.host.url=${SONAR_HOST_URL} \
             -Dsonar.login=${SONAR_TOKEN}
+            -Dsonar.language=js \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=frontend/node_modules/**,frontend/dist/**,frontend/coverage/** \
+            -Dsonar.tests=frontend/src/test \
+            -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+      - name: Install API-GATEWAY Dependencies
+        working-directory: ./api-gateway
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run Pytest and Generate Coverage for API-GATEWAY
+        working-directory: microservices/api-gateway
+        run: |
+          pytest --cov=. --cov-report=xml || true
+      - name: Run SonarQube Scanner - API-GATEWAY
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=nt114-api-gateway \
+            -Dsonar.sources=./api-gateway \
+            -Dsonar.host.url=${SONAR_HOST_URL} \
+            -Dsonar.login=${SONAR_TOKEN}
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
+            -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml 
 #test
