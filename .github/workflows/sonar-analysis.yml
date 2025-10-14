@@ -71,11 +71,10 @@ jobs:
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
             -Dsonar.projectKey=nt114-api-gateway \
-            -Dsonar.sources=./api-gateway \
+            -Dsonar.sources=microservices/api-gateway \
             -Dsonar.host.url=${SONAR_HOST_URL} \
-            -Dsonar.login=${SONAR_TOKEN} \
+            -Dsonar.token=${SONAR_TOKEN} \
             -Dsonar.language=py \
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
-            -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml 
-#test
+            -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
