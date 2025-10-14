@@ -51,7 +51,7 @@ jobs:
             -Dsonar.token=${SONAR_TOKEN} \
             -Dsonar.language=js \
             -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=frontend/node_modules/**,frontend/dist/**,frontend/coverage/** \
+            -Dsonar.exclusions=frontend/node_modules/**,frontend/dist/**,frontend/coverage/**,frontend/src/test/** \
             -Dsonar.tests=frontend/src/test \
             -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
       - name: Set up Python
