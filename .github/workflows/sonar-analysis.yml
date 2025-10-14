@@ -79,7 +79,7 @@ jobs:
             -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
       - name: Install Exercise-Service Dependencies
-        working-directory: microservices/exercise-service
+        working-directory: microservices/exercises-service
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -98,8 +98,8 @@ jobs:
             -Dsonar.token=${SONAR_TOKEN} \
             -Dsonar.language=py \
             -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=microservices/exercise-service/requirements.txt,microservices/exercise-service/Dockerfile,microservices/exercise-service/coverage.xml \
-            -Dsonar.python.coverage.reportPaths=microservices/exercise-service/coverage.xml
+            -Dsonar.exclusions=microservices/exercises-service/requirements.txt,microservices/exercises-service/Dockerfile,microservices/exercises-service/coverage.xml \
+            -Dsonar.python.coverage.reportPaths=microservices/exercises-service/coverage.xml
 
       - name: Install Scores-Service Dependencies
         working-directory: microservices/scores-service
