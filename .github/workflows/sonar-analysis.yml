@@ -1,4 +1,4 @@
-name: SonarQube Analysis (frontend and api-gateway)
+name: SonarQube Analysis (frontend and microservices)
 on:
   push:
     branches:
@@ -9,12 +9,11 @@ on:
 jobs:
   sonar:
     name: SonarQube Scan
-    # BẮT BUỘC: cho job chạy trên self-hosted runner của bạn
     runs-on:
       - self-hosted
       - linux
     env:
-      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }} # set trong repo secrets
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - name: Checkout
@@ -58,6 +57,10 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.x"
+      - name: Install system dependencies for PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
       - name: Install API-GATEWAY Dependencies
         working-directory: microservices/api-gateway
         run: |
@@ -78,18 +81,16 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
-      - name: Install Exercise-Service Dependencies
+      - name: Install Exercises-Service Dependencies
         working-directory: microservices/exercises-service
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Run Pytest and Generate Coverage for Exercise-Service
+      - name: Run Pytest and Generate Coverage for Exercises-Service
         working-directory: microservices/exercises-service
         run: |
           pytest --cov=. --cov-report=xml || true
-
-      - name: Run SonarQube Scanner - EXERCISE-SERVICE
+      - name: Run SonarQube Scanner - EXERCISES-SERVICE
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
             -Dsonar.projectKey=NT114-exercises-service \
@@ -100,18 +101,15 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/exercises-service/requirements.txt,microservices/exercises-service/Dockerfile,microservices/exercises-service/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/exercises-service/coverage.xml
-
       - name: Install Scores-Service Dependencies
         working-directory: microservices/scores-service
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
       - name: Run Pytest and Generate Coverage for Scores-Service
         working-directory: microservices/scores-service
         run: |
           pytest --cov=. --cov-report=xml || true
-
       - name: Run SonarQube Scanner - SCORES-SERVICE
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
@@ -128,12 +126,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
       - name: Run Pytest and Generate Coverage for User-Management-Service
         working-directory: microservices/user-management-service
         run: |
           pytest --cov=. --cov-report=xml || true
-
       - name: Run SonarQube Scanner - USER-MANAGEMENT-SERVICE
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
