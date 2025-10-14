@@ -46,9 +46,9 @@ jobs:
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
             -Dsonar.projectKey=nt114-project \
-            -Dsonar.sources=. \
+            -Dsonar.sources=frontend/src \
             -Dsonar.host.url=${SONAR_HOST_URL} \
-            -Dsonar.login=${SONAR_TOKEN} \
+            -Dsonar.token=${SONAR_TOKEN} \
             -Dsonar.language=js \
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=frontend/node_modules/**,frontend/dist/**,frontend/coverage/** \
