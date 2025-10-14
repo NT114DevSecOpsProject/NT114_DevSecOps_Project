@@ -93,7 +93,7 @@ jobs:
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
             -Dsonar.projectKey=NT114-exercises-service \
-            -Dsonar.sources=microservices/exercise-service \
+            -Dsonar.sources=microservices/exercises-service \
             -Dsonar.host.url=${SONAR_HOST_URL} \
             -Dsonar.token=${SONAR_TOKEN} \
             -Dsonar.language=py \
