@@ -1,0 +1,12 @@
+apiVersion: v2
+name: scores-service
+description: A Helm chart for Scores microservice
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - scores
+  - microservice
+  - nodejs
+maintainers:
+  - name: NT114 DevSecOps Team
