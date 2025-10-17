@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(for service in user-management-service exercises-service scores-service)",
+      "Bash(do for template in deployment.yaml service.yaml serviceaccount.yaml hpa.yaml _helpers.tpl)",
+      "Bash(do cp \"helm/api-gateway/templates/$template\" \"helm/$service/templates/\")",
+      "Bash(done)",
+      "Bash(chmod:*)",
+      "Bash(find:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
