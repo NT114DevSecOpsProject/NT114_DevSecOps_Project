@@ -18,6 +18,9 @@ module "eks" {
   enable_cluster_creator_admin_permissions = var.enable_cluster_creator_admin_permissions
   enable_irsa                              = var.enable_irsa
 
+  # Explicitly set the cluster service IPv4 CIDR
+  cluster_service_ipv4_cidr = "172.20.0.0/16"
+
   vpc_id                   = var.vpc_id
   subnet_ids               = var.subnet_ids
   control_plane_subnet_ids = var.control_plane_subnet_ids
