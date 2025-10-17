@@ -196,9 +196,9 @@ variable "resolve_conflicts_on_update" {
 
 # ALB Controller Variables
 variable "enable_alb_controller" {
-  description = "Enable AWS Load Balancer Controller"
+  description = "Enable AWS Load Balancer Controller (set to false for first apply, then true)"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "enable_ebs_csi_controller" {

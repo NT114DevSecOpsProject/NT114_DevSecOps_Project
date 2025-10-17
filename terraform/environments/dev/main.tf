@@ -55,10 +55,11 @@ module "eks_cluster" {
 module "eks_nodegroup" {
   source = "../../modules/eks-nodegroup"
 
-  node_group_name = var.node_group_name
-  cluster_name    = module.eks_cluster.cluster_name
-  cluster_version = var.cluster_version
-  subnet_ids      = module.vpc.private_subnets
+  node_group_name      = var.node_group_name
+  cluster_name         = module.eks_cluster.cluster_name
+  cluster_version      = var.cluster_version
+  cluster_service_cidr = "172.20.0.0/16"
+  subnet_ids           = module.vpc.private_subnets
 
   min_size     = var.node_min_size
   max_size     = var.node_max_size
@@ -103,8 +104,6 @@ module "alb_controller" {
   helm_chart_version     = var.helm_chart_version
   service_account_name   = var.service_account_name
   additional_helm_values = var.additional_helm_values
-
-  depends_on = [module.eks_nodegroup]
 }
 
 # IAM Access Control Module

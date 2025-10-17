@@ -53,3 +53,8 @@ output "cluster_status" {
   description = "The status of the EKS cluster"
   value       = module.eks.cluster_status
 }
+
+output "cluster_service_cidr" {
+  description = "The CIDR block for Kubernetes services"
+  value       = try(module.eks.cluster_service_ipv4_cidr, null)
+}

@@ -13,6 +13,12 @@ variable "cluster_version" {
   type        = string
 }
 
+variable "cluster_service_cidr" {
+  description = "The CIDR block for Kubernetes services (required by node group module)"
+  type        = string
+  default     = null
+}
+
 variable "subnet_ids" {
   description = "List of subnet IDs for the node group"
   type        = list(string)
