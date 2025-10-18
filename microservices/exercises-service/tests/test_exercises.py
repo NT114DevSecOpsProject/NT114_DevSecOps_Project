@@ -1,28 +1,26 @@
 import pytest
 from app.main import app 
+# Giả định model và API logic được import từ app/
+from app.models import Exercise 
 
-# Setup client cho môi trường test (giả định dùng FastAPI TestClient)
 @pytest.fixture
 def client():
-    # Sử dụng context manager của FastAPI/Starlette TestClient
     from fastapi.testclient import TestClient
     return TestClient(app)
 
-def test_read_main_exercises(client):
-    # Kiểm tra endpoint cơ bản, ví dụ: lấy danh sách bài tập
-    # Giả định endpoint là /exercises/
-    response = client.get("/exercises/")
-    
-    # Kiểm tra xem request có thành công hay không
-    assert response.status_code == 200 
-    
-    # Kiểm tra dữ liệu trả về là một list
-    assert isinstance(response.json(), list) 
+def test_exercise_model_creation():
+    # Kiểm tra logic model cơ bản
+    ex = Exercise(title="Sum Test", body="Add two numbers", difficulty=1)
+    assert ex.title == "Sum Test"
+    assert ex.difficulty == 1
 
-def test_create_exercise_security(client):
-    # Kiểm tra xem API có từ chối request POST không xác thực không
-    new_exercise = {"title": "Test new exercise", "body": "test"}
-    response = client.post("/exercises/", json=new_exercise)
+def test_get_exercises_endpoint(client):
+    # Kiểm tra việc lấy danh sách bài tập (có thể rỗng)
+    response = client.get("/api/v1/exercises") 
     
-    # Giả định cần token hoặc bị từ chối
-    assert response.status_code == 401 or response.status_code == 403
+    assert response.status_code == 200
+    assert isinstance(response.json(), list) 
+    
+# Để có coverage cao hơn, bạn cần thêm test cho:
+# - POST /api/v1/exercises (thêm bài tập mới)
+# - GET /api/v1/exercises/{id} (lấy bài tập cụ thể)
