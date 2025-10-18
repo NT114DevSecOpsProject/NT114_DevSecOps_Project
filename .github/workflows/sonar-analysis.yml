@@ -89,7 +89,7 @@ jobs:
       - name: Run Pytest and Generate Coverage for Exercises-Service
         working-directory: microservices/exercises-service
         run: |
-          python -m pytest --cov=. --cov-report=xml || true
+          python -m pytest --cov=app --cov-report=xml || true
       - name: Run SonarQube Scanner - EXERCISES-SERVICE
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
@@ -109,7 +109,7 @@ jobs:
       - name: Run Pytest and Generate Coverage for Scores-Service
         working-directory: microservices/scores-service
         run: |
-          python -m pytest --cov=. --cov-report=xml || true
+          python -m pytest --cov=app --cov-report=xml || true
       - name: Run SonarQube Scanner - SCORES-SERVICE
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
@@ -129,7 +129,7 @@ jobs:
       - name: Run Pytest and Generate Coverage for User-Management-Service
         working-directory: microservices/user-management-service
         run: |
-          python -m pytest --cov=. --cov-report=xml || true
+          python -m pytest --cov=app --cov-report=xml || true
       - name: Run SonarQube Scanner - USER-MANAGEMENT-SERVICE
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
