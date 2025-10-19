@@ -1,0 +1,52 @@
+replicaCount: 1
+
+image:
+  repository: scores-service
+  pullPolicy: Never
+  tag: "local"
+
+imagePullSecrets: []
+
+service:
+  type: ClusterIP
+  port: 8083
+  targetPort: 5003
+
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+
+env:
+  - name: NODE_ENV
+    value: "development"
+  - name: PORT
+    value: "8083"
+  - name: FLASK_ENV
+    value: "development"
+  - name: DB_USER
+    value: "postgres"
+  - name: DB_PASSWORD
+    value: "postgres"
+  - name: DB_HOST
+    value: "scores-db"
+  - name: DB_PORT
+    value: "5432"
+  - name: DB_NAME
+    value: "scores_db"
+
+podSecurityContext: {}
+
+securityContext: {}
+
+livenessProbe: {}
+readinessProbe: {}

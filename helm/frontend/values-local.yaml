@@ -1,0 +1,56 @@
+replicaCount: 1
+
+image:
+  repository: frontend
+  pullPolicy: Never  # Never pull from registry, use local image
+  tag: "local"
+
+imagePullSecrets: []
+
+service:
+  type: NodePort  # Changed from ClusterIP for local access
+  port: 80
+  targetPort: 80
+  nodePort: 30080  # Access at localhost:30080
+
+ingress:
+  enabled: false  # Disable ingress for local (no ALB controller)
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false  # Disable autoscaling for local
+
+env:
+  - name: NODE_ENV
+    value: "development"
+  - name: API_GATEWAY_URL
+    value: "http://api-gateway:8080"
+
+podSecurityContext: {}
+
+securityContext: {}
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 80
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 80
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
