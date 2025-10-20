@@ -188,6 +188,14 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Destroy Existing Resources (if any)
+        run: |
+          terraform destroy -auto-approve || echo "No existing resources to destroy"
+        continue-on-error: true
+
+      - name: Terraform Init (after destroy)
+        run: terraform init -reconfigure
+
       - name: Download Terraform Plan
         uses: actions/download-artifact@v4
         with:
