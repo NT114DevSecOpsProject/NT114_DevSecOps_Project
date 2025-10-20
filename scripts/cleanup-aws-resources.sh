@@ -1,5 +1,6 @@
 #!/bin/bash
-set -e
+# Don't exit on error - continue trying to delete everything
+set +e
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 
@@ -47,7 +48,8 @@ cleanup_eks_clusters() {
 cleanup_vpcs() {
     echo ""
     echo "📋 Checking for VPCs..."
-    VPCS=$(aws ec2 describe-vpcs --region $AWS_REGION --filters "Name=tag:Terraform,Values=true" --query 'Vpcs[].VpcId' --output text 2>/dev/null || echo "")
+    # Get ALL VPCs except default
+    VPCS=$(aws ec2 describe-vpcs --region $AWS_REGION --query 'Vpcs[?IsDefault==`false`].VpcId' --output text 2>/dev/null || echo "")
 
     if [ -n "$VPCS" ]; then
         for VPC in $VPCS; do
