@@ -57,8 +57,8 @@ jobs:
 
       - name: Cleanup All AWS Resources via AWS CLI
         run: |
-          chmod +x ../../scripts/cleanup-aws-resources.sh
-          ../../scripts/cleanup-aws-resources.sh
+          chmod +x $GITHUB_WORKSPACE/scripts/cleanup-aws-resources.sh
+          $GITHUB_WORKSPACE/scripts/cleanup-aws-resources.sh
 
       - name: Verify Cleanup
         run: |
