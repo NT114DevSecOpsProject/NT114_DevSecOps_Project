@@ -196,11 +196,8 @@ jobs:
       - name: Terraform Init (after destroy)
         run: terraform init -reconfigure
 
-      - name: Download Terraform Plan
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-${{ github.event.inputs.environment || 'dev' }}
-          path: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
+      - name: Terraform Plan (fresh after destroy)
+        run: terraform plan -out=tfplan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
