@@ -1,119 +1,244 @@
 name: EKS Terraform Deployment
+
 on:
   push:
     branches:
       - main
     paths:
-      - 'terraform/modules/**'
-      - 'terraform/environments/dev/**'
+      - 'terraform/**'
+      - '.github/workflows/eks-terraform.yml'
   pull_request:
     branches:
       - main
     paths:
-      - 'terraform/modules/**'
-      - 'terraform/environments/dev/**'
+      - 'terraform/**'
   workflow_dispatch:
     inputs:
       action:
-        description: "Specify the Terraform action: apply or destroy"
+        description: 'Terraform action to perform'
         required: true
-        default: "apply"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+        default: 'plan'
       environment:
-        description: "Environment to deploy (dev, staging, prod)"
+        description: 'Environment to deploy'
         required: true
-        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: 'dev'
 
 env:
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_DEFAULT_REGION: us-east-1
+  AWS_REGION: us-east-1
+  TF_VERSION: '1.5.0'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
-  terraform:
+  terraform-plan:
+    name: Terraform Plan
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
 
+    outputs:
+      tfplanExitCode: ${{ steps.tf-plan.outputs.exitcode }}
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    - name: Set up Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.5.0
-        terraform_wrapper: true
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
-    - name: Initialize Terraform
-      run: terraform init
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
 
-    - name: Validate Terraform
-      run: terraform validate
+      - name: Terraform Init
+        id: init
+        run: terraform init
 
-    - name: Terraform Plan
-      id: plan
-      run: |
-        terraform plan -out=tfplan
-        terraform show -no-color tfplan > plan_output.txt
-      continue-on-error: true
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
 
-    - name: Comment PR with Plan
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const fs = require('fs');
-          const plan = fs.readFileSync('terraform/environments/${{ github.event.inputs.environment || 'dev' }}/plan_output.txt', 'utf8');
-          const output = `#### Terraform Plan for \`${{ github.event.inputs.environment || 'dev' }}\` 📝
+      - name: Terraform Plan
+        id: tf-plan
+        run: |
+          export exitcode=0
+          terraform plan -detailed-exitcode -no-color -out=tfplan || export exitcode=$?
 
-          <details><summary>Show Plan</summary>
+          echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
 
-          \`\`\`terraform
-          ${plan}
-          \`\`\`
+          if [ $exitcode -eq 1 ]; then
+            echo "Terraform Plan Failed!"
+            exit 1
+          else
+            exit 0
+          fi
 
-          </details>
+      - name: Publish Terraform Plan
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        env:
+          PLAN: "terraform\n${{ steps.tf-plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `#### Terraform Format and Style \`${{ steps.fmt.outcome }}\`
+            #### Terraform Initialization \`${{ steps.init.outcome }}\`
+            #### Terraform Validation \`${{ steps.validate.outcome }}\`
+            <details><summary>Validation Output</summary>
 
-          *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Working Directory: \`terraform/environments/${{ github.event.inputs.environment || 'dev' }}\`, Workflow: \`${{ github.workflow }}\`*`;
+            \`\`\`\n
+            ${{ steps.validate.outputs.stdout }}
+            \`\`\`
 
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: output
-          })
+            </details>
 
-    - name: Terraform Plan Status
-      if: steps.plan.outcome == 'failure'
-      run: exit 1
+            #### Terraform Plan \`${{ steps.tf-plan.outcome }}\`
 
-    - name: Execute Terraform Action
-      if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-      run: |
-        if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
-          echo "Destroying infrastructure..."
+            <details><summary>Show Plan</summary>
+
+            \`\`\`\n
+            ${process.env.PLAN}
+            \`\`\`
+
+            </details>
+
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Environment: \`${{ github.event.inputs.environment || 'dev' }}\`, Workflow: \`${{ github.workflow }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment || 'dev' }}
+          path: terraform/environments/${{ github.event.inputs.environment || 'dev' }}/tfplan
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [terraform-plan]
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
+
+    environment:
+      name: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.event.inputs.environment || 'dev' }}
+          path: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Output
+        id: tf-output
+        run: |
+          terraform output -json > terraform_outputs.json
+          echo "Terraform outputs saved"
+
+      - name: Upload Terraform Outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-outputs-${{ github.event.inputs.environment || 'dev' }}
+          path: terraform/environments/${{ github.event.inputs.environment || 'dev' }}/terraform_outputs.json
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name $(terraform output -raw cluster_name)
+          kubectl get nodes
+
+      - name: Auto Destroy Resources
+        if: success()
+        run: |
+          echo "Waiting 2 minutes before destroying resources..."
+          sleep 120
           terraform destroy -auto-approve
-        else
-          echo "Applying infrastructure changes..."
-          terraform apply -auto-approve tfplan
-        fi
 
-    - name: Terraform Output
-      if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action != 'destroy')
-      run: terraform output -json > terraform_outputs.json
+  terraform-destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    defaults:
+      run:
+        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
 
-    - name: Upload Terraform Outputs
-      if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action != 'destroy')
-      uses: actions/upload-artifact@v3
-      with:
-        name: terraform-outputs
-        path: terraform/environments/${{ github.event.inputs.environment || 'dev' }}/terraform_outputs.json
+    environment:
+      name: ${{ github.event.inputs.environment || 'dev' }}-destroy
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
