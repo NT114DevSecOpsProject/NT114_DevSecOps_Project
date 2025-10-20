@@ -70,6 +70,12 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
+      - name: Clean Terraform Cache
+        run: |
+          rm -rf .terraform
+          rm -f .terraform.lock.hcl
+          rm -f terraform.tfstate*
+
       - name: Terraform Format Check
         id: fmt
         run: terraform fmt -check -recursive
@@ -172,6 +178,12 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
+
+      - name: Clean Terraform Cache
+        run: |
+          rm -rf .terraform
+          rm -f .terraform.lock.hcl
+          rm -f terraform.tfstate*
 
       - name: Terraform Init
         run: terraform init
