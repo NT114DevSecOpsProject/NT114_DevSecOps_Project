@@ -94,16 +94,29 @@ def validate_code():
         except Exception as e:
             logger.warning(f"Code compilation failed for exercise {exercise_id}: {str(e)}")
             return jsonify({
-                "status": "fail", 
+                "status": "fail",
                 "message": f"Code compilation failed: {str(e)}!"
             }), 400
 
         for test, sol in zip(tests, solutions):
             try:
-                res = eval(test, namespace)
-                user_str = str(res)
-                user_results.append(user_str)
-                results.append(user_str == sol)
+                # Capture stdout to get print() output
+                import io
+                import sys
+                captured_output = io.StringIO()
+                old_stdout = sys.stdout
+                sys.stdout = captured_output
+
+                try:
+                    res = eval(test, namespace)
+                    output = captured_output.getvalue().strip()
+
+                    # Use output if available, otherwise use return value
+                    user_str = output if output else str(res)
+                    user_results.append(user_str)
+                    results.append(user_str == sol)
+                finally:
+                    sys.stdout = old_stdout
             except Exception as e:
                 user_results.append(f"Error: {str(e)}")
                 results.append(False)

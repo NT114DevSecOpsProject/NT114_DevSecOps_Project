@@ -30,8 +30,8 @@ autoscaling:
 env:
   - name: NODE_ENV
     value: "development"
-  - name: API_GATEWAY_URL
-    value: "http://api-gateway:8080"
+  - name: VITE_API_URL
+    value: "http://localhost:30336"
 
 podSecurityContext: {}
 

@@ -43,6 +43,8 @@ env:
     value: "5432"
   - name: DB_NAME
     value: "scores_db"
+  - name: USER_MANAGEMENT_SERVICE_URL
+    value: "http://user-management-service:8081"
 
 podSecurityContext: {}
 

@@ -1,12 +1,33 @@
 // Base API client cho CodeLand.io platform
 
-// Lấy API URL từ environment variables
-// const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-const API_BASE_URL = import.meta.env.VITE_API_URL?.startsWith('http')
-    ? import.meta.env.VITE_API_URL
-    : `http://${import.meta.env.VITE_API_URL}`;
-// TODO: for debug only
-// const API_BASE_URL = 'http://soa-alb-codeland-codeland-api-1138187373.us-east-1.elb.amazonaws.com'
+// Lấy API URL từ environment variables hoặc tự detect
+function getApiBaseUrl(): string {
+  // Try env var first
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    return envUrl.startsWith('http') ? envUrl : `http://${envUrl}`;
+  }
+
+  // Auto-detect based on current host
+  // If running on localhost:31184 (frontend NodePort), API gateway is at localhost:30336
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    // For local development with NodePort services
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:30336';
+    }
+  }
+
+  // Fallback
+  return 'http://localhost:5001';
+}
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Log for debugging
+if (import.meta.env.DEV) {
+  console.log('🌐 API Base URL:', API_BASE_URL);
+}
 
 // Custom error class cho API errors
 export class ApiError extends Error {
