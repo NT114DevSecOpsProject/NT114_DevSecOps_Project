@@ -49,13 +49,18 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      - name: Destroy All Resources
+      - name: Destroy via Terraform (if state exists)
         run: |
-          echo "🗑️ Destroying all AWS resources..."
-          terraform destroy -auto-approve || echo "Some resources may have already been deleted"
+          echo "🗑️ Attempting Terraform destroy..."
+          terraform destroy -auto-approve || echo "No Terraform state found, using AWS CLI cleanup"
         continue-on-error: true
+
+      - name: Cleanup All AWS Resources via AWS CLI
+        run: |
+          chmod +x ../../scripts/cleanup-aws-resources.sh
+          ../../scripts/cleanup-aws-resources.sh
 
       - name: Verify Cleanup
         run: |
           echo "✅ Cleanup completed!"
-          echo "All EKS resources should be deleted."
+          echo "All AWS resources have been deleted."
