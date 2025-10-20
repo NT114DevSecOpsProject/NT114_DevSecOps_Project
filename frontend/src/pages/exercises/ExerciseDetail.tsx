@@ -177,11 +177,15 @@ ${exercise.body}
         duration: 5000,
         isClosable: true,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting solution:", error);
+
+      // Handle specific validation errors
+      const errorMessage = error?.message || "Có lỗi xảy ra khi nộp bài giải. Vui lòng thử lại.";
+
       toast({
-        title: "Lỗi nộp bài",
-        description: "Có lỗi xảy ra khi nộp bài giải. Vui lòng thử lại.",
+        title: "Lỗi kiểm tra code",
+        description: errorMessage,
         status: "error",
         duration: 5000,
         isClosable: true,
