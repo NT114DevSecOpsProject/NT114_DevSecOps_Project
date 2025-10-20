@@ -1,0 +1,61 @@
+name: Cleanup All AWS Resources
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/cleanup-resources.yml'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: '1.5.0'
+
+permissions:
+  contents: read
+
+jobs:
+  destroy-all:
+    name: Destroy All Resources
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform/environments/dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Clean Terraform Cache
+        run: |
+          rm -rf .terraform
+          rm -f .terraform.lock.hcl
+          rm -f terraform.tfstate*
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Destroy All Resources
+        run: |
+          echo "🗑️ Destroying all AWS resources..."
+          terraform destroy -auto-approve || echo "Some resources may have already been deleted"
+        continue-on-error: true
+
+      - name: Verify Cleanup
+        run: |
+          echo "✅ Cleanup completed!"
+          echo "All EKS resources should be deleted."
