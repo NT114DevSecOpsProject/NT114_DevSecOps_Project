@@ -1,180 +1,253 @@
 #!/bin/bash
-# Don't exit on error - continue trying to delete everything
+# Comprehensive AWS Resource Cleanup - Delete EVERYTHING from last 5 hours
 set +e
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
+CUTOFF_TIME=$(date -u -d '5 hours ago' '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || date -u -v-5H '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || echo "")
 
-echo "🗑️ Starting AWS Resource Cleanup..."
+echo "========================================="
+echo "🗑️  AWS RESOURCE CLEANUP SCRIPT"
+echo "========================================="
 echo "Region: $AWS_REGION"
-echo "⚠️  This will delete ALL resources created in the last 5 hours"
+echo "Deleting resources created after: $CUTOFF_TIME"
 echo ""
 
-# Function to delete EKS clusters
-cleanup_eks_clusters() {
-    echo "📋 Checking for EKS clusters..."
-    CLUSTERS=$(aws eks list-clusters --region $AWS_REGION --query 'clusters[]' --output text 2>/dev/null || echo "")
+# 1. Delete EKS Node Groups & Clusters
+echo "1️⃣  Deleting EKS Clusters..."
+CLUSTERS=$(aws eks list-clusters --region $AWS_REGION --query 'clusters[]' --output text 2>/dev/null)
+for CLUSTER in $CLUSTERS; do
+    echo "  🗑️  Cluster: $CLUSTER"
 
-    if [ -n "$CLUSTERS" ]; then
-        for CLUSTER in $CLUSTERS; do
-            echo "🗑️  Deleting EKS cluster: $CLUSTER"
+    # Delete all node groups
+    NODEGROUPS=$(aws eks list-nodegroups --cluster-name $CLUSTER --region $AWS_REGION --query 'nodegroups[]' --output text 2>/dev/null)
+    for NG in $NODEGROUPS; do
+        echo "    - Deleting node group: $NG"
+        aws eks delete-nodegroup --cluster-name $CLUSTER --nodegroup-name $NG --region $AWS_REGION 2>/dev/null
+    done
 
-            # Delete node groups first
-            echo "  - Deleting node groups..."
-            NODEGROUPS=$(aws eks list-nodegroups --cluster-name $CLUSTER --region $AWS_REGION --query 'nodegroups[]' --output text 2>/dev/null || echo "")
-            for NG in $NODEGROUPS; do
-                echo "    • Deleting node group: $NG"
-                aws eks delete-nodegroup --cluster-name $CLUSTER --nodegroup-name $NG --region $AWS_REGION 2>/dev/null || true
-            done
+    # Wait for node groups
+    sleep 30
 
-            # Wait for node groups to be deleted
-            echo "  - Waiting for node groups to be deleted..."
-            for NG in $NODEGROUPS; do
-                aws eks wait nodegroup-deleted --cluster-name $CLUSTER --nodegroup-name $NG --region $AWS_REGION 2>/dev/null || true
-            done
-
-            # Delete cluster
-            echo "  - Deleting cluster..."
-            aws eks delete-cluster --name $CLUSTER --region $AWS_REGION 2>/dev/null || true
-            echo "  - Waiting for cluster to be deleted..."
-            aws eks wait cluster-deleted --name $CLUSTER --region $AWS_REGION 2>/dev/null || true
-            echo "  ✅ Cluster $CLUSTER deleted"
-        done
-    else
-        echo "  ℹ️  No EKS clusters found"
-    fi
-}
-
-# Function to delete VPCs
-cleanup_vpcs() {
-    echo ""
-    echo "📋 Checking for VPCs..."
-    # Get ALL VPCs except default
-    VPCS=$(aws ec2 describe-vpcs --region $AWS_REGION --query 'Vpcs[?IsDefault==`false`].VpcId' --output text 2>/dev/null || echo "")
-
-    if [ -n "$VPCS" ]; then
-        for VPC in $VPCS; do
-            echo "🗑️  Deleting VPC: $VPC"
-
-            # Delete NAT Gateways
-            echo "  - Deleting NAT Gateways..."
-            NAT_GWS=$(aws ec2 describe-nat-gateways --region $AWS_REGION --filter "Name=vpc-id,Values=$VPC" --query 'NatGateways[].NatGatewayId' --output text 2>/dev/null || echo "")
-            for NGW in $NAT_GWS; do
-                echo "    • Deleting NAT Gateway: $NGW"
-                aws ec2 delete-nat-gateway --nat-gateway-id $NGW --region $AWS_REGION 2>/dev/null || true
-            done
-
-            # Wait for NAT Gateways to be deleted
-            if [ -n "$NAT_GWS" ]; then
-                echo "  - Waiting for NAT Gateways to be deleted..."
-                sleep 30
-            fi
-
-            # Delete Internet Gateways
-            echo "  - Deleting Internet Gateways..."
-            IGWs=$(aws ec2 describe-internet-gateways --region $AWS_REGION --filters "Name=attachment.vpc-id,Values=$VPC" --query 'InternetGateways[].InternetGatewayId' --output text 2>/dev/null || echo "")
-            for IGW in $IGWs; do
-                echo "    • Detaching and deleting IGW: $IGW"
-                aws ec2 detach-internet-gateway --internet-gateway-id $IGW --vpc-id $VPC --region $AWS_REGION 2>/dev/null || true
-                aws ec2 delete-internet-gateway --internet-gateway-id $IGW --region $AWS_REGION 2>/dev/null || true
-            done
-
-            # Delete Subnets
-            echo "  - Deleting Subnets..."
-            SUBNETS=$(aws ec2 describe-subnets --region $AWS_REGION --filters "Name=vpc-id,Values=$VPC" --query 'Subnets[].SubnetId' --output text 2>/dev/null || echo "")
-            for SUBNET in $SUBNETS; do
-                echo "    • Deleting subnet: $SUBNET"
-                aws ec2 delete-subnet --subnet-id $SUBNET --region $AWS_REGION 2>/dev/null || true
-            done
-
-            # Delete Security Groups (except default)
-            echo "  - Deleting Security Groups..."
-            SGS=$(aws ec2 describe-security-groups --region $AWS_REGION --filters "Name=vpc-id,Values=$VPC" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null || echo "")
-            for SG in $SGS; do
-                echo "    • Deleting security group: $SG"
-                aws ec2 delete-security-group --group-id $SG --region $AWS_REGION 2>/dev/null || true
-            done
-
-            # Release Elastic IPs
-            echo "  - Releasing Elastic IPs..."
-            EIPS=$(aws ec2 describe-addresses --region $AWS_REGION --filters "Name=domain,Values=vpc" --query 'Addresses[].AllocationId' --output text 2>/dev/null || echo "")
-            for EIP in $EIPS; do
-                echo "    • Releasing EIP: $EIP"
-                aws ec2 release-address --allocation-id $EIP --region $AWS_REGION 2>/dev/null || true
-            done
-
-            # Delete VPC
-            echo "  - Deleting VPC..."
-            aws ec2 delete-vpc --vpc-id $VPC --region $AWS_REGION 2>/dev/null || true
-            echo "  ✅ VPC $VPC deleted"
-        done
-    else
-        echo "  ℹ️  No VPCs found"
-    fi
-}
-
-# Function to delete Load Balancers
-cleanup_load_balancers() {
-    echo ""
-    echo "📋 Checking for Load Balancers..."
-    LBS=$(aws elbv2 describe-load-balancers --region $AWS_REGION --query 'LoadBalancers[].LoadBalancerArn' --output text 2>/dev/null || echo "")
-
-    if [ -n "$LBS" ]; then
-        for LB in $LBS; do
-            echo "🗑️  Deleting Load Balancer: $LB"
-            aws elbv2 delete-load-balancer --load-balancer-arn $LB --region $AWS_REGION 2>/dev/null || true
-        done
-        echo "  ✅ Load Balancers deleted"
-    else
-        echo "  ℹ️  No Load Balancers found"
-    fi
-}
-
-# Function to delete IAM roles (only ones created by Terraform)
-cleanup_iam_roles() {
-    echo ""
-    echo "📋 Checking for IAM Roles..."
-    ROLES=$(aws iam list-roles --query 'Roles[?contains(RoleName, `eks-`) || contains(RoleName, `terraform`)].RoleName' --output text 2>/dev/null || echo "")
-
-    if [ -n "$ROLES" ]; then
-        for ROLE in $ROLES; do
-            echo "🗑️  Deleting IAM Role: $ROLE"
-
-            # Detach policies
-            ATTACHED_POLICIES=$(aws iam list-attached-role-policies --role-name $ROLE --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null || echo "")
-            for POLICY in $ATTACHED_POLICIES; do
-                echo "    • Detaching policy: $POLICY"
-                aws iam detach-role-policy --role-name $ROLE --policy-arn $POLICY 2>/dev/null || true
-            done
-
-            # Delete inline policies
-            INLINE_POLICIES=$(aws iam list-role-policies --role-name $ROLE --query 'PolicyNames[]' --output text 2>/dev/null || echo "")
-            for POLICY in $INLINE_POLICIES; do
-                echo "    • Deleting inline policy: $POLICY"
-                aws iam delete-role-policy --role-name $ROLE --policy-name $POLICY 2>/dev/null || true
-            done
-
-            # Delete role
-            aws iam delete-role --role-name $ROLE 2>/dev/null || true
-            echo "  ✅ Role $ROLE deleted"
-        done
-    else
-        echo "  ℹ️  No IAM Roles found"
-    fi
-}
-
-# Main cleanup sequence
-echo "========================================="
-echo "Starting cleanup process..."
-echo "========================================="
-
-cleanup_eks_clusters
-cleanup_load_balancers
-cleanup_vpcs
-cleanup_iam_roles
-
+    # Delete cluster
+    echo "    - Deleting cluster: $CLUSTER"
+    aws eks delete-cluster --name $CLUSTER --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ EKS cleanup initiated"
 echo ""
+
+# 2. Delete Load Balancers
+echo "2️⃣  Deleting Load Balancers..."
+LBS=$(aws elbv2 describe-load-balancers --region $AWS_REGION --query 'LoadBalancers[].LoadBalancerArn' --output text 2>/dev/null)
+for LB in $LBS; do
+    echo "  🗑️  Deleting LB: $(basename $LB)"
+    aws elbv2 delete-load-balancer --load-balancer-arn $LB --region $AWS_REGION 2>/dev/null
+done
+
+# Classic Load Balancers
+CLB=$(aws elb describe-load-balancers --region $AWS_REGION --query 'LoadBalancerDescriptions[].LoadBalancerName' --output text 2>/dev/null)
+for LB in $CLB; do
+    echo "  🗑️  Deleting Classic LB: $LB"
+    aws elb delete-load-balancer --load-balancer-name $LB --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ Load Balancers deleted"
+echo ""
+
+# 3. Delete Auto Scaling Groups
+echo "3️⃣  Deleting Auto Scaling Groups..."
+ASGS=$(aws autoscaling describe-auto-scaling-groups --region $AWS_REGION --query 'AutoScalingGroups[].AutoScalingGroupName' --output text 2>/dev/null)
+for ASG in $ASGS; do
+    echo "  🗑️  Deleting ASG: $ASG"
+    aws autoscaling delete-auto-scaling-group --auto-scaling-group-name $ASG --force-delete --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ ASGs deleted"
+echo ""
+
+# 4. Delete Launch Templates
+echo "4️⃣  Deleting Launch Templates..."
+LTS=$(aws ec2 describe-launch-templates --region $AWS_REGION --query 'LaunchTemplates[].LaunchTemplateId' --output text 2>/dev/null)
+for LT in $LTS; do
+    echo "  🗑️  Deleting Launch Template: $LT"
+    aws ec2 delete-launch-template --launch-template-id $LT --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ Launch Templates deleted"
+echo ""
+
+# 5. Terminate EC2 Instances
+echo "5️⃣  Terminating EC2 Instances..."
+INSTANCES=$(aws ec2 describe-instances --region $AWS_REGION --filters "Name=instance-state-name,Values=running,stopped,stopping" --query 'Reservations[].Instances[].InstanceId' --output text 2>/dev/null)
+if [ -n "$INSTANCES" ]; then
+    echo "  🗑️  Terminating instances: $INSTANCES"
+    aws ec2 terminate-instances --instance-ids $INSTANCES --region $AWS_REGION 2>/dev/null
+    echo "  ⏳ Waiting for instances to terminate..."
+    sleep 60
+fi
+echo "  ✅ Instances terminated"
+echo ""
+
+# 6. Delete NAT Gateways
+echo "6️⃣  Deleting NAT Gateways..."
+NGWS=$(aws ec2 describe-nat-gateways --region $AWS_REGION --filter "Name=state,Values=available" --query 'NatGateways[].NatGatewayId' --output text 2>/dev/null)
+for NGW in $NGWS; do
+    echo "  🗑️  Deleting NAT Gateway: $NGW"
+    aws ec2 delete-nat-gateway --nat-gateway-id $NGW --region $AWS_REGION 2>/dev/null
+done
+if [ -n "$NGWS" ]; then
+    echo "  ⏳ Waiting for NAT Gateways to delete..."
+    sleep 60
+fi
+echo "  ✅ NAT Gateways deleted"
+echo ""
+
+# 7. Release Elastic IPs
+echo "7️⃣  Releasing Elastic IPs..."
+EIPS=$(aws ec2 describe-addresses --region $AWS_REGION --query 'Addresses[].AllocationId' --output text 2>/dev/null)
+for EIP in $EIPS; do
+    echo "  🗑️  Releasing EIP: $EIP"
+    aws ec2 release-address --allocation-id $EIP --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ EIPs released"
+echo ""
+
+# 8. Delete Network Interfaces
+echo "8️⃣  Deleting Network Interfaces..."
+ENIS=$(aws ec2 describe-network-interfaces --region $AWS_REGION --query 'NetworkInterfaces[?Status==`available`].NetworkInterfaceId' --output text 2>/dev/null)
+for ENI in $ENIS; do
+    echo "  🗑️  Deleting ENI: $ENI"
+    aws ec2 delete-network-interface --network-interface-id $ENI --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ ENIs deleted"
+echo ""
+
+# 9. Delete VPCs and all dependencies
+echo "9️⃣  Deleting VPCs..."
+VPCS=$(aws ec2 describe-vpcs --region $AWS_REGION --query 'Vpcs[?IsDefault==`false`].VpcId' --output text 2>/dev/null)
+for VPC in $VPCS; do
+    echo "  🗑️  Processing VPC: $VPC"
+
+    # Delete VPC Endpoints
+    echo "    - Deleting VPC Endpoints..."
+    ENDPOINTS=$(aws ec2 describe-vpc-endpoints --region $AWS_REGION --filters "Name=vpc-id,Values=$VPC" --query 'VpcEndpoints[].VpcEndpointId' --output text 2>/dev/null)
+    for EP in $ENDPOINTS; do
+        aws ec2 delete-vpc-endpoints --vpc-endpoint-ids $EP --region $AWS_REGION 2>/dev/null
+    done
+
+    # Detach and delete Internet Gateways
+    echo "    - Deleting Internet Gateways..."
+    IGWS=$(aws ec2 describe-internet-gateways --region $AWS_REGION --filters "Name=attachment.vpc-id,Values=$VPC" --query 'InternetGateways[].InternetGatewayId' --output text 2>/dev/null)
+    for IGW in $IGWS; do
+        aws ec2 detach-internet-gateway --internet-gateway-id $IGW --vpc-id $VPC --region $AWS_REGION 2>/dev/null
+        aws ec2 delete-internet-gateway --internet-gateway-id $IGW --region $AWS_REGION 2>/dev/null
+    done
+
+    # Delete subnets
+    echo "    - Deleting Subnets..."
+    SUBNETS=$(aws ec2 describe-subnets --region $AWS_REGION --filters "Name=vpc-id,Values=$VPC" --query 'Subnets[].SubnetId' --output text 2>/dev/null)
+    for SUBNET in $SUBNETS; do
+        aws ec2 delete-subnet --subnet-id $SUBNET --region $AWS_REGION 2>/dev/null
+    done
+
+    # Delete route tables (except main)
+    echo "    - Deleting Route Tables..."
+    RTS=$(aws ec2 describe-route-tables --region $AWS_REGION --filters "Name=vpc-id,Values=$VPC" --query 'RouteTables[?Associations[0].Main==`false`].RouteTableId' --output text 2>/dev/null)
+    for RT in $RTS; do
+        aws ec2 delete-route-table --route-table-id $RT --region $AWS_REGION 2>/dev/null
+    done
+
+    # Delete Security Groups (except default)
+    echo "    - Deleting Security Groups..."
+    SGS=$(aws ec2 describe-security-groups --region $AWS_REGION --filters "Name=vpc-id,Values=$VPC" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text 2>/dev/null)
+    # First pass - remove rules
+    for SG in $SGS; do
+        aws ec2 revoke-security-group-ingress --group-id $SG --ip-permissions "$(aws ec2 describe-security-groups --group-ids $SG --region $AWS_REGION --query 'SecurityGroups[0].IpPermissions' 2>/dev/null)" --region $AWS_REGION 2>/dev/null
+        aws ec2 revoke-security-group-egress --group-id $SG --ip-permissions "$(aws ec2 describe-security-groups --group-ids $SG --region $AWS_REGION --query 'SecurityGroups[0].IpPermissionsEgress' 2>/dev/null)" --region $AWS_REGION 2>/dev/null
+    done
+    # Second pass - delete groups
+    for SG in $SGS; do
+        aws ec2 delete-security-group --group-id $SG --region $AWS_REGION 2>/dev/null
+    done
+
+    # Delete VPC
+    echo "    - Deleting VPC: $VPC"
+    aws ec2 delete-vpc --vpc-id $VPC --region $AWS_REGION 2>/dev/null
+    echo "  ✅ VPC $VPC deleted"
+done
+echo ""
+
+# 10. Delete IAM Roles
+echo "🔟 Deleting IAM Roles..."
+ROLES=$(aws iam list-roles --query 'Roles[?contains(RoleName, `eks`) || contains(RoleName, `terraform`) || contains(RoleName, `node`)].RoleName' --output text 2>/dev/null)
+for ROLE in $ROLES; do
+    echo "  🗑️  Deleting Role: $ROLE"
+
+    # Detach managed policies
+    POLICIES=$(aws iam list-attached-role-policies --role-name $ROLE --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null)
+    for POLICY in $POLICIES; do
+        aws iam detach-role-policy --role-name $ROLE --policy-arn $POLICY 2>/dev/null
+    done
+
+    # Delete inline policies
+    INLINE=$(aws iam list-role-policies --role-name $ROLE --query 'PolicyNames[]' --output text 2>/dev/null)
+    for POL in $INLINE; do
+        aws iam delete-role-policy --role-name $ROLE --policy-name $POL 2>/dev/null
+    done
+
+    # Delete instance profiles
+    PROFILES=$(aws iam list-instance-profiles-for-role --role-name $ROLE --query 'InstanceProfiles[].InstanceProfileName' --output text 2>/dev/null)
+    for PROFILE in $PROFILES; do
+        aws iam remove-role-from-instance-profile --instance-profile-name $PROFILE --role-name $ROLE 2>/dev/null
+        aws iam delete-instance-profile --instance-profile-name $PROFILE 2>/dev/null
+    done
+
+    # Delete role
+    aws iam delete-role --role-name $ROLE 2>/dev/null
+done
+echo "  ✅ IAM Roles deleted"
+echo ""
+
+# 11. Delete EBS Volumes
+echo "1️⃣1️⃣  Deleting EBS Volumes..."
+VOLUMES=$(aws ec2 describe-volumes --region $AWS_REGION --filters "Name=status,Values=available" --query 'Volumes[].VolumeId' --output text 2>/dev/null)
+for VOL in $VOLUMES; do
+    echo "  🗑️  Deleting Volume: $VOL"
+    aws ec2 delete-volume --volume-id $VOL --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ Volumes deleted"
+echo ""
+
+# 12. Delete CloudWatch Log Groups
+echo "1️⃣2️⃣  Deleting CloudWatch Log Groups..."
+LOG_GROUPS=$(aws logs describe-log-groups --region $AWS_REGION --query 'logGroups[?contains(logGroupName, `/aws/eks`) || contains(logGroupName, `eks-`)].logGroupName' --output text 2>/dev/null)
+for LG in $LOG_GROUPS; do
+    echo "  🗑️  Deleting Log Group: $LG"
+    aws logs delete-log-group --log-group-name $LG --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ Log Groups deleted"
+echo ""
+
+# 13. Delete KMS Aliases and Keys
+echo "1️⃣3️⃣  Deleting KMS Aliases..."
+KMS_ALIASES=$(aws kms list-aliases --region $AWS_REGION --query 'Aliases[?contains(AliasName, `eks`) || contains(AliasName, `terraform`)].AliasName' --output text 2>/dev/null)
+for ALIAS in $KMS_ALIASES; do
+    echo "  🗑️  Deleting KMS Alias: $ALIAS"
+    aws kms delete-alias --alias-name $ALIAS --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ KMS Aliases deleted"
+echo ""
+
+# 14. Delete CloudFormation Stacks
+echo "1️⃣4️⃣  Deleting CloudFormation Stacks..."
+STACKS=$(aws cloudformation list-stacks --region $AWS_REGION --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --query 'StackSummaries[].StackName' --output text 2>/dev/null)
+for STACK in $STACKS; do
+    echo "  🗑️  Deleting Stack: $STACK"
+    aws cloudformation delete-stack --stack-name $STACK --region $AWS_REGION 2>/dev/null
+done
+echo "  ✅ Stacks deleted"
+echo ""
+
 echo "========================================="
-echo "✅ Cleanup completed!"
+echo "✅ CLEANUP COMPLETED!"
 echo "========================================="
 echo ""
-echo "All AWS resources have been deleted."
+echo "All AWS resources should be deleted."
+echo "Note: Some resources may take a few minutes to fully delete."
+echo ""
