@@ -188,6 +188,12 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      - name: Cleanup Existing AWS Resources
+        run: |
+          chmod +x ../../../scripts/cleanup-aws-resources.sh
+          ../../../scripts/cleanup-aws-resources.sh
+        continue-on-error: true
+
       - name: Destroy Existing Resources (if any)
         run: |
           terraform destroy -auto-approve || echo "No existing resources to destroy"
