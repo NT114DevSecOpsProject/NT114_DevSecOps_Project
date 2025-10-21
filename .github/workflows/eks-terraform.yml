@@ -230,9 +230,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [terraform-apply]
     if: always() && needs.terraform-apply.result == 'failure'
-    defaults:
-      run:
-        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout repository
@@ -245,24 +242,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-
-      - name: Terraform Init
-        run: terraform init
-        continue-on-error: true
-
-      - name: Destroy Failed Resources via Terraform
-        run: terraform destroy -auto-approve
-        continue-on-error: true
-
       - name: Cleanup All AWS Resources via Script
         run: |
-          chmod +x ../../../scripts/cleanup-aws-resources.sh
-          ../../../scripts/cleanup-aws-resources.sh
+          chmod +x scripts/cleanup-aws-resources.sh
+          ./scripts/cleanup-aws-resources.sh
         continue-on-error: true
 
   cleanup-on-success:
@@ -270,9 +253,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [terraform-apply]
     if: always() && needs.terraform-apply.result == 'success'
-    defaults:
-      run:
-        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout repository
@@ -285,28 +265,15 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-
       - name: Wait Before Cleanup
         run: |
           echo "Deployment successful! Waiting 2 minutes before cleanup..."
           sleep 120
 
-      - name: Terraform Init
-        run: terraform init
-
-      - name: Destroy Resources via Terraform
-        run: terraform destroy -auto-approve
-        continue-on-error: true
-
       - name: Cleanup All AWS Resources via Script
         run: |
-          chmod +x ../../../scripts/cleanup-aws-resources.sh
-          ../../../scripts/cleanup-aws-resources.sh
+          chmod +x scripts/cleanup-aws-resources.sh
+          ./scripts/cleanup-aws-resources.sh
         continue-on-error: true
 
   terraform-destroy:
