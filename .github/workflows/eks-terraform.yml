@@ -223,7 +223,7 @@ jobs:
     name: Cleanup Resources on Failure
     runs-on: ubuntu-latest
     needs: [terraform-apply]
-    if: failure()
+    if: always() && needs.terraform-apply.result == 'failure'
     defaults:
       run:
         working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
@@ -263,7 +263,7 @@ jobs:
     name: Cleanup Resources on Success
     runs-on: ubuntu-latest
     needs: [terraform-apply]
-    if: success()
+    if: always() && needs.terraform-apply.result == 'success'
     defaults:
       run:
         working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
