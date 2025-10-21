@@ -224,14 +224,15 @@ done
 echo "  ✅ Log Groups deleted"
 echo ""
 
-# 13. Delete KMS Aliases and Keys
-echo "1️⃣3️⃣  Deleting KMS Aliases..."
-KMS_ALIASES=$(aws kms list-aliases --region $AWS_REGION --query 'Aliases[?contains(AliasName, `eks`) || contains(AliasName, `terraform`)].AliasName' --output text 2>/dev/null)
-for ALIAS in $KMS_ALIASES; do
-    echo "  🗑️  Deleting KMS Alias: $ALIAS"
-    aws kms delete-alias --alias-name $ALIAS --region $AWS_REGION 2>/dev/null
-done
-echo "  ✅ KMS Aliases deleted"
+# 13. Delete KMS Aliases and Keys (DISABLED - AWS managed keys cannot be deleted)
+# echo "1️⃣3️⃣  Deleting KMS Aliases..."
+# KMS_ALIASES=$(aws kms list-aliases --region $AWS_REGION --query 'Aliases[?contains(AliasName, `eks`) || contains(AliasName, `terraform`)].AliasName' --output text 2>/dev/null)
+# for ALIAS in $KMS_ALIASES; do
+#     echo "  🗑️  Deleting KMS Alias: $ALIAS"
+#     aws kms delete-alias --alias-name $ALIAS --region $AWS_REGION 2>/dev/null
+# done
+# echo "  ✅ KMS Aliases deleted"
+echo "  ⏭️  Skipping KMS cleanup (AWS managed keys auto-deleted with services)"
 echo ""
 
 # 14. Delete CloudFormation Stacks
