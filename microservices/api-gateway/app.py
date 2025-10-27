@@ -17,6 +17,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _check_service_health(client, service_name):
+    """Checks a single service health and formats the status dictionary."""
+    try:
+        _, status_code = client.health_check()
+    except Exception:
+        status_code = 503 # Service unavailable if connection fails
+        
+    return {
+        "status": "healthy" if status_code == 200 else "unhealthy",
+        "response_code": status_code
+    }
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -57,9 +70,17 @@ def create_app():
     def health_check():
         """Gateway health check"""
         # Check service health
-        user_service_health, user_status_code = user_management_client.health_check()
-        exercises_service_health, exercises_status_code = exercises_client.health_check()
-        scores_service_health, scores_status_code = scores_client.health_check()
+        # user_service_health, user_status_code = user_management_client.health_check()
+        # exercises_service_health, exercises_status_code = exercises_client.health_check()
+        # scores_service_health, scores_status_code = scores_client.health_check()
+        # Gọi hàm tiện ích để lấy trạng thái và mã lỗi
+        user_status = _check_service_health(user_management_client, "user_management_service")
+        exercises_status = _check_service_health(exercises_client, "exercises_service")
+        scores_status = _check_service_health(scores_client, "scores_service")
+        
+        user_status_code = user_status["response_code"]
+        exercises_status_code = exercises_status["response_code"]
+        scores_status_code = scores_status["response_code"]
         
         gateway_status = {
             "status": "healthy",
