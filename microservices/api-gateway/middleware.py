@@ -1,11 +1,13 @@
-import jwt
 import logging
 from functools import wraps
 from flask import request, jsonify, g
 from services import UserManagementServiceClient
 
-
 logger = logging.getLogger(__name__)
+
+AUTH_TOKEN_REQUIRED_MSG = "Authentication token is required"
+INVALID_TOKEN_MSG = "Invalid or expired token"
+ADMIN_REQUIRED_MSG = "Admin privileges required"
 
 class AuthMiddleware:
     """Authentication middleware"""
@@ -30,30 +32,24 @@ class AuthMiddleware:
             return response.get('data')
         return {}
 
+    def _get_user_data(self):
+        token = self.extract_token_from_header()
+        if not token:
+            return None, jsonify({"status": "fail", "message": AUTH_TOKEN_REQUIRED_MSG}), 401
+        user_data = self.verify_token(token)
+        if not user_data:
+            return None, jsonify({"status": "fail", "message": INVALID_TOKEN_MSG}), 401
+        return user_data, None, None
+
 def require_auth(auth_middleware: AuthMiddleware):
     """Decorator to require authentication"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Extract token
-            token = auth_middleware.extract_token_from_header()
-            if not token:
-                return jsonify({
-                    "status": "fail",
-                    "message": "Authentication token is required"
-                }), 401
-            
-            # Verify token
-            user_data = auth_middleware.verify_token(token)
-            if not user_data:
-                return jsonify({
-                    "status": "fail", 
-                    "message": "Invalid or expired token"
-                }), 401
-            
-            # Store user data in g for access in route handlers
+            user_data, error_response, error_code = auth_middleware._get_user_data()
+            if error_response:
+                return error_response, error_code
             g.current_user = user_data
-            
             return f(*args, **kwargs)
         return decorated_function
     return decorator
@@ -63,34 +59,13 @@ def require_admin(auth_middleware: AuthMiddleware):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # First check authentication
-            token = auth_middleware.extract_token_from_header()
-            if not token:
-                return jsonify({
-                    "status": "fail",
-                    "message": "Authentication token is required"
-                }), 401
-            
-            # Verify token
-            user_data = auth_middleware.verify_token(token)
-            if not user_data:
-                return jsonify({
-                    "status": "fail",
-                    "message": "Invalid or expired token"
-                }), 401
-            
-            # Check admin privileges
-            logger.info(f"User data for admin check: {user_data}")
+            user_data, error_response, error_code = auth_middleware._get_user_data()
+            if error_response:
+                return error_response, error_code
             if not user_data.get('admin'):
                 logger.warning(f"User {user_data.get('username', 'unknown')} attempted admin action without privileges")
-                return jsonify({
-                    "status": "fail",
-                    "message": "Admin privileges required"
-                }), 403
-            
-            # Store user data in g for access in route handlers
+                return jsonify({"status": "fail", "message": ADMIN_REQUIRED_MSG}), 403
             g.current_user = user_data
-            
             return f(*args, **kwargs)
         return decorated_function
     return decorator
@@ -102,10 +77,7 @@ class RequestLoggingMiddleware:
     def log_request():
         """Log incoming request"""
         logger.info(f"{request.method} {request.path} - {request.remote_addr}")
-        
-        # Log request data for POST/PUT requests
         if request.method in ['POST', 'PUT'] and request.is_json:
-            # Don't log sensitive data like passwords
             data = request.get_json() or {}
             safe_data = {k: "***" if k.lower() in ['password', 'token'] else v 
                         for k, v in data.items()}
