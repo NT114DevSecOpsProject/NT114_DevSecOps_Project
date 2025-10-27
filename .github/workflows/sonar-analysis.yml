@@ -198,3 +198,4 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/user-management-service/requirements.txt,microservices/user-management-service/Dockerfile,microservices/user-management-service/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/user-management-service/coverage.xml
+#TEST SONARQUBE + TRIVY INTEGRATION
