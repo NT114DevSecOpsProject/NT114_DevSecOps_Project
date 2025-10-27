@@ -3,12 +3,12 @@ from unittest.mock import patch, MagicMock
 from app import app # ĐÃ SỬA: Import trực tiếp biến app từ file app.py
 
 # Giả định kiến trúc của bạn dùng Flask/FastAPI TestClient
-@pytest.fixture
-def client():
+#@pytest.fixture
+#def client():
     # Sử dụng TestClient phù hợp với framework của bạn (đã sửa sang Flask TestClient)
     # Vì app.py dùng Flask, nên cần sử dụng Flask TestClient
-    app.config['TESTING'] = True
-    return app.test_client()
+    #app.config['TESTING'] = True
+    #return app.test_client()
 
 
 # Mock phản hồi từ các dịch vụ backend

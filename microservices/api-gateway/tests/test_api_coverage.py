@@ -4,10 +4,10 @@ from app import app # Import app đã sửa lỗi import
 import json
 
 # Setup client cho môi trường test Flask
-@pytest.fixture
-def client():
-    app.config['TESTING'] = True
-    return app.test_client()
+# @pytest.fixture
+# def client():
+#     app.config['TESTING'] = True
+#     return app.test_client()
 
 # TOKEN MOCK: Giả định một token hợp lệ và admin token
 MOCK_HEADERS = {'Authorization': 'Bearer valid_user_token'}
