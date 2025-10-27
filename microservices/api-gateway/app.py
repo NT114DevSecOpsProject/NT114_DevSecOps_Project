@@ -30,81 +30,47 @@ def _check_service_health(client, service_name):
         "response_code": status_code
     }
 
-def create_app():
-    app = Flask(__name__)
-    app.config.from_object(Config)
-    
-    # Initialize CORS with more permissive settings
-    CORS(app, 
-         origins=app.config['CORS_ORIGINS'],
-         allow_headers=['Content-Type', 'Authorization'],
-         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-         supports_credentials=True)
-    
-    # Initialize service clients
-    user_management_client = UserManagementServiceClient(
-        app.config['USER_MANAGEMENT_SERVICE_URL'], 
-        timeout=app.config.get('REQUEST_TIMEOUT', 30)
-    )
-    exercises_client = ExercisesServiceClient(
-        app.config['EXERCISES_SERVICE_URL'],
-        timeout=app.config.get('REQUEST_TIMEOUT', 30)
-    )
-    scores_client = ScoresServiceClient(
-        app.config['SCORES_SERVICE_URL'],
-        timeout=app.config.get('REQUEST_TIMEOUT', 30)
-    )
-    auth_middleware = AuthMiddleware(user_management_client)
-    
-    # Request logging middleware
+def register_middlewares(app, auth_middleware):
     @app.before_request
     def before_request():
         RequestLoggingMiddleware.log_request()
-    
     @app.after_request
     def after_request(response):
         return RequestLoggingMiddleware.log_response(response)
-    
-    # Health check endpoint
+
+def register_error_handlers(app, logger):
+    @app.errorhandler(404)
+    def not_found(error):
+        return jsonify({"status": "fail", "message": "Endpoint not found"}), 404
+    @app.errorhandler(405)
+    def method_not_allowed(error):
+        return jsonify({"status": "fail", "message": "Method not allowed"}), 405
+    @app.errorhandler(500)
+    def internal_error(error):
+        logger.error(f"Internal server error: {str(error)}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+def register_health_route(app, user_management_client, exercises_client, scores_client):
     @app.route('/health', methods=['GET'])
     def health_check():
-        """Gateway health check"""
-        # Check service health
-        # user_service_health, user_status_code = user_management_client.health_check()
-        # exercises_service_health, exercises_status_code = exercises_client.health_check()
-        # scores_service_health, scores_status_code = scores_client.health_check()
-        # Gọi hàm tiện ích để lấy trạng thái và mã lỗi
         user_status = _check_service_health(user_management_client, "user_management_service")
         exercises_status = _check_service_health(exercises_client, "exercises_service")
         scores_status = _check_service_health(scores_client, "scores_service")
-        
         user_status_code = user_status["response_code"]
         exercises_status_code = exercises_status["response_code"]
         scores_status_code = scores_status["response_code"]
-        
         gateway_status = {
             "status": "healthy",
             "services": {
-                "user_management_service": {
-                    "status": "healthy" if user_status_code == 200 else "unhealthy",
-                    "response_code": user_status_code
-                },
-                "exercises_service": {
-                    "status": "healthy" if exercises_status_code == 200 else "unhealthy", 
-                    "response_code": exercises_status_code
-                },
-                "scores_service": {
-                    "status": "healthy" if scores_status_code == 200 else "unhealthy",
-                    "response_code": scores_status_code
-                }
+                "user_management_service": user_status,
+                "exercises_service": exercises_status,
+                "scores_service": scores_status
             }
         }
-        
         overall_status = 200 if all([user_status_code == 200, exercises_status_code == 200, scores_status_code == 200]) else 503
-        
         return jsonify(gateway_status), overall_status
-    
-    # Auth routes for frontend
+
+def register_auth_routes(app, user_management_client, auth_middleware):
     @app.route('/auth/register', methods=['POST'])
     def register():
         """Register new user"""
@@ -140,8 +106,9 @@ def create_app():
         headers = dict(request.headers)
         response, status_code = user_management_client.get_user_status(headers)
         return jsonify(response), status_code
-    
-    # Users routes for frontend
+
+# Users routes for frontend
+def register_users_routes(app, user_management_client, auth_middleware):
     @app.route('/users/', methods=['GET'])
     @require_auth(auth_middleware)
     def get_all_users():
@@ -181,7 +148,8 @@ def create_app():
         headers = dict(request.headers)
         response, status_code = user_management_client.admin_create_user(data, headers)
         return jsonify(response), status_code
-    
+
+def register_exercises_routes(app, exercises_client, auth_middleware):
     # Exercises routes
     @app.route('/exercises/', methods=['GET'])
     @require_auth(auth_middleware)
@@ -242,7 +210,8 @@ def create_app():
         headers = dict(request.headers)
         response, status_code = exercises_client.validate_code(data, headers)
         return jsonify(response), status_code
-    
+
+def register_scores_routes(app, scores_client, auth_middleware):
     # Scores routes
     @app.route('/scores/', methods=['GET'])
     @require_auth(auth_middleware)
@@ -291,29 +260,39 @@ def create_app():
         headers = dict(request.headers)
         response, status_code = scores_client.update_score(exercise_id, data, headers)
         return jsonify(response), status_code
+
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object(Config)
     
-    # Generic error handlers
-    @app.errorhandler(404)
-    def not_found(error):
-        return jsonify({
-            "status": "fail",
-            "message": "Endpoint not found"
-        }), 404
+    # Initialize CORS with more permissive settings
+    CORS(app, 
+         origins=app.config['CORS_ORIGINS'],
+         allow_headers=['Content-Type', 'Authorization'],
+         methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+         supports_credentials=True)
     
-    @app.errorhandler(405)
-    def method_not_allowed(error):
-        return jsonify({
-            "status": "fail", 
-            "message": "Method not allowed"
-        }), 405
-    
-    @app.errorhandler(500)
-    def internal_error(error):
-        logger.error(f"Internal server error: {str(error)}")
-        return jsonify({
-            "status": "error",
-            "message": "Internal server error"
-        }), 500
+    # Initialize service clients
+    user_management_client = UserManagementServiceClient(
+        app.config['USER_MANAGEMENT_SERVICE_URL'], 
+        timeout=app.config.get('REQUEST_TIMEOUT', 30)
+    )
+    exercises_client = ExercisesServiceClient(
+        app.config['EXERCISES_SERVICE_URL'],
+        timeout=app.config.get('REQUEST_TIMEOUT', 30)
+    )
+    scores_client = ScoresServiceClient(
+        app.config['SCORES_SERVICE_URL'],
+        timeout=app.config.get('REQUEST_TIMEOUT', 30)
+    )
+    auth_middleware = AuthMiddleware(user_management_client)
+    register_middlewares(app, auth_middleware)
+    register_error_handlers(app, logger)
+    register_health_route(app, user_management_client, exercises_client, scores_client)
+    register_auth_routes(app, user_management_client, auth_middleware)
+    register_users_routes(app, user_management_client, auth_middleware)
+    register_exercises_routes(app, exercises_client, auth_middleware)
+    register_scores_routes(app, scores_client, auth_middleware)
     
     return app
 
