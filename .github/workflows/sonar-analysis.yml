@@ -71,11 +71,12 @@ jobs:
       #   run: |
       #     sudo apt-get update
       #     sudo apt-get install -y libpq-dev
-      - name: Install Trivy CLI
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: "fs"
-          input: ''
+      # - name: Install Trivy CLI
+      #   uses: aquasecurity/trivy-action@master
+      #   with:
+      #     scan-type: "fs"
+      #     input: ''
+      
       # API-GATEWAY
       - name: Run Trivy Scan - API-GATEWAY Dependencies
         working-directory: microservices/api-gateway
