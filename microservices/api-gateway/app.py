@@ -70,13 +70,15 @@ def register_health_route(app, user_management_client, exercises_client, scores_
         overall_status = 200 if all([user_status_code == 200, exercises_status_code == 200, scores_status_code == 200]) else 503
         return jsonify(gateway_status), overall_status
 
+INVALID_PAYLOAD_MSG = "Invalid payload"
+
 def register_auth_routes(app, user_management_client, auth_middleware):
     @app.route('/auth/register', methods=['POST'])
     def register():
         """Register new user"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         response, status_code = user_management_client.register(data)
         return jsonify(response), status_code
@@ -86,7 +88,7 @@ def register_auth_routes(app, user_management_client, auth_middleware):
         """User login"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         response, status_code = user_management_client.login(data)
         return jsonify(response), status_code
@@ -131,7 +133,7 @@ def register_users_routes(app, user_management_client, auth_middleware):
         """Add new user (admin only)"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         headers = dict(request.headers)
         response, status_code = user_management_client.add_user(data, headers)
@@ -143,7 +145,7 @@ def register_users_routes(app, user_management_client, auth_middleware):
         """Admin create user with custom flags"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         headers = dict(request.headers)
         response, status_code = user_management_client.admin_create_user(data, headers)
@@ -173,7 +175,7 @@ def register_exercises_routes(app, exercises_client, auth_middleware):
         """Create new exercise (admin only)"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         headers = dict(request.headers)
         response, status_code = exercises_client.create_exercise(data, headers)
@@ -185,7 +187,7 @@ def register_exercises_routes(app, exercises_client, auth_middleware):
         """Update exercise (admin only)"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         headers = dict(request.headers)
         response, status_code = exercises_client.update_exercise(exercise_id, data, headers)
@@ -205,7 +207,7 @@ def register_exercises_routes(app, exercises_client, auth_middleware):
         """Validate user's code submission"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         headers = dict(request.headers)
         response, status_code = exercises_client.validate_code(data, headers)
@@ -243,7 +245,7 @@ def register_scores_routes(app, scores_client, auth_middleware):
         """Create new score"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         headers = dict(request.headers)
         response, status_code = scores_client.create_score(data, headers)
@@ -255,7 +257,7 @@ def register_scores_routes(app, scores_client, auth_middleware):
         """Update score"""
         data = request.get_json()
         if not data:
-            return jsonify({"status": "fail", "message": "Invalid payload"}), 400
+            return jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
         
         headers = dict(request.headers)
         response, status_code = scores_client.update_score(exercise_id, data, headers)

@@ -4,6 +4,7 @@ from functools import wraps
 from flask import request, jsonify, g
 from services import UserManagementServiceClient
 
+
 logger = logging.getLogger(__name__)
 
 class AuthMiddleware:
@@ -16,21 +17,18 @@ class AuthMiddleware:
         """Extract token from Authorization header"""
         auth_header = request.headers.get('Authorization')
         if not auth_header:
-            return None
-        
+            return ""
         try:
             return auth_header.split(' ')[1]
         except IndexError:
-            return None
+            return ""
     
     def verify_token(self, token: str) -> dict:
         """Verify token with user management service"""
         response, status_code = self.user_management_client.verify_token(token)
-        
         if status_code == 200 and response.get('status') == 'success':
             return response.get('data')
-        
-        return None
+        return {}
 
 def require_auth(auth_middleware: AuthMiddleware):
     """Decorator to require authentication"""
