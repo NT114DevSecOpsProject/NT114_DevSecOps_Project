@@ -41,7 +41,11 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
-
+      - name: Run Frontend Unit Tests and Generate Coverage
+        working-directory: frontend
+        run: |
+          npm install
+          npm run test -- --coverage
       - name: Run Trivy Scan - FRONTEND Dependencies
         working-directory: frontend
         run: |
@@ -51,6 +55,15 @@ jobs:
             --format table \
             --security-checks vuln \
             package-lock.json || true
+      - name: Run Trivy Scan - FRONTEND Source
+        working-directory: frontend
+        run: |
+          echo "--- Starting Trivy Source Scan (Frontend) ---"
+          trivy fs \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --security-checks vuln,secret,config,iac \
+            . || true
       - name: Run SonarQube Scanner - FRONTEND
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
@@ -78,17 +91,6 @@ jobs:
       #     input: ''
       
       # API-GATEWAY
-      - name: Run Trivy Scan - API-GATEWAY Dependencies
-        working-directory: microservices/api-gateway
-        run: |
-          echo "--- Starting Trivy Dependency Scan (API Gateway) ---"
-          # Quét file requirements.txt, chỉ báo cáo lỗi HIGH/CRITICAL
-          trivy fs \
-            --severity HIGH,CRITICAL \
-            --format table \
-            --security-checks vuln \
-            requirements.txt || true
-
       - name: Install API-GATEWAY Dependencies
         working-directory: microservices/api-gateway
         run: |
@@ -109,16 +111,26 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
-      # EXERCISES-SERVICE
-      - name: Run Trivy Scan - EXERCISES-SERVICE Dependencies
-        working-directory: microservices/exercises-service
+      - name: Run Trivy Scan - API-GATEWAY Dependencies
+        working-directory: microservices/api-gateway
         run: |
-          echo "--- Starting Trivy Dependency Scan (Exercises Service) ---"
+          echo "--- Trivy scan dependencies (API Gateway) ---"
           trivy fs \
             --severity HIGH,CRITICAL \
             --format table \
             --security-checks vuln \
             requirements.txt || true
+      - name: Run Trivy Scan - API-GATEWAY Source
+        working-directory: microservices/api-gateway
+        run: |
+          echo "--- Starting Trivy Source Scan (API Gateway) ---"
+          trivy fs \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --security-checks vuln,secret,config,iac \
+            . || true
+
+      # EXERCISES-SERVICE
       - name: Install Exercises-Service Dependencies
         working-directory: microservices/exercises-service
         run: |
@@ -139,16 +151,26 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/exercises-service/requirements.txt,microservices/exercises-service/Dockerfile,microservices/exercises-service/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/exercises-service/coverage.xml
-      # SCORES-SERVICE
-      - name: Run Trivy Scan - SCORES-SERVICE Dependencies
-        working-directory: microservices/scores-service
+      - name: Run Trivy Scan - EXERCISES-SERVICE Dependencies
+        working-directory: microservices/exercises-service
         run: |
-          echo "--- Starting Trivy Dependency Scan (Scores Service) ---"
+          echo "--- Trivy scan dependencies (Exercises Service) ---"
           trivy fs \
             --severity HIGH,CRITICAL \
             --format table \
             --security-checks vuln \
             requirements.txt || true
+      - name: Run Trivy Scan - EXERCISES-SERVICE Source
+        working-directory: microservices/exercises-service
+        run: |
+          echo "--- Starting Trivy Source Scan (Exercises Service) ---"
+          trivy fs \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --security-checks vuln,secret,config,iac \
+            . || true
+
+      # SCORES-SERVICE
       - name: Install Scores-Service Dependencies
         working-directory: microservices/scores-service
         run: |
@@ -169,16 +191,26 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/scores-service/requirements.txt,microservices/scores-service/Dockerfile,microservices/scores-service/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/scores-service/coverage.xml
-      # USER-MANAGEMENT-SERVICE
-      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Dependencies
-        working-directory: microservices/user-management-service
+      - name: Run Trivy Scan - SCORES-SERVICE Dependencies
+        working-directory: microservices/scores-service
         run: |
-          echo "--- Starting Trivy Dependency Scan (User Management Service) ---"
+          echo "--- Trivy scan dependencies (Scores Service) ---"
           trivy fs \
             --severity HIGH,CRITICAL \
             --format table \
             --security-checks vuln \
-            requirements.txt || true  
+            requirements.txt || true
+      - name: Run Trivy Scan - SCORES-SERVICE Source
+        working-directory: microservices/scores-service
+        run: |
+          echo "--- Starting Trivy Source Scan (Scores Service) ---"
+          trivy fs \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --security-checks vuln,secret,config,iac \
+            . || true
+
+      # USER-MANAGEMENT-SERVICE
       - name: Install User-Management-Service Dependencies
         working-directory: microservices/user-management-service
         run: |
@@ -199,4 +231,22 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=microservices/user-management-service/requirements.txt,microservices/user-management-service/Dockerfile,microservices/user-management-service/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/user-management-service/coverage.xml
+      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Dependencies
+        working-directory: microservices/user-management-service
+        run: |
+          echo "--- Trivy scan dependencies (User Management Service) ---"
+          trivy fs \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --security-checks vuln \
+            requirements.txt || true
+      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Source
+        working-directory: microservices/user-management-service
+        run: |
+          echo "--- Starting Trivy Source Scan (User Management Service) ---"
+          trivy fs \
+            --severity HIGH,CRITICAL \
+            --format table \
+            --security-checks vuln,secret,config,iac \
+            . || true
 ###TEST SONARQUBE + TRIVY INTEGRATION
