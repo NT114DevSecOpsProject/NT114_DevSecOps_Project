@@ -244,4 +244,4 @@ jobs:
             --format table \
             --security-checks vuln,secret,config,iac \
             . || true
-###TEST SONARQUBE + TRIVY INTEGRATION
+###TEST SONARQUBE + TRIVY INTEGRATION#####
