@@ -136,16 +136,19 @@ jobs:
         run: |
           python -m pytest --cov=app --cov-report=xml || true
       - name: Run SonarQube Scanner - EXERCISES-SERVICE
+        working-directory: microservices/exercises-service
         run: |
           $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
             -Dsonar.projectKey=NT114-exercises-service \
-            -Dsonar.sources=microservices/exercises-service/app \
+            -Dsonar.sources=app \
+            -Dsonar.tests=tests \
             -Dsonar.host.url=${SONAR_HOST_URL} \
             -Dsonar.token=${SONAR_TOKEN} \
             -Dsonar.language=py \
             -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=microservices/exercises-service/requirements.txt,microservices/exercises-service/Dockerfile,microservices/exercises-service/coverage.xml \
-            -Dsonar.python.coverage.reportPaths=microservices/exercises-service/coverage.xml
+            -Dsonar.exclusions=requirements.txt,Dockerfile \
+            -Dsonar.coverage.exclusions=tests/**,**/migrations/** \
+            -Dsonar.python.coverage.reportPaths=coverage.xml
       - name: Run Trivy Scan - EXERCISES-SERVICE Dependencies
         working-directory: microservices/exercises-service
         run: |
