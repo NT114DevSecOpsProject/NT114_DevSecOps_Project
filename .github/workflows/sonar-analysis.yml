@@ -114,16 +114,16 @@ jobs:
             --severity HIGH,CRITICAL \
             --format table \
             --security-checks vuln \
-            requirements.txt || true
+            requirements.txt
       - name: Run Trivy Scan - API-GATEWAY Source
         working-directory: microservices/api-gateway
         run: |
           echo "--- Starting Trivy Source Scan (API Gateway) ---"
           trivy fs \
+            --scanners vuln,secret,misconfig \
             --severity HIGH,CRITICAL \
             --format table \
-            --security-checks vuln,secret,config,iac \
-            . || true
+            .
 
       # EXERCISES-SERVICE
       - name: Install Exercises-Service Dependencies
