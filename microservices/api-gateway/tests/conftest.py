@@ -5,6 +5,9 @@ import importlib.util
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
+# Define constant to avoid duplicated literal 'app.services'
+APP_SERVICES = 'app.services'
+
 def _load_as(name_in_sys_modules, filepath):
     spec = importlib.util.spec_from_file_location(name_in_sys_modules, filepath)
     module = importlib.util.module_from_spec(spec)
@@ -47,8 +50,8 @@ if app_mod is not None:
 # Ensure app.services and app.middleware point to the same module objects
 if services_mod is not None:
     setattr(sys.modules['app'], 'services', services_mod)
-if middleware_mod is not None:
-    setattr(sys.modules['app'], 'middleware', middleware_mod)
+    sys.modules[APP_SERVICES] = services_mod
+    sys.modules['services'] = services_mod
 
 # --- Sync class objects so tests patching app.services.<Class>.method will affect instances created in app ---
 try:
@@ -101,7 +104,7 @@ except Exception:
     pass
 
 try:
-    services_mod = sys.modules.get('services') or sys.modules.get('app.services')
+    services_mod = sys.modules.get('services') or sys.modules.get(APP_SERVICES)
     if services_mod is not None:
         if hasattr(services_mod, 'UserManagementServiceClient'):
             umc_cls = services_mod.UserManagementServiceClient
@@ -120,7 +123,7 @@ except Exception:
     pass
 
 try:
-    services_mod = sys.modules.get('services') or sys.modules.get('app.services')
+    services_mod = sys.modules.get('services') or sys.modules.get(APP_SERVICES)
     if services_mod is not None and hasattr(services_mod, 'UserManagementServiceClient'):
         umc_cls = services_mod.UserManagementServiceClient
 
@@ -137,7 +140,7 @@ except Exception:
 
 # --- Ensure the app's client instances are created from the same classes that tests patch ---
 try:
-    services_mod = sys.modules.get('services') or sys.modules.get('app.services')
+    services_mod = sys.modules.get('services') or sys.modules.get(APP_SERVICES)
     app_mod = sys.modules.get('app.app') or sys.modules.get('app')
     # if our app module wrapper is separate, get the module object we loaded earlier
     # app_mod might be the module that contains create_app/app (we set that earlier)
