@@ -27,7 +27,7 @@ def get_json_or_fail():
         return None, jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
     return data, None, None
 
-def _check_service_health(client, service_name):
+def _check_service_health(client):
     try:
         _, status_code = client.health_check()
     except Exception:
@@ -37,7 +37,7 @@ def _check_service_health(client, service_name):
         "response_code": status_code
     }
 
-def register_middlewares(app, auth_middleware):
+def register_middlewares(app):
     @app.before_request
     def before_request():
         RequestLoggingMiddleware.log_request()
@@ -61,9 +61,9 @@ def register_health_route(app, user_management_client, exercises_client, scores_
     @app.route('/health', methods=['GET'])
     def health_check():
         statuses = [
-            _check_service_health(user_management_client, "user_management_service"),
-            _check_service_health(exercises_client, "exercises_service"),
-            _check_service_health(scores_client, "scores_service")
+            _check_service_health(user_management_client),
+            _check_service_health(exercises_client),
+            _check_service_health(scores_client)
         ]
         overall_status = 200 if all(s["response_code"] == 200 for s in statuses) else 503
         gateway_status = {
@@ -258,7 +258,7 @@ def create_app():
         timeout=app.config.get('REQUEST_TIMEOUT', 30)
     )
     auth_middleware = AuthMiddleware(user_management_client)
-    register_middlewares(app, auth_middleware)
+    register_middlewares(app)
     register_error_handlers(app, logger)
     register_health_route(app, user_management_client, exercises_client, scores_client)
     register_auth_routes(app, user_management_client, auth_middleware)

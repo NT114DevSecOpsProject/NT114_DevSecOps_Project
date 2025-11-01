@@ -68,7 +68,6 @@ class UserManagementServiceClient(ServiceClient):
         """Verify token by checking user status"""
         headers = {"Authorization": f"Bearer {token}"}
         return self.get_user_status(headers)
-        #return self._make_request('GET', '/api/auth/status', headers=headers)
     
     # Users API methods
     def get_all_users(self, headers: Dict[str, str]) -> Tuple[Optional[Dict[Any, Any]], int]:
