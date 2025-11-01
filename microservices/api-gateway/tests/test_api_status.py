@@ -1,11 +1,17 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from app import app
+import secrets
 
 @pytest.fixture
 def client():
     app.config['TESTING'] = True
     return app.test_client()
+
+# new fixture to avoid hard-coded passwords in tests
+@pytest.fixture
+def test_password():
+    return secrets.token_urlsafe(8)
 
 @patch('app.services.UserManagementServiceClient.health_check')
 def test_health_check_all_healthy(mock_health, client):
@@ -52,9 +58,9 @@ def test_get_all_users_success(mock_get_all_users, mock_verify_token, client):
     assert response.get_json()[0]["username"] == "test_user"
 
 @patch('app.services.UserManagementServiceClient.register')
-def test_register_success(mock_register, client):
+def test_register_success(mock_register, client, test_password):
     mock_register.return_value = ({"status": "success"}, 201)
-    response = client.post("/auth/register", json={"username": "newuser", "password": "pass"})
+    response = client.post("/auth/register", json={"username": "newuser", "password": test_password})
     assert response.status_code == 201
     assert response.get_json()["status"] == "success"
 
@@ -65,9 +71,9 @@ def test_register_invalid_payload(mock_register, client):
     assert response.get_json()["message"] == "Invalid payload"
 
 @patch('app.services.UserManagementServiceClient.login')
-def test_login_success(mock_login, client):
+def test_login_success(mock_login, client, test_password):
     mock_login.return_value = ({"token": "abc"}, 200)
-    response = client.post("/auth/login", json={"username": "user", "password": "pass"})
+    response = client.post("/auth/login", json={"username": "user", "password": test_password})
     assert response.status_code == 200
     assert response.get_json()["token"] == "abc"
 
@@ -107,10 +113,10 @@ def test_method_not_allowed(client):
 
 @patch('app.middleware.AuthMiddleware.verify_token')
 @patch('app.services.UserManagementServiceClient.add_user')
-def test_add_user_success(mock_add_user, mock_verify_token, client):
+def test_add_user_success(mock_add_user, mock_verify_token, client, test_password):
     mock_verify_token.return_value = {"username": "test_user", "admin": False}
     mock_add_user.return_value = ({"id": 2, "username": "newuser"}, 201)
-    response = client.post("/users/", json={"username": "newuser", "password": "pass"}, headers={"Authorization": "Bearer token"})
+    response = client.post("/users/", json={"username": "newuser", "password": test_password}, headers={"Authorization": "Bearer token"})
     assert response.status_code == 201
     assert response.get_json()["username"] == "newuser"
 
