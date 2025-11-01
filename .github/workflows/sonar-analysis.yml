@@ -74,7 +74,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.x"
+          python-version: "3.8"
       # - name: Install system dependencies for PostgreSQL
       #   run: |
       #     sudo apt-get update
@@ -134,7 +134,13 @@ jobs:
       - name: Run Pytest and Generate Coverage for Exercises-Service
         working-directory: microservices/exercises-service
         run: |
-          python -m pytest --cov=app --cov-config=.coveragerc --cov-report=xml
+          python -m pytest --cov --cov-config=.coveragerc --cov-report=xml
+      - name: Show coverage.xml (debug)
+        working-directory: microservices/exercises-service
+        run: |
+          echo "coverage.xml size:"
+          ls -l coverage.xml || true
+          head -n 20 coverage.xml || true
       - name: Run SonarQube Scanner - EXERCISES-SERVICE
         working-directory: microservices/exercises-service
         run: |

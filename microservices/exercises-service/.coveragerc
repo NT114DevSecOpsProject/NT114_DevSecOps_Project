@@ -5,12 +5,13 @@ source = app
 source =
     app/
     */app/
+    */microservices/exercises-service/app/
 
 [report]
 exclude_lines =
     pragma: no cover
     def __repr__
-    if __name__ == .__main__.:
+    if __name__ == .__main__:
 
 [xml]
 output = coverage.xml
