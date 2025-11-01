@@ -5,7 +5,6 @@ source = app
 source =
     app/
     */app/
-    */microservices/exercises-service/app/
 
 [report]
 exclude_lines =
@@ -14,4 +13,4 @@ exclude_lines =
     if __name__ == .__main__.:
 
 [xml]
-relative_files = True
+output = coverage.xml
