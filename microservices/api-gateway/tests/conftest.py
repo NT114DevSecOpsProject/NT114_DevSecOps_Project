@@ -112,7 +112,7 @@ try:
                 setattr(services_mod.ExercisesServiceClient, 'health_check', getattr(umc_cls, 'health_check'))
             if hasattr(services_mod, 'ScoresServiceClient'):
                 setattr(services_mod.ScoresServiceClient, 'health_check', getattr(umc_cls, 'health_check'))
-            if hasattr(umc_cls, 'get_user_status') and not hasattr(umc_cls, 'verify_token') is False:
+            if hasattr(umc_cls, 'get_user_status') and not hasattr(umc_cls, 'verify_token'):
                 setattr(umc_cls, 'verify_token', getattr(umc_cls, 'get_user_status'))
         if sys.modules.get('app') is not None:
             app_pkg = sys.modules['app']
