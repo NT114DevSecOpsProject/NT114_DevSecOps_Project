@@ -19,7 +19,7 @@ def create_app():
     
     # Initialize extensions
     db.init_app(app)
-    migrate = Migrate(app, db)
+    Migrate(app, db)
     CORS(app)
     
     # Register blueprints

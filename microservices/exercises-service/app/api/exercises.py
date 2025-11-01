@@ -9,6 +9,11 @@ logger = get_logger('exercises_api')
 
 exercises_blueprint = Blueprint("exercises", __name__)
 
+# Constants
+FULL_TRACEBACK_MSG = "Full traceback:"
+INTERNAL_SERVER_ERROR = "Internal server error"
+INVALID_PAYLOAD_ERROR = "Invalid payload."
+
 @exercises_blueprint.route("/ping", methods=["GET"])
 def ping_pong():
     return jsonify({"status": "success", "message": "pong!"})
@@ -28,8 +33,8 @@ def get_all_exercises():
         return jsonify(response_object), 200
     except Exception as e:
         logger.error(f"Error getting all exercises: {str(e)}")
-        logger.exception("Full traceback:")
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        logger.exception(f"{FULL_TRACEBACK_MSG}")
+        return jsonify({"status": "error", "message": INTERNAL_SERVER_ERROR}), 500
 
 @exercises_blueprint.route("/<exercise_id>", methods=["GET"])
 def get_single_exercise(exercise_id):
@@ -51,8 +56,8 @@ def get_single_exercise(exercise_id):
         return jsonify(response_object), 404
     except Exception as e:
         logger.error(f"Error getting exercise {exercise_id}: {str(e)}")
-        logger.exception("Full traceback:")
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        logger.exception(f"{FULL_TRACEBACK_MSG}")
+        return jsonify({"status": "error", "message": INTERNAL_SERVER_ERROR}), 500
 
 @exercises_blueprint.route("/validate_code", methods=["POST"])
 def validate_code():
@@ -133,8 +138,8 @@ def validate_code():
         
     except Exception as e:
         logger.error(f"Error during code validation: {str(e)}")
-        logger.exception("Full traceback:")
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        logger.exception(f"{FULL_TRACEBACK_MSG}")
+        return jsonify({"status": "error", "message": INTERNAL_SERVER_ERROR}), 500
 
 @exercises_blueprint.route("/", methods=["POST"])
 @authenticate
@@ -194,9 +199,9 @@ def add_exercise(user_data):
         return jsonify({"status": "fail", "message": "Invalid payload."}), 400
     except Exception as e:
         logger.error(f"Error adding exercise {title}: {str(e)}")
-        logger.exception("Full traceback:")
+        logger.exception(f"{FULL_TRACEBACK_MSG}")
         db.session.rollback()
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        return jsonify({"status": "error", "message": INTERNAL_SERVER_ERROR}), 500
 
 @exercises_blueprint.route("/<exercise_id>", methods=["PUT"])
 @authenticate
@@ -262,9 +267,9 @@ def update_exercise(user_data, exercise_id):
         return jsonify({"status": "fail", "message": "Invalid exercise ID"}), 400
     except Exception as e:
         logger.error(f"Error updating exercise {exercise_id}: {str(e)}")
-        logger.exception("Full traceback:")
+        logger.exception(f"{FULL_TRACEBACK_MSG}")
         db.session.rollback()
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
+        return jsonify({"status": "error", "message": INTERNAL_SERVER_ERROR}), 500
 
 @exercises_blueprint.route("/health", methods=["GET"])
 def health_check():
