@@ -21,25 +21,32 @@ def test_health_check_partial_unhealthy(mock_health, client):
     assert response.status_code == 503
     data = response.get_json()
     assert data["services"]["user_management_service"]["status"] == "unhealthy"
+    
 
+@patch('app.middleware.AuthMiddleware.verify_token')
 @patch('app.services.UserManagementServiceClient.get_single_user')
-def test_get_user_profile_success(mock_get_user, client):
+def test_get_user_profile_success(mock_get_user, mock_verify_token, client):
+    mock_verify_token.return_value = {"username": "test_user", "admin": False}
     mock_get_user.return_value = ({"id": 1, "username": "test_user"}, 200)
-    response = client.get("/users/1")
+    response = client.get("/users/1", headers={"Authorization": "Bearer token"})
     assert response.status_code == 200
     assert response.get_json()["username"] == "test_user"
 
+@patch('app.middleware.AuthMiddleware.verify_token')
 @patch('app.services.UserManagementServiceClient.get_single_user')
-def test_get_user_profile_not_found(mock_get_user, client):
+def test_get_user_profile_not_found(mock_get_user, mock_verify_token, client):
+    mock_verify_token.return_value = {"username": "test_user", "admin": False}
     mock_get_user.return_value = ({"message": "User not found"}, 404)
-    response = client.get("/users/999")
+    response = client.get("/users/999", headers={"Authorization": "Bearer token"})
     assert response.status_code == 404
     assert response.get_json()["message"] == "User not found"
 
+@patch('app.middleware.AuthMiddleware.verify_token')
 @patch('app.services.UserManagementServiceClient.get_all_users')
-def test_get_all_users_success(mock_get_all_users, client):
+def test_get_all_users_success(mock_get_all_users, mock_verify_token, client):
+    mock_verify_token.return_value = {"username": "test_user", "admin": False}
     mock_get_all_users.return_value = ([{"id": 1, "username": "test_user"}], 200)
-    response = client.get("/users")
+    response = client.get("/users", headers={"Authorization": "Bearer token"})
     assert response.status_code == 200
     assert isinstance(response.get_json(), list)
     assert response.get_json()[0]["username"] == "test_user"
@@ -71,18 +78,18 @@ def test_login_invalid_payload(mock_login, client):
     assert response.get_json()["message"] == "Invalid payload"
 
 @patch('app.services.UserManagementServiceClient.logout')
-@patch('app.middleware.AuthMiddleware.extract_token_from_header')
-def test_logout_success(mock_extract_token, mock_logout, client):
-    mock_extract_token.return_value = "token"
+@patch('app.middleware.AuthMiddleware.verify_token')
+def test_logout_success(mock_verify_token, mock_logout, client):
+    mock_verify_token.return_value = {"username": "test_user", "admin": False}
     mock_logout.return_value = ({"status": "success"}, 200)
     response = client.get("/auth/logout", headers={"Authorization": "Bearer token"})
     assert response.status_code == 200
     assert response.get_json()["status"] == "success"
 
 @patch('app.services.UserManagementServiceClient.get_user_status')
-@patch('app.middleware.AuthMiddleware.extract_token_from_header')
-def test_get_user_status_success(mock_extract_token, mock_get_user_status, client):
-    mock_extract_token.return_value = "token"
+@patch('app.middleware.AuthMiddleware.verify_token')
+def test_get_user_status_success(mock_verify_token, mock_get_user_status, client):
+    mock_verify_token.return_value = {"username": "test_user", "admin": False}
     mock_get_user_status.return_value = ({"status": "active"}, 200)
     response = client.get("/auth/status", headers={"Authorization": "Bearer token"})
     assert response.status_code == 200

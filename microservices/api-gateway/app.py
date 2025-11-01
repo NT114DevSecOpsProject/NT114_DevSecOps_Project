@@ -20,8 +20,10 @@ logger = logging.getLogger(__name__)
 INVALID_PAYLOAD_MSG = "Invalid payload"
 
 def get_json_or_fail():
-    data = request.get_json()
-    if not data:
+    if not request.is_json:
+        return None, jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
+    data = request.get_json(silent=True)
+    if data is None:
         return None, jsonify({"status": "fail", "message": INVALID_PAYLOAD_MSG}), 400
     return data, None, None
 
@@ -236,6 +238,7 @@ def register_scores_routes(app, scores_client, auth_middleware):
 
 def create_app():
     app = Flask(__name__)
+    app.url_map.strict_slashes = False
     app.config.from_object(Config)
     CORS(app, 
          origins=app.config['CORS_ORIGINS'],
