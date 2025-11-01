@@ -134,7 +134,7 @@ jobs:
       - name: Run Pytest and Generate Coverage for Exercises-Service
         working-directory: microservices/exercises-service
         run: |
-          python -m pytest --cov --cov-config=.coveragerc --cov-report=xml
+          python -m pytest --cov=app --cov-config=.coveragerc --cov-report=xml
       - name: Run SonarQube Scanner - EXERCISES-SERVICE
         working-directory: microservices/exercises-service
         run: |
