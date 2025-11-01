@@ -67,7 +67,8 @@ class UserManagementServiceClient(ServiceClient):
     def verify_token(self, token: str) -> Tuple[Optional[Dict[Any, Any]], int]:
         """Verify token by checking user status"""
         headers = {"Authorization": f"Bearer {token}"}
-        return self._make_request('GET', '/api/auth/status', headers=headers)
+        return self.get_user_status(headers)
+        #return self._make_request('GET', '/api/auth/status', headers=headers)
     
     # Users API methods
     def get_all_users(self, headers: Dict[str, str]) -> Tuple[Optional[Dict[Any, Any]], int]:
@@ -120,7 +121,10 @@ class ExercisesServiceClient(ServiceClient):
     
     def health_check(self) -> Tuple[Optional[Dict[Any, Any]], int]:
         """Check exercises service health"""
-        return self._make_request('GET', '/health')
+        try:
+            return UserManagementServiceClient.health_check(self)
+        except Exception:
+            return self._make_request('GET', '/health')
 
 
 class ScoresServiceClient(ServiceClient):
@@ -148,4 +152,7 @@ class ScoresServiceClient(ServiceClient):
     
     def health_check(self) -> Tuple[Optional[Dict[Any, Any]], int]:
         """Check scores service health"""
-        return self._make_request('GET', '/health')
+        try:
+            return UserManagementServiceClient.health_check(self)
+        except Exception:
+            return self._make_request('GET', '/health')
