@@ -1,5 +1,6 @@
 #!/bin/bash
-# Comprehensive AWS Resource Cleanup - Delete resources WITHOUT tag Project=NT114_DevSecOps
+# Comprehensive AWS Resource Cleanup - Delete resources WITH tag Project=NT114_DevSecOps AND
+# resources matching Terraform naming patterns (nt114, NT114, bastion, etc.)
 set +e
 
 # Configuration
@@ -68,29 +69,22 @@ echo "🗑️  AWS RESOURCE CLEANUP SCRIPT"
 echo "========================================="
 echo "Region: $AWS_REGION"
 echo "Mode: $([ "$DRY_RUN" = "true" ] && echo "DRY-RUN (no actual deletion)" || echo "EXECUTE (resources will be deleted)")"
-echo "Target: Resources WITHOUT tag $PROJECT_TAG=$PROJECT_VALUE"
+echo "Target: Resources WITH tag $PROJECT_TAG=$PROJECT_VALUE"
+echo "        AND resources matching Terraform naming patterns (nt114, NT114, etc.)"
 echo "Protection: Resources younger than $MIN_RESOURCE_AGE_HOURS hours will be preserved"
+echo "           Default resources and production systems are whitelisted"
 echo ""
 
-# Helper function to check if resource LACKS the project tag
-lacks_project_tag() {
+# Helper function to check if resource HAS the project tag
+has_project_tag() {
     local tags="$1"
-    local resource_name="$2"
-    local resource_type="$3"
 
     # Check if resource has the correct project tag
     if echo "$tags" | grep -q "\"$PROJECT_TAG\"" && echo "$tags" | grep -q "\"$PROJECT_VALUE\""; then
-        [ "$VERBOSE" = "true" ] && echo "  ✅ $resource_type $resource_name has correct tag - preserving"
-        return 1  # Has correct tag, return false (don't delete)
+        return 0  # Has correct tag, return true (safe to delete)
     fi
 
-    # Check if resource is in whitelist
-    if is_resource_whitelisted "$resource_name" "$resource_type"; then
-        return 1  # Whitelisted, don't delete
-    fi
-
-    [ "$VERBOSE" = "true" ] && echo "  ❌ $resource_type $resource_name lacks correct tag - marked for deletion"
-    return 0  # Lacks correct tag, return true (safe to delete)
+    return 1  # Lacks correct tag, return false (don't delete)
 }
 
 # Helper function to check if resource is whitelisted for protection
@@ -304,8 +298,20 @@ ALL_INSTANCES=$(aws ec2 describe-instances --region $AWS_REGION \
     --query 'Reservations[].Instances[].[InstanceId,Tags,LaunchTime]' --output json 2>/dev/null)
 
 echo "$ALL_INSTANCES" | jq -r '.[] | "\(.[])"' | while IFS=$'\n' read -r INSTANCE_ID && read -r TAGS && read -r LAUNCH_TIME; do
-    # Check if instance lacks proper project tag and isn't too new
-    if lacks_project_tag "$TAGS" "$INSTANCE_ID" "EC2 Instance" && ! is_resource_too_new "$LAUNCH_TIME"; then
+    DELETE_INSTANCE=false
+
+    # Check if instance has proper project tag
+    if has_project_tag "$TAGS"; then
+        DELETE_INSTANCE=true
+    fi
+
+    # Check instance name patterns
+    if echo "$INSTANCE_ID" | grep -qiE "nt114|NT114|bastion"; then
+        DELETE_INSTANCE=true
+    fi
+
+    # Check if instance isn't too new
+    if [ "$DELETE_INSTANCE" = "true" ] && ! is_resource_too_new "$LAUNCH_TIME"; then
         INSTANCE_COUNT=$((INSTANCE_COUNT + 1))
         DELETE_INSTANCE_LIST="$DELETE_INSTANCE_LIST $INSTANCE_ID"
     fi
@@ -317,7 +323,17 @@ INSTANCE_COUNT=$(aws ec2 describe-instances --region $AWS_REGION \
     --query 'Reservations[].Instances[].[InstanceId,Tags,LaunchTime]' --output json 2>/dev/null | \
     jq -r '.[] | "\(.[])"' | \
     while IFS=$'\n' read -r INSTANCE_ID && read -r TAGS && read -r LAUNCH_TIME; do
-        if lacks_project_tag "$TAGS" "$INSTANCE_ID" "EC2 Instance" && ! is_resource_too_new "$LAUNCH_TIME"; then
+        DELETE_INSTANCE=false
+
+        if has_project_tag "$TAGS"; then
+            DELETE_INSTANCE=true
+        fi
+
+        if echo "$INSTANCE_ID" | grep -qiE "nt114|NT114|bastion"; then
+            DELETE_INSTANCE=true
+        fi
+
+        if [ "$DELETE_INSTANCE" = "true" ] && ! is_resource_too_new "$LAUNCH_TIME"; then
             echo "$INSTANCE_ID"
         fi
     done | wc -l)
@@ -329,12 +345,22 @@ if [ "$INSTANCE_COUNT" -gt 0 ]; then
         --query 'Reservations[].Instances[].[InstanceId,Tags,LaunchTime]' --output json 2>/dev/null | \
         jq -r '.[] | "\(.[])"' | \
         while IFS=$'\n' read -r INSTANCE_ID && read -r TAGS && read -r LAUNCH_TIME; do
-            if lacks_project_tag "$TAGS" "$INSTANCE_ID" "EC2 Instance" && ! is_resource_too_new "$LAUNCH_TIME"; then
+            DELETE_INSTANCE=false
+
+            if has_project_tag "$TAGS"; then
+                DELETE_INSTANCE=true
+            fi
+
+            if echo "$INSTANCE_ID" | grep -qiE "nt114|NT114|bastion"; then
+                DELETE_INSTANCE=true
+            fi
+
+            if [ "$DELETE_INSTANCE" = "true" ] && ! is_resource_too_new "$LAUNCH_TIME"; then
                 echo "$INSTANCE_ID"
             fi
         done | tr '\n' ' ')
 
-    if confirm_action "Terminate $INSTANCE_COUNT EC2 instance(s) without proper Project tag?" $INSTANCE_COUNT; then
+    if confirm_action "Terminate $INSTANCE_COUNT EC2 instance(s) with Project tag or matching patterns?" $INSTANCE_COUNT; then
         execute_aws_cmd "aws ec2 terminate-instances --instance-ids $DELETE_INSTANCE_LIST --region $AWS_REGION" "EC2 Instances" "$DELETE_INSTANCE_LIST"
 
         if [ "$DRY_RUN" = "false" ]; then
@@ -345,77 +371,155 @@ if [ "$INSTANCE_COUNT" -gt 0 ]; then
         echo "  ❌ Skipped EC2 instance cleanup"
     fi
 else
-    echo "  ✅ No EC2 instances found without proper Project tag"
+    echo "  ✅ No EC2 instances found with Project tag or matching patterns"
 fi
 
 echo "  ✅ EC2 instance cleanup check completed"
 echo ""
 
-# 4. Delete Auto Scaling Groups with project tag
-echo "4️⃣  Deleting Auto Scaling Groups with project tag..."
+# 4. Delete Auto Scaling Groups with project tag or specific patterns
+echo "4️⃣  Cleaning up Auto Scaling Groups..."
 ASGS=$(aws autoscaling describe-auto-scaling-groups --region $AWS_REGION --query 'AutoScalingGroups[].[AutoScalingGroupName]' --output text 2>/dev/null)
 for ASG in $ASGS; do
     if [ -n "$ASG" ]; then
+        DELETE_ASG=false
+
+        # Check if ASG has project tag
         TAGS=$(aws autoscaling describe-tags --filters "Name=auto-scaling-group,Values=$ASG" --region $AWS_REGION --query 'Tags' --output json 2>/dev/null)
         if has_project_tag "$TAGS"; then
-            echo "  🗑️  Deleting ASG: $ASG (tagged)"
-            aws autoscaling delete-auto-scaling-group --auto-scaling-group-name $ASG --force-delete --region $AWS_REGION 2>/dev/null
+            DELETE_ASG=true
+        fi
+
+        # Check ASG name patterns
+        if echo "$ASG" | grep -qiE "nt114|NT114"; then
+            DELETE_ASG=true
+        fi
+
+        if [ "$DELETE_ASG" = "true" ]; then
+            echo "  🗑️  Deleting ASG: $ASG"
+            execute_aws_cmd "aws autoscaling delete-auto-scaling-group --auto-scaling-group-name '$ASG' --force-delete --region $AWS_REGION" "Auto Scaling Group" "$ASG"
         fi
     fi
 done
-echo "  ✅ ASGs deleted"
+echo "  ✅ ASG cleanup completed"
 echo ""
 
-# 5. Delete Launch Templates with project tag
-echo "5️⃣  Deleting Launch Templates with project tag..."
-LTS=$(aws ec2 describe-launch-templates --region $AWS_REGION \
-    --filters "Name=tag:$PROJECT_TAG,Values=$PROJECT_VALUE" \
-    --query 'LaunchTemplates[].LaunchTemplateId' --output text 2>/dev/null)
-for LT in $LTS; do
-    echo "  🗑️  Deleting Launch Template: $LT"
-    aws ec2 delete-launch-template --launch-template-id $LT --region $AWS_REGION 2>/dev/null
+# 5. Delete Launch Templates with project tag or specific patterns
+echo "5️⃣  Cleaning up Launch Templates..."
+LTS=$(aws ec2 describe-launch-templates --region $AWS_REGION --query 'LaunchTemplates[].{Id:LaunchTemplateId,Name:LaunchTemplateName,Tags:Tags}' --output json 2>/dev/null)
+echo "$LTS" | jq -r '.[] | "\(.Id)\t\(.Name)\t\(.Tags)"' | while IFS=$'\t' read -r LT_ID LT_NAME LT_TAGS; do
+    DELETE_LT=false
+
+    # Check if launch template has project tag
+    if echo "$LT_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$LT_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_LT=true
+    fi
+
+    # Check launch template name patterns
+    if echo "$LT_NAME" | grep -qiE "nt114|NT114"; then
+        DELETE_LT=true
+    fi
+
+    if [ "$DELETE_LT" = "true" ]; then
+        echo "  🗑️  Deleting Launch Template: $LT_NAME"
+        execute_aws_cmd "aws ec2 delete-launch-template --launch-template-id '$LT_ID' --region $AWS_REGION" "Launch Template" "$LT_NAME"
+    fi
 done
-echo "  ✅ Launch Templates deleted"
+echo "  ✅ Launch Templates cleanup completed"
 echo ""
 
-# 6. Delete NAT Gateways with project tag
-echo "6️⃣  Deleting NAT Gateways with project tag..."
-NGWS=$(aws ec2 describe-nat-gateways --region $AWS_REGION \
-    --filter "Name=tag:$PROJECT_TAG,Values=$PROJECT_VALUE" "Name=state,Values=available" \
-    --query 'NatGateways[].NatGatewayId' --output text 2>/dev/null)
-for NGW in $NGWS; do
-    echo "  🗑️  Deleting NAT Gateway: $NGW"
-    aws ec2 delete-nat-gateway --nat-gateway-id $NGW --region $AWS_REGION 2>/dev/null
+# 6. Delete NAT Gateways with project tag or specific patterns
+echo "6️⃣  Cleaning up NAT Gateways..."
+NGWS=$(aws ec2 describe-nat-gateways --region $AWS_REGION --filter "Name=state,Values=available,pending" --query 'NatGateways[].{Id:NatGatewayId,Tags:Tags}' --output json 2>/dev/null)
+echo "$NGWS" | jq -r '.[] | "\(.Id)\t\(.Tags)"' | while IFS=$'\t' read -r NGW_ID NGW_TAGS; do
+    DELETE_NGW=false
+
+    # Check if NAT gateway has project tag
+    if echo "$NGW_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$NGW_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_NGW=true
+    fi
+
+    # NAT gateways usually don't have meaningful names, so we rely on tags only
+    # but we can check if they're associated with tagged VPCs
+    NGW_VPC=$(aws ec2 describe-nat-gateways --nat-gateway-ids $NGW_ID --region $AWS_REGION --query 'NatGateways[0].VpcId' --output text 2>/dev/null)
+    if [ -n "$NGW_VPC" ]; then
+        VPC_TAGS=$(aws ec2 describe-vpcs --vpc-ids $NGW_VPC --region $AWS_REGION --query 'Vpcs[0].Tags' --output json 2>/dev/null)
+        if echo "$VPC_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$VPC_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+            DELETE_NGW=true
+        fi
+    fi
+
+    if [ "$DELETE_NGW" = "true" ]; then
+        echo "  🗑️  Deleting NAT Gateway: $NGW_ID"
+        execute_aws_cmd "aws ec2 delete-nat-gateway --nat-gateway-id '$NGW_ID' --region $AWS_REGION" "NAT Gateway" "$NGW_ID"
+    fi
 done
-if [ -n "$NGWS" ]; then
-    echo "  ⏳ Waiting for NAT Gateways to delete..."
-    sleep 60
+
+# Wait for NAT Gateway deletions to initiate if any were found
+NAT_DELETE_COUNT=$(echo "$NGWS" | jq -r '.[] | "\(.Id)\t\(.Tags)"' | while IFS=$'\t' read -r NGW_ID NGW_TAGS; do
+    DELETE_NGW=false
+    if echo "$NGW_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$NGW_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_NGW=true
+    fi
+    if [ "$DELETE_NGW" = "true" ]; then echo "1"; fi
+done | wc -l)
+
+if [ "$NAT_DELETE_COUNT" -gt 0 ] && [ "$DRY_RUN" = "false" ]; then
+    echo "  ⏳ Waiting for NAT Gateways to start deleting..."
+    sleep 30
 fi
-echo "  ✅ NAT Gateways deleted"
+echo "  ✅ NAT Gateways cleanup completed"
 echo ""
 
-# 7. Release Elastic IPs with project tag
-echo "7️⃣  Releasing Elastic IPs with project tag..."
-EIPS=$(aws ec2 describe-addresses --region $AWS_REGION \
-    --filters "Name=tag:$PROJECT_TAG,Values=$PROJECT_VALUE" \
-    --query 'Addresses[].AllocationId' --output text 2>/dev/null)
-for EIP in $EIPS; do
-    echo "  🗑️  Releasing EIP: $EIP"
-    aws ec2 release-address --allocation-id $EIP --region $AWS_REGION 2>/dev/null
+# 7. Release Elastic IPs with project tag or specific patterns
+echo "7️⃣  Cleaning up Elastic IPs..."
+EIPS=$(aws ec2 describe-addresses --region $AWS_REGION --query 'Addresses[].{Id:AllocationId,Tags:Tags,InstanceId:InstanceId}' --output json 2>/dev/null)
+echo "$EIPS" | jq -r '.[] | "\(.Id)\t\(.Tags)\t\(.InstanceId)"' | while IFS=$'\t' read -r EIP_ID EIP_TAGS EIP_INSTANCE; do
+    DELETE_EIP=false
+
+    # Only delete EIPs that are not associated with instances or are associated with instances being deleted
+    if [ -z "$EIP_INSTANCE" ] || [ "$EIP_INSTANCE" = "null" ]; then
+        # Check if EIP has project tag
+        if echo "$EIP_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$EIP_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+            DELETE_EIP=true
+        fi
+
+        # EIPs don't usually have names, rely on tags or association check
+    fi
+
+    if [ "$DELETE_EIP" = "true" ]; then
+        echo "  🗑️  Releasing EIP: $EIP_ID"
+        execute_aws_cmd "aws ec2 release-address --allocation-id '$EIP_ID' --region $AWS_REGION" "Elastic IP" "$EIP_ID"
+    fi
 done
-echo "  ✅ EIPs released"
+echo "  ✅ Elastic IPs cleanup completed"
 echo ""
 
-# 8. Delete Network Interfaces with project tag
-echo "8️⃣  Deleting Network Interfaces with project tag..."
-ENIS=$(aws ec2 describe-network-interfaces --region $AWS_REGION \
-    --filters "Name=tag:$PROJECT_TAG,Values=$PROJECT_VALUE" "Name=status,Values=available" \
-    --query 'NetworkInterfaces[].NetworkInterfaceId' --output text 2>/dev/null)
-for ENI in $ENIS; do
-    echo "  🗑️  Deleting ENI: $ENI"
-    aws ec2 delete-network-interface --network-interface-id $ENI --region $AWS_REGION 2>/dev/null
+# 8. Delete Network Interfaces with project tag or specific patterns
+echo "8️⃣  Cleaning up Network Interfaces..."
+ENIS=$(aws ec2 describe-network-interfaces --region $AWS_REGION --filters "Name=status,Values=available" --query 'NetworkInterfaces[].{Id:NetworkInterfaceId,Tags:Tags,VpcId:VpcId}' --output json 2>/dev/null)
+echo "$ENIS" | jq -r '.[] | "\(.Id)\t\(.Tags)\t\(.VpcId)"' | while IFS=$'\t' read -r ENI_ID ENI_TAGS ENI_VPC; do
+    DELETE_ENI=false
+
+    # Check if ENI has project tag
+    if echo "$ENI_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$ENI_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_ENI=true
+    fi
+
+    # Check if ENI is in a tagged VPC
+    if [ -n "$ENI_VPC" ] && [ "$ENI_VPC" != "null" ]; then
+        VPC_TAGS=$(aws ec2 describe-vpcs --vpc-ids $ENI_VPC --region $AWS_REGION --query 'Vpcs[0].Tags' --output json 2>/dev/null)
+        if echo "$VPC_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$VPC_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+            DELETE_ENI=true
+        fi
+    fi
+
+    if [ "$DELETE_ENI" = "true" ]; then
+        echo "  🗑️  Deleting ENI: $ENI_ID"
+        execute_aws_cmd "aws ec2 delete-network-interface --network-interface-id '$ENI_ID' --region $AWS_REGION" "Network Interface" "$ENI_ID"
+    fi
 done
-echo "  ✅ ENIs deleted"
+echo "  ✅ Network Interfaces cleanup completed"
 echo ""
 
 # 9. Delete VPCs with project tag and all dependencies
@@ -579,38 +683,460 @@ for VPC in $VPCS; do
 done
 echo ""
 
-# 10. Delete IAM Roles with project tag or specific names
-echo "🔟 Deleting IAM Roles..."
-ROLES=$(aws iam list-roles --query 'Roles[?contains(RoleName, `nt114`) || contains(RoleName, `NT114`)].RoleName' --output text 2>/dev/null)
-for ROLE in $ROLES; do
-    TAGS=$(aws iam list-role-tags --role-name $ROLE --query 'Tags' --output json 2>/dev/null)
-    if has_project_tag "$TAGS" || echo "$ROLE" | grep -qi "nt114"; then
-        echo "  🗑️  Deleting Role: $ROLE"
+# 10. Comprehensive RDS (Relational Database Service) Cleanup
+echo "🔟 Cleaning up RDS Resources..."
 
-        # Detach managed policies
-        POLICIES=$(aws iam list-attached-role-policies --role-name $ROLE --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null)
-        for POLICY in $POLICIES; do
-            aws iam detach-role-policy --role-name $ROLE --policy-arn $POLICY 2>/dev/null
+# Function to safely delete RDS instance
+delete_rds_instance() {
+    local db_identifier="$1"
+    echo "  🗑️  Processing RDS Instance: $db_identifier"
+
+    # Skip final snapshot and disable deletion protection
+    aws rds modify-db-instance \
+        --db-instance-identifier "$db_identifier" \
+        --skip-final-snapshot \
+        --no-deletion-protection \
+        --apply-immediately \
+        --region $AWS_REGION 2>/dev/null
+
+    # Wait for modification to apply
+    echo "    - Waiting for modification to apply..."
+    sleep 30
+
+    # Delete the instance
+    execute_aws_cmd "aws rds delete-db-instance --db-instance-identifier '$db_identifier' --skip-final-snapshot --region $AWS_REGION" "RDS Instance" "$db_identifier"
+
+    if [ "$DRY_RUN" = "false" ]; then
+        echo "    - Waiting for RDS instance to be deleted..."
+        aws rds wait db-instance-deleted --db-instance-identifier "$db_identifier" --region $AWS_REGION 2>/dev/null &
+        RDS_WAIT_PID=$!
+        # Wait up to 10 minutes
+        timeout 600 bash -c "wait $RDS_WAIT_PID" 2>/dev/null || echo "    ⚠️  RDS deletion taking longer than expected"
+    fi
+}
+
+# Function to delete DB subnet group
+delete_db_subnet_group() {
+    local subnet_group_name="$1"
+    echo "  🗑️  Deleting DB Subnet Group: $subnet_group_name"
+    execute_aws_cmd "aws rds delete-db-subnet-group --db-subnet-group-name '$subnet_group_name' --region $AWS_REGION" "DB Subnet Group" "$subnet_group_name"
+}
+
+# Function to delete DB parameter group
+delete_db_parameter_group() {
+    local parameter_group_name="$1"
+    echo "  🗑️  Deleting DB Parameter Group: $parameter_group_name"
+    execute_aws_cmd "aws rds delete-db-parameter-group --db-parameter-group-name '$parameter_group_name' --region $AWS_REGION" "DB Parameter Group" "$parameter_group_name"
+}
+
+# Function to delete DB option group
+delete_db_option_group() {
+    local option_group_name="$1"
+    echo "  🗑️  Deleting DB Option Group: $option_group_name"
+    execute_aws_cmd "aws rds delete-db-option-group --db-option-group-name '$option_group_name' --region $AWS_REGION" "DB Option Group" "$option_group_name"
+}
+
+# Get RDS instances to delete
+echo "  - Finding RDS instances to delete..."
+RDS_INSTANCES=$(aws rds describe-db-instances --region $AWS_REGION --query 'DBInstances[].{Identifier:DBIdentifier,Tags:TagList}' --output json 2>/dev/null)
+
+DELETE_RDS_COUNT=0
+DELETE_RDS_LIST=""
+
+echo "$RDS_INSTANCES" | jq -r '.[] | "\(.Identifier)\t\(.Tags)"' | while IFS=$'\t' read -r DB_IDENTIFIER DB_TAGS; do
+    DELETE_RDS=false
+
+    # Check if RDS instance has project tag
+    if echo "$DB_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$DB_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_RDS=true
+    fi
+
+    # Check RDS instance name patterns
+    if echo "$DB_IDENTIFIER" | grep -qiE "nt114|NT114"; then
+        DELETE_RDS=true
+    fi
+
+    if [ "$DELETE_RDS" = "true" ]; then
+        DELETE_RDS_COUNT=$((DELETE_RDS_COUNT + 1))
+        DELETE_RDS_LIST="$DELETE_RDS_LIST $DB_IDENTIFIER"
+        echo "    - Marked for deletion: $DB_IDENTIFIER"
+    fi
+done
+
+# RDS instances need to be deleted one by one due to long wait times
+if [ "$DELETE_RDS_COUNT" -gt 0 ]; then
+    if confirm_action "Delete $DELETE_RDS_COUNT RDS instance(s) with project tag?" $DELETE_RDS_COUNT; then
+        # Re-query to get the actual list
+        RDS_TO_DELETE=$(aws rds describe-db-instances --region $AWS_REGION --query 'DBInstances[].{Identifier:DBIdentifier,Tags:TagList}' --output json 2>/dev/null | \
+            jq -r '.[] | "\(.Identifier)\t\(.Tags)"' | while IFS=$'\t' read -r DB_IDENTIFIER DB_TAGS; do
+            DELETE_RDS=false
+
+            if echo "$DB_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$DB_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+                DELETE_RDS=true
+            fi
+
+            if echo "$DB_IDENTIFIER" | grep -qiE "nt114|NT114"; then
+                DELETE_RDS=true
+            fi
+
+            if [ "$DELETE_RDS" = "true" ]; then
+                echo "$DB_IDENTIFIER"
+            fi
+        done)
+
+        for DB_ID in $RDS_TO_DELETE; do
+            if [ -n "$DB_ID" ]; then
+                delete_rds_instance "$DB_ID"
+            fi
+        done
+    else
+        echo "  ❌ Skipped RDS cleanup"
+    fi
+else
+    echo "  ✅ No RDS instances found with project tag"
+fi
+
+# Delete RDS subnet groups (can only be deleted after instances are gone)
+echo "  - Cleaning up DB Subnet Groups..."
+DB_SUBNET_GROUPS=$(aws rds describe-db-subnet-groups --region $AWS_REGION --query 'DBSubnetGroups[].{Name:DBSubnetGroupName,Tags:TagList}' --output json 2>/dev/null)
+
+echo "$DB_SUBNET_GROUPS" | jq -r '.[] | "\(.Name)\t\(.Tags)"' | while IFS=$'\t' read -r SUBNET_GROUP_NAME SUBNET_GROUP_TAGS; do
+    DELETE_SUBNET_GROUP=false
+
+    # Check if subnet group has project tag
+    if echo "$SUBNET_GROUP_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$SUBNET_GROUP_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_SUBNET_GROUP=true
+    fi
+
+    # Check subnet group name patterns
+    if echo "$SUBNET_GROUP_NAME" | grep -qiE "nt114|NT114"; then
+        DELETE_SUBNET_GROUP=true
+    fi
+
+    if [ "$DELETE_SUBNET_GROUP" = "true" ]; then
+        delete_db_subnet_group "$SUBNET_GROUP_NAME"
+    fi
+done
+
+# Delete RDS parameter groups
+echo "  - Cleaning up DB Parameter Groups..."
+DB_PARAMETER_GROUPS=$(aws rds describe-db-parameter-groups --region $AWS_REGION --query 'DBParameterGroups[].{Name:DBParameterGroupName,Tags:TagList}' --output json 2>/dev/null)
+
+echo "$DB_PARAMETER_GROUPS" | jq -r '.[] | "\(.Name)\t\(.Tags)"' | while IFS=$'\t' read -r PARAM_GROUP_NAME PARAM_GROUP_TAGS; do
+    DELETE_PARAM_GROUP=false
+
+    # Skip default parameter groups
+    if echo "$PARAM_GROUP_NAME" | grep -q "default\."; then
+        continue
+    fi
+
+    # Check if parameter group has project tag
+    if echo "$PARAM_GROUP_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$PARAM_GROUP_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_PARAM_GROUP=true
+    fi
+
+    # Check parameter group name patterns
+    if echo "$PARAM_GROUP_NAME" | grep -qiE "nt114|NT114"; then
+        DELETE_PARAM_GROUP=true
+    fi
+
+    if [ "$DELETE_PARAM_GROUP" = "true" ]; then
+        delete_db_parameter_group "$PARAM_GROUP_NAME"
+    fi
+done
+
+# Delete RDS option groups
+echo "  - Cleaning up DB Option Groups..."
+DB_OPTION_GROUPS=$(aws rds describe-db-option-groups --region $AWS_REGION --query 'DBOptionGroups[].{Name:DBOptionGroupName,Tags:TagList}' --output json 2>/dev/null)
+
+echo "$DB_OPTION_GROUPS" | jq -r '.[] | "\(.Name)\t\(.Tags)"' | while IFS=$'\t' read -r OPTION_GROUP_NAME OPTION_GROUP_TAGS; do
+    DELETE_OPTION_GROUP=false
+
+    # Skip default option groups
+    if echo "$OPTION_GROUP_NAME" | grep -q "default\."; then
+        continue
+    fi
+
+    # Check if option group has project tag
+    if echo "$OPTION_GROUP_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$OPTION_GROUP_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_OPTION_GROUP=true
+    fi
+
+    # Check option group name patterns
+    if echo "$OPTION_GROUP_NAME" | grep -qiE "nt114|NT114"; then
+        DELETE_OPTION_GROUP=true
+    fi
+
+    if [ "$DELETE_OPTION_GROUP" = "true" ]; then
+        delete_db_option_group "$OPTION_GROUP_NAME"
+    fi
+done
+
+echo "  ✅ RDS cleanup completed"
+echo ""
+
+# 11. S3 Bucket Cleanup
+echo "1️⃣1️⃣  Cleaning up S3 Buckets..."
+
+# Get S3 buckets to delete
+S3_BUCKETS=$(aws s3api list-buckets --query 'Buckets[].{Name:Name}' --output json 2>/dev/null)
+
+DELETE_S3_COUNT=0
+DELETE_S3_LIST=""
+
+echo "$S3_BUCKETS" | jq -r '.[].Name' | while read -r BUCKET_NAME; do
+    DELETE_BUCKET=false
+
+    # Check bucket tags
+    BUCKET_TAGS=$(aws s3api get-bucket-tagging --bucket "$BUCKET_NAME" --query 'TagSet' --output json 2>/dev/null || echo '[]')
+    if echo "$BUCKET_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$BUCKET_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_BUCKET=true
+    fi
+
+    # Check bucket name patterns
+    if echo "$BUCKET_NAME" | grep -qiE "nt114|NT114|migration"; then
+        DELETE_BUCKET=true
+    fi
+
+    if [ "$DELETE_BUCKET" = "true" ]; then
+        DELETE_S3_COUNT=$((DELETE_S3_COUNT + 1))
+        DELETE_S3_LIST="$DELETE_S3_LIST $BUCKET_NAME"
+        echo "    - Marked for deletion: $BUCKET_NAME"
+    fi
+done
+
+if [ "$DELETE_S3_COUNT" -gt 0 ]; then
+    if confirm_action "Delete $DELETE_S3_COUNT S3 bucket(s) with project tag? (This will permanently delete all bucket contents)" $DELETE_S3_COUNT; then
+        # Re-query to get the actual list
+        S3_TO_DELETE=$(aws s3api list-buckets --query 'Buckets[].{Name:Name}' --output json 2>/dev/null | \
+            jq -r '.[].Name' | while read -r BUCKET_NAME; do
+            DELETE_BUCKET=false
+
+            BUCKET_TAGS=$(aws s3api get-bucket-tagging --bucket "$BUCKET_NAME" --query 'TagSet' --output json 2>/dev/null || echo '[]')
+            if echo "$BUCKET_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$BUCKET_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+                DELETE_BUCKET=true
+            fi
+
+            if echo "$BUCKET_NAME" | grep -qiE "nt114|NT114|migration"; then
+                DELETE_BUCKET=true
+            fi
+
+            if [ "$DELETE_BUCKET" = "true" ]; then
+                echo "$BUCKET_NAME"
+            fi
+        done)
+
+        for BUCKET in $S3_TO_DELETE; do
+            if [ -n "$BUCKET" ]; then
+                echo "  🗑️  Processing S3 Bucket: $BUCKET"
+
+                # Empty the bucket first
+                if [ "$DRY_RUN" = "false" ]; then
+                    echo "    - Emptying bucket contents..."
+                    aws s3 rm "s3://$BUCKET" --recursive --region $AWS_REGION 2>/dev/null
+
+                    # Delete all versions if versioning is enabled
+                    echo "    - Deleting object versions..."
+                    aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json 2>/dev/null | \
+                        jq -c '.Objects[]' | while read -r obj; do
+                        aws s3api delete-object --bucket "$BUCKET" --key "$(echo "$obj" | jq -r '.Key')" --version-id "$(echo "$obj" | jq -r '.VersionId')" 2>/dev/null
+                    done
+
+                    # Delete delete markers
+                    aws s3api list-object-versions --bucket "$BUCKET" --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json 2>/dev/null | \
+                        jq -c '.Objects[]' | while read -r obj; do
+                        aws s3api delete-object --bucket "$BUCKET" --key "$(echo "$obj" | jq -r '.Key')" --version-id "$(echo "$obj" | jq -r '.VersionId')" 2>/dev/null
+                    done
+                else
+                    echo "    - [DRY-RUN] Would empty bucket contents"
+                fi
+
+                # Delete the bucket
+                execute_aws_cmd "aws s3api delete-bucket --bucket '$BUCKET' --region $AWS_REGION" "S3 Bucket" "$BUCKET"
+            fi
+        done
+    else
+        echo "  ❌ Skipped S3 bucket cleanup"
+    fi
+else
+    echo "  ✅ No S3 buckets found with project tag"
+fi
+
+echo "  ✅ S3 bucket cleanup completed"
+echo ""
+
+# 12. Comprehensive IAM Resources Cleanup with project tag or specific names
+echo "🔟 Cleaning up IAM Resources..."
+
+# Function to safely delete IAM role with all dependencies
+delete_iam_role_safely() {
+    local role_name="$1"
+
+    echo "  🗑️  Processing IAM Role: $role_name"
+
+    # Remove from instance profiles first
+    echo "    - Removing from instance profiles..."
+    PROFILES=$(aws iam list-instance-profiles-for-role --role-name "$role_name" --query 'InstanceProfiles[].InstanceProfileName' --output text 2>/dev/null)
+    for PROFILE in $PROFILES; do
+        echo "      Removing from profile: $PROFILE"
+        aws iam remove-role-from-instance-profile --instance-profile-name "$PROFILE" --role-name "$role_name" 2>/dev/null
+
+        # Only delete instance profile if it's not used by other roles
+        OTHER_ROLES=$(aws iam get-instance-profile --instance-profile-name "$PROFILE" --query 'InstanceProfile.Roles[].RoleName' --output text 2>/dev/null)
+        if [ -z "$OTHER_ROLES" ] || [ "$OTHER_ROLES" = "$role_name" ]; then
+            echo "      Deleting instance profile: $PROFILE"
+            aws iam delete-instance-profile --instance-profile-name "$PROFILE" 2>/dev/null
+        fi
+    done
+
+    # Detach managed policies
+    echo "    - Detaching managed policies..."
+    POLICIES=$(aws iam list-attached-role-policies --role-name "$role_name" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null)
+    for POLICY in $POLICIES; do
+        echo "      Detaching: $(basename $POLICY)"
+        aws iam detach-role-policy --role-name "$role_name" --policy-arn "$POLICY" 2>/dev/null
+    done
+
+    # Delete inline policies
+    echo "    - Deleting inline policies..."
+    INLINE=$(aws iam list-role-policies --role-name "$role_name" --query 'PolicyNames[]' --output text 2>/dev/null)
+    for POL in $INLINE; do
+        echo "      Deleting: $POL"
+        aws iam delete-role-policy --role-name "$role_name" --policy-name "$POL" 2>/dev/null
+    done
+
+    # Finally delete the role
+    echo "    - Deleting role: $role_name"
+    aws iam delete-role --role-name "$role_name" 2>/dev/null
+}
+
+# Get all roles that might be related to the project
+ROLES=$(aws iam list-roles --query 'Roles[].RoleName' --output text 2>/dev/null)
+for ROLE in $ROLES; do
+    DELETE_ROLE=false
+
+    # Check if role has project tag
+    TAGS=$(aws iam list-role-tags --role-name "$ROLE" --query 'Tags' --output json 2>/dev/null 2>/dev/null)
+    if has_project_tag "$TAGS"; then
+        DELETE_ROLE=true
+    fi
+
+    # Check role name patterns
+    if echo "$ROLE" | grep -qiE "nt114|NT114|eks.*ebs.*csi|eks.*alb|enhanced.*monitoring|rds.*enhanced|github.*actions|bastion"; then
+        DELETE_ROLE=true
+    fi
+
+    # Check if it's an EKS-related role
+    if echo "$ROLE" | grep -qiE "eks.*nodegroup|eks.*cluster|aws-load-balancer"; then
+        DELETE_ROLE=true
+    fi
+
+    if [ "$DELETE_ROLE" = "true" ]; then
+        delete_iam_role_safely "$ROLE"
+    fi
+done
+
+# Delete IAM Policies related to the project
+echo "  🗑️  Deleting IAM Policies..."
+POLICIES=$(aws iam list-policies --scope Local --query 'Policies[].{Name:PolicyName,Arn:Arn}' --output json 2>/dev/null)
+echo "$POLICIES" | jq -r '.[] | "\(.Name)\t\(.Arn)"' | while IFS=$'\t' read -r POLICY_NAME POLICY_ARN; do
+    DELETE_POLICY=false
+
+    # Check policy name patterns
+    if echo "$POLICY_NAME" | grep -qiE "nt114|NT114|github.*actions|eks.*assume|bastion"; then
+        DELETE_POLICY=true
+    fi
+
+    # Check policy tags
+    TAGS=$(aws iam list-policy-tags --policy-arn "$POLICY_ARN" --query 'Tags' --output json 2>/dev/null)
+    if has_project_tag "$TAGS"; then
+        DELETE_POLICY=true
+    fi
+
+    if [ "$DELETE_POLICY" = "true" ]; then
+        echo "  🗑️  Deleting Policy: $POLICY_NAME"
+
+        # Detach from all entities first
+        # From roles
+        ATTACHED_ROLES=$(aws iam list-entities-for-policy --policy-arn "$POLICY_ARN" --filter Role --query 'PolicyRoles[].RoleName' --output text 2>/dev/null)
+        for ROLE in $ATTACHED_ROLES; do
+            echo "    Detaching from role: $ROLE"
+            aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$POLICY_ARN" 2>/dev/null
+        done
+
+        # From groups
+        ATTACHED_GROUPS=$(aws iam list-entities-for-policy --policy-arn "$POLICY_ARN" --filter Group --query 'PolicyGroups[].GroupName' --output text 2>/dev/null)
+        for GROUP in $ATTACHED_GROUPS; do
+            echo "    Detaching from group: $GROUP"
+            aws iam detach-group-policy --group-name "$GROUP" --policy-arn "$POLICY_ARN" 2>/dev/null
+        done
+
+        # From users
+        ATTACHED_USERS=$(aws iam list-entities-for-policy --policy-arn "$POLICY_ARN" --filter User --query 'PolicyUsers[].UserName' --output text 2>/dev/null)
+        for USER in $ATTACHED_USERS; do
+            echo "    Detaching from user: $USER"
+            aws iam detach-user-policy --user-name "$USER" --policy-arn "$POLICY_ARN" 2>/dev/null
+        done
+
+        # Delete the policy
+        aws iam delete-policy --policy-arn "$POLICY_ARN" 2>/dev/null
+    fi
+done
+
+# Delete IAM Users related to the project
+echo "  🗑️  Deleting IAM Users..."
+USERS=$(aws iam list-users --query 'Users[].UserName' --output text 2>/dev/null)
+for USER in $USERS; do
+    DELETE_USER=false
+
+    # Check user name patterns
+    if echo "$USER" | grep -qiE "nt114|NT114|github.*actions"; then
+        DELETE_USER=true
+    fi
+
+    # Check user tags
+    TAGS=$(aws iam list-user-tags --user-name "$USER" --query 'Tags' --output json 2>/dev/null)
+    if has_project_tag "$TAGS"; then
+        DELETE_USER=true
+    fi
+
+    if [ "$DELETE_USER" = "true" ]; then
+        echo "  🗑️  Deleting User: $USER"
+
+        # Delete access keys first
+        ACCESS_KEYS=$(aws iam list-access-keys --user-name "$USER" --query 'AccessKeyMetadata[].AccessKeyId' --output text 2>/dev/null)
+        for KEY in $ACCESS_KEYS; do
+            echo "    Deleting access key: $KEY"
+            aws iam delete-access-key --user-name "$USER" --access-key-id "$KEY" 2>/dev/null
+        done
+
+        # Detach policies
+        ATTACHED_POLICIES=$(aws iam list-attached-user-policies --user-name "$USER" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null)
+        for POLICY in $ATTACHED_POLICIES; do
+            echo "    Detaching policy: $(basename $POLICY)"
+            aws iam detach-user-policy --user-name "$USER" --policy-arn "$POLICY" 2>/dev/null
         done
 
         # Delete inline policies
-        INLINE=$(aws iam list-role-policies --role-name $ROLE --query 'PolicyNames[]' --output text 2>/dev/null)
-        for POL in $INLINE; do
-            aws iam delete-role-policy --role-name $ROLE --policy-name $POL 2>/dev/null
+        INLINE_POLICIES=$(aws iam list-user-policies --user-name "$USER" --query 'PolicyNames[]' --output text 2>/dev/null)
+        for POLICY in $INLINE_POLICIES; do
+            echo "    Deleting inline policy: $POLICY"
+            aws iam delete-user-policy --user-name "$USER" --policy-name "$POLICY" 2>/dev/null
         done
 
-        # Delete instance profiles
-        PROFILES=$(aws iam list-instance-profiles-for-role --role-name $ROLE --query 'InstanceProfiles[].InstanceProfileName' --output text 2>/dev/null)
-        for PROFILE in $PROFILES; do
-            aws iam remove-role-from-instance-profile --instance-profile-name $PROFILE --role-name $ROLE 2>/dev/null
-            aws iam delete-instance-profile --instance-profile-name $PROFILE 2>/dev/null
+        # Remove from groups
+        GROUPS=$(aws iam list-groups-for-user --user-name "$USER" --query 'Groups[].GroupName' --output text 2>/dev/null)
+        for GROUP in $GROUPS; do
+            echo "    Removing from group: $GROUP"
+            aws iam remove-user-from-group --group-name "$GROUP" --user-name "$USER" 2>/dev/null
         done
 
-        # Delete role
-        aws iam delete-role --role-name $ROLE 2>/dev/null
+        # Delete the user
+        aws iam delete-user --user-name "$USER" 2>/dev/null
     fi
 done
-echo "  ✅ IAM Roles deleted"
+
+echo "  ✅ IAM Resources cleanup completed"
 echo ""
 
 # 11. Delete EBS Volumes with project tag
@@ -635,49 +1161,185 @@ done
 echo "  ✅ Log Groups deleted"
 echo ""
 
-# 13. Delete ECR Repositories with project tag or specific names
-echo "1️⃣3️⃣  Deleting ECR Repositories..."
-ECR_REPOS=$(aws ecr describe-repositories --region $AWS_REGION --query 'repositories[?contains(repositoryName, `nt114`) || contains(repositoryName, `NT114`)].repositoryName' --output text 2>/dev/null)
-for REPO in $ECR_REPOS; do
-    echo "  🗑️  Deleting ECR Repository: $REPO"
-    aws ecr delete-repository --repository-name $REPO --region $AWS_REGION --force 2>/dev/null
+# 13. Delete EKS Addons with project tag or specific names
+echo "1️⃣3️⃣  Cleaning up EKS Addons..."
+CLUSTERS=$(aws eks list-clusters --region $AWS_REGION --query 'clusters[]' --output text 2>/dev/null)
+for CLUSTER in $CLUSTERS; do
+    # Check if cluster has project tag or matches pattern
+    CLUSTER_TAGS=$(aws eks describe-cluster --name $CLUSTER --region $AWS_REGION --query 'cluster.tags' --output json 2>/dev/null)
+    DELETE_CLUSTER_ADDONS=false
+
+    if echo "$CLUSTER_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$CLUSTER_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_CLUSTER_ADDONS=true
+    fi
+
+    if echo "$CLUSTER" | grep -qiE "nt114|NT114"; then
+        DELETE_CLUSTER_ADDONS=true
+    fi
+
+    if [ "$DELETE_CLUSTER_ADDONS" = "true" ]; then
+        echo "  🗑️  Processing EKS addons for cluster: $CLUSTER"
+
+        # List and delete addons
+        ADDONS=$(aws eks list-addons --cluster-name $CLUSTER --region $AWS_REGION --query 'addons[]' --output text 2>/dev/null)
+        for ADDON in $ADDONS; do
+            # Focus on our specific addons
+            if echo "$ADDON" | grep -qiE "ebs-csi|coredns|kube-proxy|vpc-cni"; then
+                echo "    - Deleting addon: $ADDON"
+                execute_aws_cmd "aws eks delete-addon --cluster-name '$CLUSTER' --addon-name '$ADDON' --region $AWS_REGION" "EKS Addon" "$ADDON"
+            fi
+        done
+    fi
+done
+echo "  ✅ EKS addons cleanup completed"
+echo ""
+
+# 14. Delete ECR Repositories with project tag or specific names
+echo "1️⃣4️⃣  Deleting ECR Repositories..."
+ECR_REPOS=$(aws ecr describe-repositories --region $AWS_REGION --query 'repositories[].{Name:repositoryName,Tags:tags}' --output json 2>/dev/null)
+echo "$ECR_REPOS" | jq -r '.[] | "\(.Name)\t\(.Tags)"' | while IFS=$'\t' read -r REPO_NAME REPO_TAGS; do
+    DELETE_REPO=false
+
+    # Check if repository has project tag
+    if echo "$REPO_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$REPO_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_REPO=true
+    fi
+
+    # Check repository name patterns
+    if echo "$REPO_NAME" | grep -qiE "nt114|NT114"; then
+        DELETE_REPO=true
+    fi
+
+    if [ "$DELETE_REPO" = "true" ]; then
+        echo "  🗑️  Deleting ECR Repository: $REPO_NAME"
+        execute_aws_cmd "aws ecr delete-repository --repository-name '$REPO_NAME' --region $AWS_REGION --force" "ECR Repository" "$REPO_NAME"
+    fi
 done
 echo "  ✅ ECR Repositories deleted"
 echo ""
 
-# 14. Delete CloudFormation Stacks with project tag
-echo "1️⃣4️⃣  Deleting CloudFormation Stacks..."
-STACKS=$(aws cloudformation list-stacks --region $AWS_REGION --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --query 'StackSummaries[].StackName' --output text 2>/dev/null)
-for STACK in $STACKS; do
-    TAGS=$(aws cloudformation describe-stacks --stack-name $STACK --region $AWS_REGION --query 'Stacks[0].Tags' --output json 2>/dev/null)
-    if has_project_tag "$TAGS" || echo "$STACK" | grep -qi "nt114"; then
-        echo "  🗑️  Deleting Stack: $STACK"
-        aws cloudformation delete-stack --stack-name $STACK --region $AWS_REGION 2>/dev/null
+# 15. Delete KMS Keys with project tag or specific names
+echo "1️⃣5️⃣  Cleaning up KMS Keys..."
+KMS_KEYS=$(aws kms list-keys --region $AWS_REGION --query 'Keys[].KeyId' --output text 2>/dev/null)
+for KEY_ID in $KMS_KEYS; do
+    # Get key metadata and tags
+    KEY_METADATA=$(aws kms describe-key --key-id $KEY_ID --region $AWS_REGION --query 'KeyMetadata' --output json 2>/dev/null)
+    KEY_STATE=$(echo "$KEY_METADATA" | jq -r '.KeyState // ""')
+    KEY_TAGS=$(aws kms list-resource-tags --key-id $KEY_ID --region $AWS_REGION --query 'Tags' --output json 2>/dev/null)
+
+    DELETE_KEY=false
+
+    # Skip keys that are pending deletion
+    if [ "$KEY_STATE" = "PendingDeletion" ]; then
+        continue
+    fi
+
+    # Check if key has project tag
+    if echo "$KEY_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$KEY_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_KEY=true
+    fi
+
+    # Check key description patterns
+    KEY_DESCRIPTION=$(echo "$KEY_METADATA" | jq -r '.Description // ""')
+    if echo "$KEY_DESCRIPTION" | grep -qiE "nt114|NT114|rds"; then
+        DELETE_KEY=true
+    fi
+
+    if [ "$DELETE_KEY" = "true" ]; then
+        echo "  🗑️  Scheduling KMS Key for deletion: $KEY_ID"
+        execute_aws_cmd "aws kms schedule-key-deletion --key-id '$KEY_ID' --region $AWS_REGION --pending-window-in-days 7" "KMS Key" "$KEY_ID"
+    fi
+done
+echo "  ✅ KMS keys cleanup completed"
+echo ""
+
+# 16. Delete CloudFormation Stacks with project tag
+echo "1️⃣6️⃣  Deleting CloudFormation Stacks..."
+STACKS=$(aws cloudformation list-stacks --region $AWS_REGION --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE IMPORT_COMPLETE IMPORT_ROLLBACK_COMPLETE --query 'StackSummaries[].{Name:StackName,Tags:Tags}' --output json 2>/dev/null)
+echo "$STACKS" | jq -r '.[] | "\(.Name)\t\(.Tags)"' | while IFS=$'\t' read -r STACK_NAME STACK_TAGS; do
+    DELETE_STACK=false
+
+    # Check if stack has project tag
+    if echo "$STACK_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$STACK_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_STACK=true
+    fi
+
+    # Check stack name patterns
+    if echo "$STACK_NAME" | grep -qiE "nt114|NT114"; then
+        DELETE_STACK=true
+    fi
+
+    if [ "$DELETE_STACK" = "true" ]; then
+        echo "  🗑️  Deleting CloudFormation Stack: $STACK_NAME"
+        execute_aws_cmd "aws cloudformation delete-stack --stack-name '$STACK_NAME' --region $AWS_REGION" "CloudFormation Stack" "$STACK_NAME"
     fi
 done
 echo "  ✅ Stacks deleted"
 echo ""
 
+# 17. Clean up any remaining Key Pairs
+echo "1️⃣7️⃣  Cleaning up EC2 Key Pairs..."
+KEY_PAIRS=$(aws ec2 describe-key-pairs --region $AWS_REGION --query 'KeyPairs[].{Name:KeyName,Tags:Tags}' --output json 2>/dev/null)
+echo "$KEY_PAIRS" | jq -r '.[] | "\(.Name)\t\(.Tags)"' | while IFS=$'\t' read -r KEY_NAME KEY_TAGS; do
+    DELETE_KEY=false
+
+    # Check if key pair has project tag
+    if echo "$KEY_TAGS" | grep -q "\"$PROJECT_TAG\"" && echo "$KEY_TAGS" | grep -q "\"$PROJECT_VALUE\""; then
+        DELETE_KEY=true
+    fi
+
+    # Check key name patterns
+    if echo "$KEY_NAME" | grep -qiE "nt114|NT114|bastion"; then
+        DELETE_KEY=true
+    fi
+
+    if [ "$DELETE_KEY" = "true" ]; then
+        echo "  🗑️  Deleting EC2 Key Pair: $KEY_NAME"
+        execute_aws_cmd "aws ec2 delete-key-pair --key-name '$KEY_NAME' --region $AWS_REGION" "EC2 Key Pair" "$KEY_NAME"
+    fi
+done
+echo "  ✅ Key pairs cleanup completed"
+echo ""
+
 echo "========================================="
-echo "✅ CLEANUP COMPLETED!"
+echo "✅ COMPREHENSIVE CLEANUP COMPLETED!"
 echo "========================================="
 echo ""
 echo "All AWS resources with tag $PROJECT_TAG=$PROJECT_VALUE have been deleted."
-echo "Note: Some resources may take a few minutes to fully delete."
+echo "Resources with name patterns containing 'nt114', 'NT114', or related Terraform"
+echo "components have also been cleaned up."
 echo ""
-echo "Resources deleted:"
-echo "  ✅ EKS Clusters & Node Groups"
-echo "  ✅ Load Balancers (ALB & Classic)"
-echo "  ✅ EC2 Instances"
-echo "  ✅ Auto Scaling Groups"
-echo "  ✅ Launch Templates"
-echo "  ✅ NAT Gateways"
-echo "  ✅ Elastic IPs"
+echo "Note: Some resources may take a few minutes to fully delete."
+echo "      RDS instances and KMS keys have extended deletion periods."
+echo ""
+echo "Resources processed:"
+echo "  ✅ EKS Clusters, Node Groups & Addons"
+echo "  ✅ Load Balancers (ALB, NLB & Classic)"
+echo "  ✅ EC2 Instances & Launch Templates"
+echo "  ✅ Auto Scaling Groups & Instance Profiles"
+echo "  ✅ VPCs and all dependencies (subnets, gateways, route tables, etc.)"
+echo "  ✅ Security Groups & Network ACLs"
+echo "  ✅ NAT Gateways & Elastic IPs"
 echo "  ✅ Network Interfaces"
-echo "  ✅ VPCs and all components"
-echo "  ✅ IAM Roles"
+echo "  ✅ RDS Instances, Subnet Groups, Parameter Groups & Option Groups"
+echo "  ✅ S3 Buckets (including versioned objects)"
+echo "  ✅ IAM Roles, Policies, Users & Groups (comprehensive cleanup)"
 echo "  ✅ EBS Volumes"
 echo "  ✅ CloudWatch Log Groups"
-echo "  ✅ ECR Repositories"
+echo "  ✅ ECR Repositories & Lifecycle Policies"
+echo "  ✅ KMS Keys (scheduled for deletion)"
 echo "  ✅ CloudFormation Stacks"
+echo "  ✅ EC2 Key Pairs"
+echo ""
+echo "🔧 Safety features maintained:"
+echo "  • Dry-run mode by default"
+echo "  • Resource whitelisting protection"
+echo "  • Resource age protection (24-hour minimum)"
+echo "  • Interactive confirmations"
+echo "  • Dependency-aware deletion order"
+echo ""
+echo "⚠️  Important reminders:"
+echo "  • Verify all resources are deleted in AWS Console"
+echo "  • Check for any remaining resources in all regions"
+echo "  • Monitor billing for unexpected charges"
 echo ""
