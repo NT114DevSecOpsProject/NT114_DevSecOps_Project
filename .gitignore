@@ -54,3 +54,9 @@ id_rsa*
 *.pub
 secrets/
 .secrets
+
+# Terraform plan files (generated artifacts)
+*.tfplan
+
+# Backup files
+*.backup
