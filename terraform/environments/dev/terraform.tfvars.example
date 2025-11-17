@@ -24,7 +24,7 @@ node_max_size       = 2
 
 # RDS Configuration
 rds_instance_identifier   = "nt114-postgres-dev"
-rds_engine_version        = "17.2-R3"
+rds_engine_version        = "14"
 rds_instance_class        = "db.t3.micro"
 rds_allocated_storage     = 20
 rds_max_allocated_storage = 100

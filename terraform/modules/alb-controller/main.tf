@@ -51,16 +51,26 @@ resource "aws_iam_role_policy_attachment" "ebs_csi_controller" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }
 
-# Helm release for AWS Load Balancer Controller
-resource "helm_release" "aws_load_balancer_controller" {
+# Update Helm repositories to fix cache issues
+resource "null_resource" "helm_repo_update" {
   count = var.enable_alb_controller ? 1 : 0
 
   depends_on = [var.node_group_id]
 
+  provisioner "local-exec" {
+    command = "helm repo add eks-charts ${var.helm_chart_repository} && helm repo update"
+  }
+}
+
+# Helm release for AWS Load Balancer Controller
+resource "helm_release" "aws_load_balancer_controller" {
+  count = var.enable_alb_controller ? 1 : 0
+
+  depends_on = [var.node_group_id, null_resource.helm_repo_update]
+
   name       = var.helm_release_name
   namespace  = var.helm_namespace
-  chart      = var.helm_chart_name
-  repository = var.helm_chart_repository
+  chart      = "eks-charts/${var.helm_chart_name}"
   version    = var.helm_chart_version
 
   set {

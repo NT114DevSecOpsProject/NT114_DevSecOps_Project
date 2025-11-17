@@ -4,9 +4,9 @@ variable "db_identifier" {
 }
 
 variable "engine_version" {
-  description = "PostgreSQL engine version"
+  description = "The engine version of the RDS instance"
   type        = string
-  default     = "17.2-R3"
+  default     = "14"
 }
 
 variable "instance_class" {
