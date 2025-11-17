@@ -356,7 +356,7 @@ variable "rds_instance_identifier" {
 variable "rds_engine_version" {
   description = "PostgreSQL engine version"
   type        = string
-  default     = "15.7"
+  default     = "14.13"
 }
 
 variable "rds_instance_class" {

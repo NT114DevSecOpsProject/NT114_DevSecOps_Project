@@ -139,7 +139,7 @@ resource "aws_iam_user" "github_actions_user" {
   )
 
   lifecycle {
-    ignore_changes = [tags]
+    ignore_changes = [name, tags]  # Allow existing user to be managed
   }
 }
 

@@ -37,6 +37,10 @@ resource "aws_iam_role" "ebs_csi_controller" {
   tags = {
     Name = "${var.cluster_name}-ebs-csi-controller"
   }
+
+  lifecycle {
+    ignore_changes = [name]  # Allow existing role to be managed
+  }
 }
 
 # Attach AWS managed EBS CSI driver policy
