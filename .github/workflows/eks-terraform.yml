@@ -46,9 +46,10 @@ env:
   TF_VAR_rds_password: ${{ secrets.RDS_PASSWORD || 'demo123456789' }}
 
 permissions:
-  contents: read
+  contents: write  # Changed to write for auto-cleanup
   pull-requests: write
   issues: write
+  actions: write  # For triggering cleanup workflows
 
 jobs:
   terraform-plan:
@@ -299,6 +300,7 @@ jobs:
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
+        id: terraform-apply
         run: terraform apply -auto-approve tfplan
 
       - name: Terraform Output
@@ -306,6 +308,38 @@ jobs:
         run: |
           terraform output -json > terraform_outputs.json
           echo "Terraform outputs saved"
+
+      - name: Auto Destroy on Failure
+        if: steps.terraform-apply.outcome == 'failure'
+        run: |
+          echo "❌ Terraform apply failed. Triggering auto-destroy to clean up resources..."
+          echo "⚠️  This will destroy ALL resources created during this deployment attempt"
+
+          # Sleep for 10 seconds before destroying (to allow manual investigation if needed)
+          echo "Sleeping for 10 seconds before auto-destroy..."
+          sleep 10
+
+          # Force destroy all resources
+          echo "🔥 Starting automatic cleanup..."
+          terraform destroy -auto-approve -refresh=false || echo "Terraform destroy failed or partial cleanup"
+
+          # Trigger comprehensive cleanup workflow
+          echo "🚨 Triggering comprehensive AWS resource cleanup..."
+          curl -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{
+              "event_type": "emergency_cleanup",
+              "client_payload": {
+                "run_id": "${{ github.run_id }}",
+                "environment": "${{ inputs.environment || ''dev'' }}",
+                "failed_job": "terraform_apply"
+              }
+            }' || echo "Failed to trigger cleanup workflow"
+
+          echo "🧹 Auto-destroy completed. Comprehensive cleanup triggered."
+          exit 1
 
       - name: Upload Terraform Outputs
         uses: actions/upload-artifact@v4
