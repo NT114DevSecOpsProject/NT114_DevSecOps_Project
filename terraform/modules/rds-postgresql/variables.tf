@@ -6,7 +6,7 @@ variable "db_identifier" {
 variable "engine_version" {
   description = "PostgreSQL engine version"
   type        = string
-  default     = "14.13"
+  default     = "17.2-R3"
 }
 
 variable "instance_class" {
