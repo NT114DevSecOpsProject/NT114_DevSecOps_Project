@@ -71,6 +71,11 @@ echo "Region: $AWS_REGION"
 echo "Mode: $([ "$DRY_RUN" = "true" ] && echo "DRY-RUN (no actual deletion)" || echo "EXECUTE (resources will be deleted)")"
 echo "Target: Resources WITH tag $PROJECT_TAG=$PROJECT_VALUE"
 echo "        AND resources matching Terraform naming patterns (nt114, NT114, etc.)"
+echo "        AND specific IAM resources causing Terraform conflicts:"
+echo "           - Role: eks-1-ebs-csi-controller"
+echo "           - User: nt114-devsecops-github-actions-user"
+echo "           - Group: eks-admin-group"
+echo "           - Role: eks-admin-role"
 echo "Protection: Resources younger than $MIN_RESOURCE_AGE_HOURS hours will be preserved"
 echo "           Default resources and production systems are whitelisted"
 echo ""
@@ -1010,10 +1015,17 @@ delete_iam_role_safely() {
     aws iam delete-role --role-name "$role_name" 2>/dev/null
 }
 
-# Get all roles that might be related to the project
+# Get all roles that might be related to the project (excluding specific roles already handled)
 ROLES=$(aws iam list-roles --query 'Roles[].RoleName' --output text 2>/dev/null)
 for ROLE in $ROLES; do
     DELETE_ROLE=false
+
+    # Skip roles already handled specifically
+    for SPECIFIC_ROLE in "${SPECIFIC_ROLES[@]}"; do
+        if [ "$ROLE" = "$SPECIFIC_ROLE" ]; then
+            continue 2  # Skip to next role
+        fi
+    done
 
     # Check if role has project tag
     TAGS=$(aws iam list-role-tags --role-name "$ROLE" --query 'Tags' --output json 2>/dev/null 2>/dev/null)
@@ -1083,11 +1095,178 @@ echo "$POLICIES" | jq -r '.[] | "\(.Name)\t\(.Arn)"' | while IFS=$'\t' read -r P
     fi
 done
 
-# Delete IAM Users related to the project
-echo "  🗑️  Deleting IAM Users..."
+# Delete specific IAM roles that are causing Terraform conflicts
+echo "  🗑️  Deleting Specific Conflicting IAM Roles..."
+SPECIFIC_ROLES=(
+    "eks-1-ebs-csi-controller"
+    "eks-admin-role"
+)
+
+for ROLE_NAME in "${SPECIFIC_ROLES[@]}"; do
+    # Check if role exists
+    ROLE_EXISTS=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.RoleName' --output text 2>/dev/null || echo "")
+    if [ -n "$ROLE_EXISTS" ]; then
+        echo "  🎯 Deleting specific role: $ROLE_NAME"
+        delete_iam_role_safely "$ROLE_NAME"
+    else
+        echo "  ℹ️  Role not found: $ROLE_NAME"
+    fi
+done
+
+# Delete specific IAM users that are causing Terraform conflicts
+echo "  🗑️  Deleting Specific Conflicting IAM Users..."
+SPECIFIC_USERS=(
+    "nt114-devsecops-github-actions-user"
+)
+
+for USER_NAME in "${SPECIFIC_USERS[@]}"; do
+    # Check if user exists
+    USER_EXISTS=$(aws iam get-user --user-name "$USER_NAME" --query 'User.UserName' --output text 2>/dev/null || echo "")
+    if [ -n "$USER_EXISTS" ]; then
+        echo "  🎯 Deleting specific user: $USER_NAME"
+
+        # Delete access keys first
+        ACCESS_KEYS=$(aws iam list-access-keys --user-name "$USER_NAME" --query 'AccessKeyMetadata[].AccessKeyId' --output text 2>/dev/null)
+        for KEY in $ACCESS_KEYS; do
+            echo "    Deleting access key: $KEY"
+            aws iam delete-access-key --user-name "$USER_NAME" --access-key-id "$KEY" 2>/dev/null
+        done
+
+        # Detach policies
+        ATTACHED_POLICIES=$(aws iam list-attached-user-policies --user-name "$USER_NAME" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null)
+        for POLICY in $ATTACHED_POLICIES; do
+            echo "    Detaching policy: $(basename $POLICY)"
+            aws iam detach-user-policy --user-name "$USER_NAME" --policy-arn "$POLICY" 2>/dev/null
+        done
+
+        # Delete inline policies
+        INLINE_POLICIES=$(aws iam list-user-policies --user-name "$USER_NAME" --query 'PolicyNames[]' --output text 2>/dev/null)
+        for POLICY in $INLINE_POLICIES; do
+            echo "    Deleting inline policy: $POLICY"
+            aws iam delete-user-policy --user-name "$USER_NAME" --policy-name "$POLICY" 2>/dev/null
+        done
+
+        # Remove from groups
+        GROUPS=$(aws iam list-groups-for-user --user-name "$USER_NAME" --query 'Groups[].GroupName' --output text 2>/dev/null)
+        for GROUP in $GROUPS; do
+            echo "    Removing from group: $GROUP"
+            aws iam remove-user-from-group --group-name "$GROUP" --user-name "$USER_NAME" 2>/dev/null
+        done
+
+        # Delete the user
+        aws iam delete-user --user-name "$USER_NAME" 2>/dev/null
+        echo "  ✅ User deleted: $USER_NAME"
+    else
+        echo "  ℹ️  User not found: $USER_NAME"
+    fi
+done
+
+# Delete specific IAM groups that are causing Terraform conflicts
+echo "  🗑️  Deleting Specific Conflicting IAM Groups..."
+SPECIFIC_GROUPS=(
+    "eks-admin-group"
+)
+
+for GROUP_NAME in "${SPECIFIC_GROUPS[@]}"; do
+    # Check if group exists
+    GROUP_EXISTS=$(aws iam get-group --group-name "$GROUP_NAME" --query 'Group.GroupName' --output text 2>/dev/null || echo "")
+    if [ -n "$GROUP_EXISTS" ]; then
+        echo "  🎯 Deleting specific group: $GROUP_NAME"
+
+        # Remove all users from the group first
+        USERS_IN_GROUP=$(aws iam get-group --group-name "$GROUP_NAME" --query 'Users[].UserName' --output text 2>/dev/null)
+        for USER_IN_GROUP in $USERS_IN_GROUP; do
+            echo "    Removing user from group: $USER_IN_GROUP"
+            aws iam remove-user-from-group --group-name "$GROUP_NAME" --user-name "$USER_IN_GROUP" 2>/dev/null
+        done
+
+        # Detach managed policies
+        ATTACHED_POLICIES=$(aws iam list-attached-group-policies --group-name "$GROUP_NAME" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null)
+        for POLICY in $ATTACHED_POLICIES; do
+            echo "    Detaching policy: $(basename $POLICY)"
+            aws iam detach-group-policy --group-name "$GROUP_NAME" --policy-arn "$POLICY" 2>/dev/null
+        done
+
+        # Delete inline policies
+        INLINE_POLICIES=$(aws iam list-group-policies --group-name "$GROUP_NAME" --query 'PolicyNames[]' --output text 2>/dev/null)
+        for POLICY in $INLINE_POLICIES; do
+            echo "    Deleting inline policy: $POLICY"
+            aws iam delete-group-policy --group-name "$GROUP_NAME" --policy-name "$POLICY" 2>/dev/null
+        done
+
+        # Delete the group
+        aws iam delete-group --group-name "$GROUP_NAME" 2>/dev/null
+        echo "  ✅ Group deleted: $GROUP_NAME"
+    else
+        echo "  ℹ️  Group not found: $GROUP_NAME"
+    fi
+done
+
+# Delete IAM Groups related to the project (existing logic)
+echo "  🗑️  Deleting Other IAM Groups..."
+GROUPS=$(aws iam list-groups --query 'Groups[].GroupName' --output text 2>/dev/null)
+for GROUP in $GROUPS; do
+    DELETE_GROUP=false
+
+    # Skip groups already handled specifically
+    for SPECIFIC_GROUP in "${SPECIFIC_GROUPS[@]}"; do
+        if [ "$GROUP" = "$SPECIFIC_GROUP" ]; then
+            continue 2  # Skip to next group
+        fi
+    done
+
+    # Check group name patterns
+    if echo "$GROUP" | grep -qiE "nt114|NT114|eks.*admin"; then
+        DELETE_GROUP=true
+    fi
+
+    # Check group tags
+    TAGS=$(aws iam list-group-tags --group-name "$GROUP" --query 'Tags' --output json 2>/dev/null)
+    if has_project_tag "$TAGS"; then
+        DELETE_GROUP=true
+    fi
+
+    if [ "$DELETE_GROUP" = "true" ]; then
+        echo "  🗑️  Deleting Group: $GROUP"
+
+        # Remove all users from the group first
+        USERS_IN_GROUP=$(aws iam get-group --group-name "$GROUP" --query 'Users[].UserName' --output text 2>/dev/null)
+        for USER_IN_GROUP in $USERS_IN_GROUP; do
+            echo "    Removing user from group: $USER_IN_GROUP"
+            aws iam remove-user-from-group --group-name "$GROUP" --user-name "$USER_IN_GROUP" 2>/dev/null
+        done
+
+        # Detach managed policies
+        ATTACHED_POLICIES=$(aws iam list-attached-group-policies --group-name "$GROUP" --query 'AttachedPolicies[].PolicyArn' --output text 2>/dev/null)
+        for POLICY in $ATTACHED_POLICIES; do
+            echo "    Detaching policy: $(basename $POLICY)"
+            aws iam detach-group-policy --group-name "$GROUP" --policy-arn "$POLICY" 2>/dev/null
+        done
+
+        # Delete inline policies
+        INLINE_POLICIES=$(aws iam list-group-policies --group-name "$GROUP" --query 'PolicyNames[]' --output text 2>/dev/null)
+        for POLICY in $INLINE_POLICIES; do
+            echo "    Deleting inline policy: $POLICY"
+            aws iam delete-group-policy --group-name "$GROUP" --policy-name "$POLICY" 2>/dev/null
+        done
+
+        # Delete the group
+        aws iam delete-group --group-name "$GROUP" 2>/dev/null
+    fi
+done
+
+# Delete IAM Users related to the project (existing logic)
+echo "  🗑️  Deleting Other IAM Users..."
 USERS=$(aws iam list-users --query 'Users[].UserName' --output text 2>/dev/null)
 for USER in $USERS; do
     DELETE_USER=false
+
+    # Skip users already handled specifically
+    for SPECIFIC_USER in "${SPECIFIC_USERS[@]}"; do
+        if [ "$USER" = "$SPECIFIC_USER" ]; then
+            continue 2  # Skip to next user
+        fi
+    done
 
     # Check user name patterns
     if echo "$USER" | grep -qiE "nt114|NT114|github.*actions"; then
@@ -1323,7 +1502,7 @@ echo "  ✅ NAT Gateways & Elastic IPs"
 echo "  ✅ Network Interfaces"
 echo "  ✅ RDS Instances, Subnet Groups, Parameter Groups & Option Groups"
 echo "  ✅ S3 Buckets (including versioned objects)"
-echo "  ✅ IAM Roles, Policies, Users & Groups (comprehensive cleanup)"
+echo "  ✅ IAM Roles, Policies, Users & Groups (comprehensive cleanup + specific conflict resolution)"
 echo "  ✅ EBS Volumes"
 echo "  ✅ CloudWatch Log Groups"
 echo "  ✅ ECR Repositories & Lifecycle Policies"
