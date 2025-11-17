@@ -1,61 +1,261 @@
 #!/bin/bash
-# Comprehensive AWS Resource Cleanup - Delete resources with tag Project=NT114_DevSecOps
+# Comprehensive AWS Resource Cleanup - Delete resources WITHOUT tag Project=NT114_DevSecOps
 set +e
 
+# Configuration
 AWS_REGION="${AWS_REGION:-us-east-1}"
 PROJECT_TAG="Project"
 PROJECT_VALUE="NT114_DevSecOps"
+
+# Script mode - defaults to dry-run for safety
+DRY_RUN=true
+FORCE=false
+VERBOSE=false
+
+# Resource protection settings
+MIN_RESOURCE_AGE_HOURS=24
+MAX_RESOURCES_THRESHOLD=100
+
+# Helper function to display usage
+show_help() {
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --execute    Actually delete resources (default: dry-run)"
+    echo "  --force      Skip confirmation prompts"
+    echo "  --verbose    Show detailed output"
+    echo "  --help, -h   Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0                    # Dry-run mode (safe)"
+    echo "  $0 --execute          # Execute actual deletion"
+    echo "  $0 --execute --force  # Execute without confirmations"
+    echo ""
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --execute)
+            DRY_RUN=false
+            echo "🚀 EXECUTE MODE ENABLED - Resources will be deleted!"
+            shift
+            ;;
+        --force)
+            FORCE=true
+            echo "⚡ FORCE MODE ENABLED - Confirmation prompts skipped"
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            echo "📝 VERBOSE MODE ENABLED"
+            shift
+            ;;
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "❌ Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
 
 echo "========================================="
 echo "🗑️  AWS RESOURCE CLEANUP SCRIPT"
 echo "========================================="
 echo "Region: $AWS_REGION"
-echo "Deleting resources with tag: $PROJECT_TAG=$PROJECT_VALUE"
+echo "Mode: $([ "$DRY_RUN" = "true" ] && echo "DRY-RUN (no actual deletion)" || echo "EXECUTE (resources will be deleted)")"
+echo "Target: Resources WITHOUT tag $PROJECT_TAG=$PROJECT_VALUE"
+echo "Protection: Resources younger than $MIN_RESOURCE_AGE_HOURS hours will be preserved"
 echo ""
 
-# Helper function to check if resource has the project tag
-has_project_tag() {
+# Helper function to check if resource LACKS the project tag
+lacks_project_tag() {
     local tags="$1"
-    echo "$tags" | grep -q "\"$PROJECT_TAG\"" && echo "$tags" | grep -q "\"$PROJECT_VALUE\""
-    return $?
+    local resource_name="$2"
+    local resource_type="$3"
+
+    # Check if resource has the correct project tag
+    if echo "$tags" | grep -q "\"$PROJECT_TAG\"" && echo "$tags" | grep -q "\"$PROJECT_VALUE\""; then
+        [ "$VERBOSE" = "true" ] && echo "  ✅ $resource_type $resource_name has correct tag - preserving"
+        return 1  # Has correct tag, return false (don't delete)
+    fi
+
+    # Check if resource is in whitelist
+    if is_resource_whitelisted "$resource_name" "$resource_type"; then
+        return 1  # Whitelisted, don't delete
+    fi
+
+    [ "$VERBOSE" = "true" ] && echo "  ❌ $resource_type $resource_name lacks correct tag - marked for deletion"
+    return 0  # Lacks correct tag, return true (safe to delete)
 }
 
-# 1. Delete EKS Node Groups & Clusters
-echo "1️⃣  Deleting EKS Clusters with project tag..."
+# Helper function to check if resource is whitelisted for protection
+is_resource_whitelisted() {
+    local resource_name="$1"
+    local resource_type="$2"
+
+    # Whitelist patterns for critical infrastructure
+    local whitelist_patterns=(
+        "Default"
+        "default"
+        "sg-*default*"
+        "vpc-*default*"
+        "rtb-*default*"
+        "*production*"
+        "*prod*"
+        "*critical*"
+        "*essential*"
+        "*managed*"
+    )
+
+    # Always protect default VPC resources
+    if [[ "$resource_type" == "VPC" || "$resource_type" == "SecurityGroup" || "$resource_type" == "RouteTable" ]]; then
+        if [[ "$resource_name" == *"default"* ]]; then
+            [ "$VERBOSE" = "true" ] && echo "  🛡️  Default resource protected: $resource_name"
+            return 0
+        fi
+    fi
+
+    # Check whitelist patterns
+    for pattern in "${whitelist_patterns[@]}"; do
+        if [[ "$resource_name" == $pattern ]]; then
+            echo "  🛡️  Resource whitelisted: $resource_name"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Helper function to check if resource is too new to delete
+is_resource_too_new() {
+    local creation_time="$1"
+
+    if [ -z "$creation_time" ]; then
+        return 1  # No creation time info, assume it's old enough
+    fi
+
+    # Convert creation time to timestamp (handles AWS date format)
+    local creation_ts=$(date -d "$creation_time" +%s 2>/dev/null || echo 0)
+    local current_ts=$(date +%s)
+    local age_hours=$(( (current_ts - creation_ts) / 3600 ))
+
+    if [ $age_hours -lt $MIN_RESOURCE_AGE_HOURS ]; then
+        echo "  🛡️  Resource too new ($age_hours hours old): $creation_time"
+        return 0  # Too new, don't delete
+    fi
+
+    return 1  # Old enough to delete
+}
+
+# Helper function for interactive confirmation
+confirm_action() {
+    local message="$1"
+    local resource_count="$2"
+
+    # Skip confirmation if force mode is enabled
+    if [ "$FORCE" = "true" ]; then
+        return 0
+    fi
+
+    # Add resource count to message for awareness
+    if [ "$resource_count" -gt 10 ]; then
+        echo "  ⚠️  WARNING: About to process $resource_count resources!"
+        echo -n "  ❓ $message Continue anyway? [y/N]: "
+    else
+        echo -n "  ❓ $message [y/N]: "
+    fi
+
+    read -r response
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            return 0
+            ;;
+        *)
+            echo "  ❌ Operation cancelled by user"
+            return 1
+            ;;
+    esac
+}
+
+# Function to execute AWS command with dry-run support
+execute_aws_cmd() {
+    local cmd="$1"
+    local resource_type="$2"
+    local resource_name="$3"
+
+    if [ "$DRY_RUN" = "true" ]; then
+        echo "  📋 [DRY-RUN] Would execute: $cmd"
+        return 0
+    else
+        echo "  🗑️  Deleting $resource_type: $resource_name"
+        eval "$cmd" 2>/dev/null
+        return $?
+    fi
+}
+
+# 1. Delete EKS Node Groups & Clusters WITHOUT project tag
+echo "1️⃣  Checking EKS Clusters for cleanup..."
 CLUSTERS=$(aws eks list-clusters --region $AWS_REGION --query 'clusters[]' --output text 2>/dev/null)
+
+CLUSTER_COUNT=0
+DELETE_CLUSTER_LIST=""
+
 for CLUSTER in $CLUSTERS; do
     TAGS=$(aws eks describe-cluster --name $CLUSTER --region $AWS_REGION --query 'cluster.tags' --output json 2>/dev/null)
-    if has_project_tag "$TAGS"; then
-        echo "  🗑️  Cluster: $CLUSTER (tagged)"
 
-        # Delete all node groups
-        NODEGROUPS=$(aws eks list-nodegroups --cluster-name $CLUSTER --region $AWS_REGION --query 'nodegroups[]' --output text 2>/dev/null)
-        for NG in $NODEGROUPS; do
-            echo "    - Deleting node group: $NG"
-            aws eks delete-nodegroup --cluster-name $CLUSTER --nodegroup-name $NG --region $AWS_REGION 2>/dev/null
-        done
-
-        # Wait for node groups
-        echo "    - Waiting for node groups to delete..."
-        sleep 30
-
-        # Delete cluster
-        echo "    - Deleting cluster: $CLUSTER"
-        aws eks delete-cluster --name $CLUSTER --region $AWS_REGION 2>/dev/null
+    if lacks_project_tag "$TAGS" "$CLUSTER" "EKS Cluster"; then
+        CLUSTER_COUNT=$((CLUSTER_COUNT + 1))
+        DELETE_CLUSTER_LIST="$DELETE_CLUSTER_LIST $CLUSTER"
     fi
 done
-echo "  ✅ EKS cleanup initiated"
+
+if [ $CLUSTER_COUNT -gt 0 ]; then
+    if confirm_action "Delete $CLUSTER_COUNT EKS cluster(s) without proper Project tag?" $CLUSTER_COUNT; then
+        for CLUSTER in $DELETE_CLUSTER_LIST; do
+            echo "  🗑️  Processing EKS Cluster: $CLUSTER (lacks proper tag)"
+
+            # Delete all node groups first
+            NODEGROUPS=$(aws eks list-nodegroups --cluster-name $CLUSTER --region $AWS_REGION --query 'nodegroups[]' --output text 2>/dev/null)
+            for NG in $NODEGROUPS; do
+                execute_aws_cmd "aws eks delete-nodegroup --cluster-name $CLUSTER --nodegroup-name $NG --region $AWS_REGION" "EKS NodeGroup" "$NG"
+            done
+
+            # Only wait if we're actually deleting
+            if [ "$DRY_RUN" = "false" ] && [ -n "$NODEGROUPS" ]; then
+                echo "    ⏳ Waiting for node groups to delete..."
+                sleep 30
+            fi
+
+            # Delete cluster
+            execute_aws_cmd "aws eks delete-cluster --name $CLUSTER --region $AWS_REGION" "EKS Cluster" "$CLUSTER"
+        done
+    else
+        echo "  ❌ Skipped EKS cluster cleanup"
+    fi
+else
+    echo "  ✅ No EKS clusters found without proper Project tag"
+fi
+
+echo "  ✅ EKS cleanup check completed"
 echo ""
 
-# 2. Delete Load Balancers with project tag
-echo "2️⃣  Deleting Load Balancers with project tag..."
+# 2. Delete Load Balancers WITHOUT project tag
+echo "2️⃣  Checking Load Balancers for cleanup..."
+LB_COUNT=0
+
+# Application/Network Load Balancers
 LBS=$(aws elbv2 describe-load-balancers --region $AWS_REGION --query 'LoadBalancers[].[LoadBalancerArn,LoadBalancerName]' --output text 2>/dev/null)
 while IFS=$'\t' read -r LB_ARN LB_NAME; do
     if [ -n "$LB_ARN" ]; then
         TAGS=$(aws elbv2 describe-tags --resource-arns "$LB_ARN" --region $AWS_REGION --query 'TagDescriptions[0].Tags' --output json 2>/dev/null)
-        if has_project_tag "$TAGS"; then
-            echo "  🗑️  Deleting ALB: $LB_NAME (tagged)"
-            aws elbv2 delete-load-balancer --load-balancer-arn "$LB_ARN" --region $AWS_REGION 2>/dev/null
+        if lacks_project_tag "$TAGS" "$LB_NAME" "Load Balancer"; then
+            LB_COUNT=$((LB_COUNT + 1))
+            DELETE_LB_LIST="$DELETE_LB_LIST $LB_ARN|$LB_NAME"
         fi
     fi
 done <<< "$LBS"
@@ -64,27 +264,91 @@ done <<< "$LBS"
 CLB=$(aws elb describe-load-balancers --region $AWS_REGION --query 'LoadBalancerDescriptions[].LoadBalancerName' --output text 2>/dev/null)
 for LB in $CLB; do
     TAGS=$(aws elb describe-tags --load-balancer-names $LB --region $AWS_REGION --query 'TagDescriptions[0].Tags' --output json 2>/dev/null)
-    if has_project_tag "$TAGS"; then
-        echo "  🗑️  Deleting Classic LB: $LB (tagged)"
-        aws elb delete-load-balancer --load-balancer-name $LB --region $AWS_REGION 2>/dev/null
+    if lacks_project_tag "$TAGS" "$LB" "Classic Load Balancer"; then
+        LB_COUNT=$((LB_COUNT + 1))
+        DELETE_CLB_LIST="$DELETE_CLB_LIST $LB"
     fi
 done
-echo "  ✅ Load Balancers deleted"
+
+if [ $LB_COUNT -gt 0 ]; then
+    if confirm_action "Delete $LB_COUNT load balancer(s) without proper Project tag?" $LB_COUNT; then
+        # Delete Application/Network Load Balancers
+        for LB_INFO in $DELETE_LB_LIST; do
+            LB_ARN=$(echo "$LB_INFO" | cut -d'|' -f1)
+            LB_NAME=$(echo "$LB_INFO" | cut -d'|' -f2)
+            execute_aws_cmd "aws elbv2 delete-load-balancer --load-balancer-arn '$LB_ARN' --region $AWS_REGION" "Load Balancer" "$LB_NAME"
+        done
+
+        # Delete Classic Load Balancers
+        for LB in $DELETE_CLB_LIST; do
+            execute_aws_cmd "aws elb delete-load-balancer --load-balancer-name '$LB' --region $AWS_REGION" "Classic Load Balancer" "$LB"
+        done
+    else
+        echo "  ❌ Skipped Load Balancer cleanup"
+    fi
+else
+    echo "  ✅ No Load Balancers found without proper Project tag"
+fi
+
+echo "  ✅ Load Balancer cleanup check completed"
 echo ""
 
-# 3. Terminate EC2 Instances with project tag
-echo "3️⃣  Terminating EC2 Instances with project tag..."
-INSTANCES=$(aws ec2 describe-instances --region $AWS_REGION \
-    --filters "Name=tag:$PROJECT_TAG,Values=$PROJECT_VALUE" \
-              "Name=instance-state-name,Values=running,stopped,stopping" \
-    --query 'Reservations[].Instances[].InstanceId' --output text 2>/dev/null)
-if [ -n "$INSTANCES" ]; then
-    echo "  🗑️  Terminating instances: $INSTANCES"
-    aws ec2 terminate-instances --instance-ids $INSTANCES --region $AWS_REGION 2>/dev/null
-    echo "  ⏳ Waiting for instances to terminate..."
-    sleep 60
+# 3. Terminate EC2 Instances WITHOUT project tag
+echo "3️⃣  Checking EC2 Instances for cleanup..."
+INSTANCE_COUNT=0
+DELETE_INSTANCE_LIST=""
+
+# Get ALL instances (not just tagged ones) and check each one
+ALL_INSTANCES=$(aws ec2 describe-instances --region $AWS_REGION \
+    --filters "Name=instance-state-name,Values=running,stopped,stopping" \
+    --query 'Reservations[].Instances[].[InstanceId,Tags,LaunchTime]' --output json 2>/dev/null)
+
+echo "$ALL_INSTANCES" | jq -r '.[] | "\(.[])"' | while IFS=$'\n' read -r INSTANCE_ID && read -r TAGS && read -r LAUNCH_TIME; do
+    # Check if instance lacks proper project tag and isn't too new
+    if lacks_project_tag "$TAGS" "$INSTANCE_ID" "EC2 Instance" && ! is_resource_too_new "$LAUNCH_TIME"; then
+        INSTANCE_COUNT=$((INSTANCE_COUNT + 1))
+        DELETE_INSTANCE_LIST="$DELETE_INSTANCE_LIST $INSTANCE_ID"
+    fi
+done
+
+# Re-query with proper counting since the while loop creates a subshell
+INSTANCE_COUNT=$(aws ec2 describe-instances --region $AWS_REGION \
+    --filters "Name=instance-state-name,Values=running,stopped,stopping" \
+    --query 'Reservations[].Instances[].[InstanceId,Tags,LaunchTime]' --output json 2>/dev/null | \
+    jq -r '.[] | "\(.[])"' | \
+    while IFS=$'\n' read -r INSTANCE_ID && read -r TAGS && read -r LAUNCH_TIME; do
+        if lacks_project_tag "$TAGS" "$INSTANCE_ID" "EC2 Instance" && ! is_resource_too_new "$LAUNCH_TIME"; then
+            echo "$INSTANCE_ID"
+        fi
+    done | wc -l)
+
+if [ "$INSTANCE_COUNT" -gt 0 ]; then
+    # Get the actual list of instances to delete
+    DELETE_INSTANCE_LIST=$(aws ec2 describe-instances --region $AWS_REGION \
+        --filters "Name=instance-state-name,Values=running,stopped,stopping" \
+        --query 'Reservations[].Instances[].[InstanceId,Tags,LaunchTime]' --output json 2>/dev/null | \
+        jq -r '.[] | "\(.[])"' | \
+        while IFS=$'\n' read -r INSTANCE_ID && read -r TAGS && read -r LAUNCH_TIME; do
+            if lacks_project_tag "$TAGS" "$INSTANCE_ID" "EC2 Instance" && ! is_resource_too_new "$LAUNCH_TIME"; then
+                echo "$INSTANCE_ID"
+            fi
+        done | tr '\n' ' ')
+
+    if confirm_action "Terminate $INSTANCE_COUNT EC2 instance(s) without proper Project tag?" $INSTANCE_COUNT; then
+        execute_aws_cmd "aws ec2 terminate-instances --instance-ids $DELETE_INSTANCE_LIST --region $AWS_REGION" "EC2 Instances" "$DELETE_INSTANCE_LIST"
+
+        if [ "$DRY_RUN" = "false" ]; then
+            echo "  ⏳ Waiting for instances to terminate..."
+            sleep 60
+        fi
+    else
+        echo "  ❌ Skipped EC2 instance cleanup"
+    fi
+else
+    echo "  ✅ No EC2 instances found without proper Project tag"
 fi
-echo "  ✅ Instances terminated"
+
+echo "  ✅ EC2 instance cleanup check completed"
 echo ""
 
 # 4. Delete Auto Scaling Groups with project tag

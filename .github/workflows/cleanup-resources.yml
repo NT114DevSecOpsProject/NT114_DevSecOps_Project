@@ -1,7 +1,23 @@
-name: Cleanup AWS Resources by Tag
+name: Cleanup Untagged AWS Resources
 
 on:
   workflow_dispatch:
+    inputs:
+      execute_cleanup:
+        description: 'Execute actual cleanup (vs dry-run)'
+        required: false
+        default: 'false'
+        type: boolean
+      force_cleanup:
+        description: 'Skip confirmation prompts (DANGEROUS - use with caution)'
+        required: false
+        default: 'false'
+        type: boolean
+      verbose_mode:
+        description: 'Enable verbose output'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   AWS_REGION: us-east-1
@@ -12,7 +28,7 @@ permissions:
 
 jobs:
   cleanup:
-    name: Cleanup Resources by Tag
+    name: Cleanup Untagged Resources
     runs-on: ubuntu-latest
 
     steps:
@@ -26,26 +42,69 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Cleanup Resources with Project Tag
+      - name: Install jq for JSON processing
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Display cleanup configuration
+        run: |
+          echo "========================================="
+          echo "🔧 CLEANUP CONFIGURATION"
+          echo "========================================="
+          echo "Region: ${{ env.AWS_REGION }}"
+          echo "Execute Mode: ${{ github.event.inputs.execute_cleanup == 'true' && 'ENABLED' || 'DISABLED (dry-run)' }}"
+          echo "Force Mode: ${{ github.event.inputs.force_cleanup == 'true' && 'ENABLED (dangerous)' || 'DISABLED (safe)' }}"
+          echo "Verbose Mode: ${{ github.event.inputs.verbose_mode == 'true' && 'ENABLED' || 'DISABLED' }}"
+          echo "Target: Resources WITHOUT tag Project=NT114_DevSecOps"
+          echo "========================================="
+
+      - name: Cleanup Resources WITHOUT Project Tag
         run: |
           chmod +x scripts/cleanup-aws-resources.sh
-          scripts/cleanup-aws-resources.sh
+
+          # Build command arguments
+          ARGS=""
+          if [ "${{ github.event.inputs.execute_cleanup }}" = "true" ]; then
+            ARGS="$ARGS --execute"
+          fi
+          if [ "${{ github.event.inputs.force_cleanup }}" = "true" ]; then
+            ARGS="$ARGS --force"
+          fi
+          if [ "${{ github.event.inputs.verbose_mode }}" = "true" ]; then
+            ARGS="$ARGS --verbose"
+          fi
+
+          echo "🚀 Running: scripts/cleanup-aws-resources.sh $ARGS"
+          scripts/cleanup-aws-resources.sh $ARGS
 
       - name: Cleanup Summary
         run: |
           echo "### 🗑️ Cleanup Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag Filter:** Project=NT114_DevSecOps" >> $GITHUB_STEP_SUMMARY
+          echo "**Filter:** Resources WITHOUT tag Project=NT114_DevSecOps" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode:** ${{ github.event.inputs.execute_cleanup == 'true' && 'EXECUTE' || 'DRY-RUN' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Resources Deleted:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ EKS Clusters & Node Groups" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Load Balancers" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ EC2 Instances & ASGs" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ VPCs and Networking" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ IAM Roles" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ EBS Volumes" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ ECR Repositories" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ CloudWatch Logs" >> $GITHUB_STEP_SUMMARY
+          echo "**Safety Measures Applied:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Resource whitelisting (default/critical infrastructure)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Age-based filtering (protects resources < 24h old)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Interactive confirmations ${{ github.event.inputs.force_cleanup == 'true' && '(disabled)' || '(enabled)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dry-run mode ${{ github.event.inputs.execute_cleanup == 'true' && '(disabled)' || '(enabled)' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "💡 **Note:** Only resources tagged with Project=NT114_DevSecOps or containing 'nt114' in their name were deleted." >> $GITHUB_STEP_SUMMARY
+          echo "**Resources Checked:**" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 EKS Clusters & Node Groups" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 Load Balancers (ALB & Classic)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 EC2 Instances" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 Auto Scaling Groups" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 VPCs and Networking" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 IAM Roles" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 EBS Volumes" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 ECR Repositories" >> $GITHUB_STEP_SUMMARY
+          echo "- 🔍 CloudWatch Logs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.execute_cleanup }}" = "true" ]; then
+            echo "⚠️ **WARNING:** Actual resource deletion was performed!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ **SAFE:** Dry-run mode only - no resources were deleted" >> $GITHUB_STEP_SUMMARY
+          fi
