@@ -52,6 +52,31 @@ module "eks_cluster" {
   depends_on = [module.vpc]
 }
 
+# Configure Kubernetes provider for Helm operations
+provider "kubernetes" {
+  host                   = module.eks_cluster.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks_cluster.cluster_certificate_authority_data)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks_cluster.cluster_name]
+  }
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = module.eks_cluster.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks_cluster.cluster_certificate_authority_data)
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks_cluster.cluster_name]
+    }
+  }
+}
+
 # EKS Node Group Module
 module "eks_nodegroup" {
   source = "../../modules/eks-nodegroup"
@@ -135,7 +160,7 @@ module "rds_postgresql" {
 
   allocated_storage     = var.rds_allocated_storage
   max_allocated_storage = var.rds_max_allocated_storage
-  storage_encrypted     = false  # Disabled for demo
+  storage_encrypted     = false # Disabled for demo
 
   db_name  = var.rds_initial_database
   username = var.rds_username
@@ -146,13 +171,13 @@ module "rds_postgresql" {
   private_subnet_ids     = module.vpc.private_subnets
   eks_security_group_ids = [module.eks_cluster.cluster_security_group_id]
 
-  backup_retention_period = 0  # No backups for demo
+  backup_retention_period = 0 # No backups for demo
   backup_window           = "03:00-04:00"
   maintenance_window      = "sun:04:00-sun:05:00"
 
-  skip_final_snapshot       = true  # Skip snapshot for demo
+  skip_final_snapshot       = true # Skip snapshot for demo
   final_snapshot_identifier = var.rds_final_snapshot_identifier
-  deletion_protection       = false  # No deletion protection for demo
+  deletion_protection       = false # No deletion protection for demo
 
   monitoring_interval             = 0
   enabled_cloudwatch_logs_exports = []
@@ -184,7 +209,7 @@ resource "random_id" "bucket_suffix" {
 resource "aws_s3_bucket_versioning" "migration" {
   bucket = aws_s3_bucket.migration.id
   versioning_configuration {
-    status = "Disabled"  # Disabled for demo
+    status = "Disabled" # Disabled for demo
   }
 }
 
@@ -219,11 +244,11 @@ module "bastion_host" {
   db_host     = module.rds_postgresql.db_instance_endpoint
   db_port     = module.rds_postgresql.db_instance_port
   db_username = module.rds_postgresql.db_instance_username
-  db_password = var.rds_password  # Use variable directly
+  db_password = var.rds_password # Use variable directly
 
   s3_bucket_name = aws_s3_bucket.migration.bucket
 
-  root_volume_size = 8  # Smaller for demo
+  root_volume_size = 8 # Smaller for demo
   allocate_eip     = true
 
   tags = merge(var.tags, {
