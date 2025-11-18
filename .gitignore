@@ -60,3 +60,4 @@ secrets/
 
 # Backup files
 *.backup
+actions-runner/
