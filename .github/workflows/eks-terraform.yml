@@ -270,6 +270,7 @@ jobs:
           rm -f tfplan
 
       - name: Terraform Init
+        id: terraform-init
         run: terraform init -upgrade
 
       - name: Import Existing Resources
@@ -279,6 +280,7 @@ jobs:
         continue-on-error: true
 
       - name: Terraform Plan
+        id: terraform-plan
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
@@ -292,23 +294,39 @@ jobs:
           echo "Terraform outputs saved"
 
       - name: Auto Destroy on Failure
-        if: steps.terraform-apply.outcome == 'failure'
+        if: |
+          always() &&
+          (steps.terraform-init.outcome == 'failure' ||
+           steps.terraform-plan.outcome == 'failure' ||
+           steps.terraform-apply.outcome == 'failure')
         run: |
-          echo "❌ Terraform apply failed. Triggering auto-destroy to clean up resources..."
+          echo "❌ Terraform deployment failed. Triggering auto-destroy to clean up resources..."
           echo "⚠️  This will destroy ALL resources created during this deployment attempt"
+
+          # Identify which step failed
+          if [[ "${{ steps.terraform-init.outcome }}" == "failure" ]]; then
+            echo "Failed at: Terraform Init"
+          elif [[ "${{ steps.terraform-plan.outcome }}" == "failure" ]]; then
+            echo "Failed at: Terraform Plan"
+          elif [[ "${{ steps.terraform-apply.outcome }}" == "failure" ]]; then
+            echo "Failed at: Terraform Apply"
+          fi
 
           # Sleep for 10 seconds before destroying (to allow manual investigation if needed)
           echo "Sleeping for 10 seconds before auto-destroy..."
           sleep 10
 
+          # Re-initialize if needed
+          if [[ "${{ steps.terraform-init.outcome }}" != "success" ]]; then
+            echo "Re-initializing Terraform for destroy operation..."
+            terraform init -upgrade || echo "Init failed, attempting destroy anyway..."
+          fi
+
           # Force destroy all resources
           echo "🔥 Starting automatic cleanup..."
-          terraform destroy -auto-approve -refresh=false || echo "Terraform destroy failed or partial cleanup"
+          terraform destroy -auto-approve || echo "Terraform destroy failed or partial cleanup"
 
-          # Emergency cleanup removed - workflow only runs on manual trigger
-          echo "ℹ️ Emergency cleanup workflow not triggered (manual deployment only)"
-
-          echo "🧹 Auto-destroy completed. Comprehensive cleanup triggered."
+          echo "🧹 Auto-destroy completed. Resources cleaned up."
           exit 1
 
       - name: Upload Terraform Outputs
