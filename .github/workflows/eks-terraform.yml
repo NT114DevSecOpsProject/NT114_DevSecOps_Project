@@ -1,27 +1,13 @@
 name: EKS Terraform Deployment
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'Terraform action to perform'
-        required: true
-        type: choice
-        options:
-          - plan
-          - apply
-          - destroy
-        default: 'plan'
-      environment:
-        description: 'Environment to deploy'
-        required: true
-        type: choice
-        options:
-          - dev
-          - staging
-          - prod
-        default: 'dev'
-  
+
 env:
   AWS_REGION: us-east-1
   TF_VERSION: '1.9.0'
@@ -30,28 +16,18 @@ env:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
 
 jobs:
-  terraform-plan:
-    name: Terraform Plan
+  terraform-deploy:
+    name: Terraform Plan & Apply
     runs-on: ubuntu-latest
-    concurrency:
-      group: terraform-plan-${{ inputs.environment || 'dev' }}
-      cancel-in-progress: false
     defaults:
       run:
-        working-directory: terraform/environments/${{ inputs.environment || 'dev' }}
-
-    outputs:
-      tfplanExitCode: ${{ steps.tf-plan.outputs.exitcode }}
+        working-directory: terraform/environments/dev
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch full git history to ensure latest commits
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -65,341 +41,47 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-
-      - name: Validate Required Secrets
-        run: |
-          echo "Validating secrets required for Terraform deployment..."
-
-          # Skip BASTION_PUBLIC_KEY validation for demo - using hardcoded value
-          echo "ℹ️ BASTION_PUBLIC_KEY validation skipped for demo"
-
-          if [[ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" || -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]]; then
-            echo "❌ AWS credentials are not configured"
-            echo "Please add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to repository secrets"
-            exit 1
-          else
-            echo "✅ AWS credentials are configured"
-          fi
-
-          if [[ -n "${{ secrets.RDS_PASSWORD }}" ]]; then
-            echo "✅ RDS_PASSWORD secret is configured"
-          else
-            echo "ℹ️ RDS_PASSWORD not configured, using default demo password"
-            echo "⚠️ For production, please add RDS_PASSWORD to repository secrets"
-          fi
-
-      - name: Clean Terraform Cache
-        run: |
-          rm -rf .terraform
-          rm -f .terraform.lock.hcl
-          rm -f terraform.tfstate*
-          rm -f tfplan
-
-      - name: Pre-destroy Existing Resources (Demo Fix)
-        run: |
-          echo "Attempting to destroy any existing resources that might cause conflicts..."
-          terraform init -upgrade || true
-          terraform destroy -auto-approve || echo "No existing resources to destroy or destroy failed, continuing..."
-
-      - name: Terraform Format Check
-        id: fmt
-        run: terraform fmt -check -recursive
-        continue-on-error: true
 
       - name: Terraform Init
         id: init
-        run: |
-          # Retry Terraform init up to 3 times to handle provider download issues
-          for i in {1..3}; do
-            echo "Terraform init attempt $i..."
-            if terraform init -upgrade; then
-              echo "Terraform init successful on attempt $i"
-              break
-            else
-              echo "Terraform init failed on attempt $i"
-              if [ $i -eq 3 ]; then
-                echo "Terraform init failed after 3 attempts"
-                exit 1
-              fi
-              echo "Waiting 10 seconds before retry..."
-              sleep 10
-            fi
-          done
-
-      - name: Terraform Validate
-        id: validate
-        run: terraform validate -no-color
-
-      - name: Terraform Plan
-        id: tf-plan
-        continue-on-error: true
-        run: |
-          # Run terraform plan and capture output and exit code
-          terraform plan -detailed-exitcode -no-color -out=tfplan > tfplan_output.txt 2>&1
-          exitcode=$?
-
-          # Always capture outputs first before any exit operations
-          echo "exitcode=$exitcode" >> $GITHUB_OUTPUT
-
-          # Store the plan output for PR comment
-          echo "stdout<<EOF" >> $GITHUB_OUTPUT
-          cat tfplan_output.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-          # Display the plan output
-          cat tfplan_output.txt
-
-          if [ $exitcode -eq 1 ]; then
-            echo "❌ Terraform Plan Failed!"
-            echo "Plan failed with errors - check the output above"
-            exit 1
-          elif [ $exitcode -eq 2 ]; then
-            echo "✅ Terraform Plan: Changes detected"
-            echo "📋 Plan completed with changes to apply"
-            # Exit with 0 to indicate success (changes present is expected behavior)
-            exit 0
-          else
-            echo "✅ Terraform Plan: No changes detected"
-            echo "📋 Infrastructure is up to date"
-            # Exit with 0 to indicate success (no changes is also success)
-            exit 0
-          fi
-
-      - name: Check Terraform Plan Result
-        if: steps.tf-plan.outputs.exitcode == '1'
-        run: |
-          echo "::error::Terraform plan failed with errors. Check the logs above for details."
-          exit 1
-
-      - name: Publish Terraform Plan
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
-        env:
-          PLAN_EXITCODE: ${{ steps.tf-plan.outputs.exitcode }}
-          PLAN_OUTPUT: ${{ steps.tf-plan.outputs.stdout }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            let planStatus = "Success";
-            let planEmoji = "✅";
-
-            if (process.env.PLAN_EXITCODE === "2") {
-              planStatus = "Changes Detected";
-              planEmoji = "📋";
-            } else if (process.env.PLAN_EXITCODE === "0") {
-              planStatus = "No Changes";
-              planEmoji = "✅";
-            }
-
-            const output = `#### Terraform Format and Style \`${{ steps.fmt.outcome }}\`
-            #### Terraform Initialization \`${{ steps.init.outcome }}\`
-            #### Terraform Validation \`${{ steps.validate.outcome }}\`
-            <details><summary>Validation Output</summary>
-
-            \`\`\`\n
-            ${{ steps.validate.outputs.stdout }}
-            \`\`\`
-
-            </details>
-
-            #### Terraform Plan ${planEmoji} ${planStatus}
-
-            <details><summary>Show Plan</summary>
-
-            \`\`\`\n
-            ${process.env.PLAN_OUTPUT}
-            \`\`\`
-
-            </details>
-
-            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`, Environment: \`${{ inputs.environment || 'dev' }}\`, Workflow: \`${{ github.workflow }}\`*`;
-
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: output
-            })
-
-      - name: Upload Terraform Plan
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan-${{ inputs.environment || 'dev' }}
-          path: terraform/environments/${{ inputs.environment || 'dev' }}/tfplan
-
-  terraform-apply:
-    name: Terraform Apply
-    runs-on: ubuntu-latest
-    needs: [terraform-plan]
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
-    concurrency:
-      group: terraform-apply-${{ inputs.environment || 'dev' }}
-      cancel-in-progress: true
-    defaults:
-      run:
-        working-directory: terraform/environments/${{ inputs.environment || 'dev' }}
-
-    # Environment approval removed for auto-deployment
-    # environment:
-    #   name: ${{ github.event.inputs.environment || 'dev' }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch full git history to ensure latest commits
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-
-      - name: Clean Terraform Cache
-        run: |
-          rm -rf .terraform
-          rm -f .terraform.lock.hcl
-          rm -f terraform.tfstate*
-          rm -f tfplan
-
-      - name: Terraform Init
-        id: terraform-init
         run: terraform init -upgrade
 
-      - name: Import Existing Resources
-        run: |
-          chmod +x ../../../scripts/import-existing-resources.sh
-          ../../../scripts/import-existing-resources.sh
-        continue-on-error: true
-
       - name: Terraform Plan
-        id: terraform-plan
+        id: plan
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
-        id: terraform-apply
+        id: apply
         run: terraform apply -auto-approve tfplan
-
-      - name: Terraform Output
-        id: tf-output
-        run: |
-          terraform output -json > terraform_outputs.json
-          echo "Terraform outputs saved"
-
-      - name: Auto Destroy on Failure
-        if: |
-          always() &&
-          (steps.terraform-init.outcome == 'failure' ||
-           steps.terraform-plan.outcome == 'failure' ||
-           steps.terraform-apply.outcome == 'failure')
-        run: |
-          echo "❌ Terraform deployment failed. Triggering auto-destroy to clean up resources..."
-          echo "⚠️  This will destroy ALL resources created during this deployment attempt"
-
-          # Identify which step failed
-          if [[ "${{ steps.terraform-init.outcome }}" == "failure" ]]; then
-            echo "Failed at: Terraform Init"
-          elif [[ "${{ steps.terraform-plan.outcome }}" == "failure" ]]; then
-            echo "Failed at: Terraform Plan"
-          elif [[ "${{ steps.terraform-apply.outcome }}" == "failure" ]]; then
-            echo "Failed at: Terraform Apply"
-          fi
-
-          # Sleep for 10 seconds before destroying (to allow manual investigation if needed)
-          echo "Sleeping for 10 seconds before auto-destroy..."
-          sleep 10
-
-          # Re-initialize if needed
-          if [[ "${{ steps.terraform-init.outcome }}" != "success" ]]; then
-            echo "Re-initializing Terraform for destroy operation..."
-            terraform init -upgrade || echo "Init failed, attempting destroy anyway..."
-          fi
-
-          # Force destroy all resources
-          echo "🔥 Starting automatic cleanup..."
-          terraform destroy -auto-approve || echo "Terraform destroy failed or partial cleanup"
-
-          echo "🧹 Auto-destroy completed. Resources cleaned up."
-          exit 1
-
-      - name: Upload Terraform Outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-outputs-${{ inputs.environment || 'dev' }}
-          path: terraform/environments/${{ inputs.environment || 'dev' }}/terraform_outputs.json
 
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name $(terraform output -raw cluster_name)
           kubectl get nodes
 
-      - name: Infrastructure Deployment Summary
+      - name: Deployment Summary
         run: |
           echo "### Infrastructure Deployment Successful 🎉" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** ${{ inputs.environment || 'dev' }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Infrastructure Created:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ VPC and Networking" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ EKS Cluster" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Node Groups" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ ECR Repositories" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ IAM Roles and Policies" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ RDS PostgreSQL Instance" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Bastion Host for Migration" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ S3 Migration Bucket" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster:** $(terraform output -raw cluster_name)" >> $GITHUB_STEP_SUMMARY
           echo "**RDS Endpoint:** $(terraform output -raw rds_instance_endpoint)" >> $GITHUB_STEP_SUMMARY
-          echo "**Bastion IP:** $(terraform output -raw bastion_public_ip)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Run database-migration workflow to migrate local data to RDS" >> $GITHUB_STEP_SUMMARY
-          echo "2. Update application configurations to use RDS endpoint" >> $GITHUB_STEP_SUMMARY
-          echo "3. Deploy applications with deploy-to-eks workflow" >> $GITHUB_STEP_SUMMARY
 
-  
-  terraform-destroy:
-    name: Terraform Destroy
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
-    defaults:
-      run:
-        working-directory: terraform/environments/${{ inputs.environment || 'dev' }}
+      - name: Auto Destroy on Failure
+        if: |
+          always() &&
+          (steps.init.outcome == 'failure' ||
+           steps.plan.outcome == 'failure' ||
+           steps.apply.outcome == 'failure')
+        run: |
+          echo "❌ Deployment failed. Auto-destroying resources..."
 
-    # Environment approval removed for auto-deployment
-    # environment:
-    #   name: ${{ github.event.inputs.environment || 'dev' }}-destroy
+          # Re-init if needed
+          if [[ "${{ steps.init.outcome }}" != "success" ]]; then
+            terraform init -upgrade || true
+          fi
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch full git history to ensure latest commits
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-          terraform_wrapper: false
-
-      - name: Terraform Init
-        run: terraform init -upgrade
-
-      - name: Terraform Destroy
-        run: terraform destroy -auto-approve
+          # Destroy resources
+          terraform destroy -auto-approve || true
+          echo "🧹 Cleanup completed"
+          exit 1
