@@ -5,6 +5,8 @@ set +e
 
 # Configuration
 AWS_REGION="${AWS_REGION:-us-east-1}"
+PROJECT_TAG="Project"
+PROJECT_VALUE="NT114_DevSecOps"
 ENV_TAG="Environment"
 ENV_VALUE="dev"
 
@@ -69,21 +71,39 @@ echo "🗑️  AWS RESOURCE CLEANUP SCRIPT"
 echo "========================================="
 echo "Region: $AWS_REGION"
 echo "Mode: $([ "$DRY_RUN" = "true" ] && echo "DRY-RUN (no actual deletion)" || echo "EXECUTE (resources will be deleted)")"
-echo "Target: Resources WITH tag $ENV_TAG=$ENV_VALUE"
+echo "Target: Resources WITH any of these tags:"
+echo "        - $PROJECT_TAG=$PROJECT_VALUE (old tag)"
+echo "        - $ENV_TAG=$ENV_VALUE (new tag)"
+echo "        - Terraform managed resources (managed-by=terraform, terraform=true)"
 echo "Protection: Resources younger than $MIN_RESOURCE_AGE_HOURS hours will be preserved"
 echo "           Default resources and production systems are whitelisted"
 echo ""
 
-# Helper function to check if resource HAS the Environment=dev tag
-has_env_dev_tag() {
+# Helper function to check if resource should be deleted based on tags
+should_delete_resource() {
     local tags="$1"
 
-    # Check if resource has the Environment=dev tag
-    if echo "$tags" | grep -q "\"$ENV_TAG\"" && echo "$tags" | grep -q "\"$ENV_VALUE\""; then
-        return 0  # Has Environment=dev tag, return true (safe to delete)
+    # Check for old project tag: Project=NT114_DevSecOps
+    if echo "$tags" | grep -q "\"$PROJECT_TAG\"" && echo "$tags" | grep -q "\"$PROJECT_VALUE\""; then
+        return 0  # Has old project tag, safe to delete
     fi
 
-    return 1  # Lacks Environment=dev tag, return false (don't delete)
+    # Check for new environment tag: Environment=dev
+    if echo "$tags" | grep -q "\"$ENV_TAG\"" && echo "$tags" | grep -q "\"$ENV_VALUE\""; then
+        return 0  # Has Environment=dev tag, safe to delete
+    fi
+
+    # Check for Terraform managed resources
+    if echo "$tags" | grep -qi "terraform"; then
+        return 0  # Has Terraform tag, safe to delete
+    fi
+
+    # Check for managed-by=terraform tag
+    if echo "$tags" | grep -q "\"managed-by\"" && echo "$tags" | grep -q "\"terraform\""; then
+        return 0  # Terraform managed, safe to delete
+    fi
+
+    return 1  # No matching tags, don't delete
 }
 
 # Helper function to check if resource is whitelisted for protection
@@ -300,7 +320,7 @@ echo "$ALL_INSTANCES" | jq -r '.[] | "\(.[])"' | while IFS=$'\n' read -r INSTANC
     DELETE_INSTANCE=false
 
     # Check if instance has proper project tag
-    if has_env_dev_tag "$TAGS"; then
+    if should_delete_resource "$TAGS"; then
         DELETE_INSTANCE=true
     fi
 
@@ -324,7 +344,7 @@ INSTANCE_COUNT=$(aws ec2 describe-instances --region $AWS_REGION \
     while IFS=$'\n' read -r INSTANCE_ID && read -r TAGS && read -r LAUNCH_TIME; do
         DELETE_INSTANCE=false
 
-        if has_env_dev_tag "$TAGS"; then
+        if should_delete_resource "$TAGS"; then
             DELETE_INSTANCE=true
         fi
 
@@ -346,7 +366,7 @@ if [ "$INSTANCE_COUNT" -gt 0 ]; then
         while IFS=$'\n' read -r INSTANCE_ID && read -r TAGS && read -r LAUNCH_TIME; do
             DELETE_INSTANCE=false
 
-            if has_env_dev_tag "$TAGS"; then
+            if should_delete_resource "$TAGS"; then
                 DELETE_INSTANCE=true
             fi
 
@@ -385,7 +405,7 @@ for ASG in $ASGS; do
 
         # Check if ASG has project tag
         TAGS=$(aws autoscaling describe-tags --filters "Name=auto-scaling-group,Values=$ASG" --region $AWS_REGION --query 'Tags' --output json 2>/dev/null)
-        if has_env_dev_tag "$TAGS"; then
+        if should_delete_resource "$TAGS"; then
             DELETE_ASG=true
         fi
 
@@ -1023,7 +1043,7 @@ for ROLE in $ROLES; do
 
     # Check if role has project tag
     TAGS=$(aws iam list-role-tags --role-name "$ROLE" --query 'Tags' --output json 2>/dev/null 2>/dev/null)
-    if has_env_dev_tag "$TAGS"; then
+    if should_delete_resource "$TAGS"; then
         DELETE_ROLE=true
     fi
 
@@ -1055,7 +1075,7 @@ echo "$POLICIES" | jq -r '.[] | "\(.Name)\t\(.Arn)"' | while IFS=$'\t' read -r P
 
     # Check policy tags
     TAGS=$(aws iam list-policy-tags --policy-arn "$POLICY_ARN" --query 'Tags' --output json 2>/dev/null)
-    if has_env_dev_tag "$TAGS"; then
+    if should_delete_resource "$TAGS"; then
         DELETE_POLICY=true
     fi
 
@@ -1216,7 +1236,7 @@ for GROUP in $GROUPS; do
 
     # Check group tags
     TAGS=$(aws iam list-group-tags --group-name "$GROUP" --query 'Tags' --output json 2>/dev/null)
-    if has_env_dev_tag "$TAGS"; then
+    if should_delete_resource "$TAGS"; then
         DELETE_GROUP=true
     fi
 
@@ -1269,7 +1289,7 @@ for USER in $USERS; do
 
     # Check user tags
     TAGS=$(aws iam list-user-tags --user-name "$USER" --query 'Tags' --output json 2>/dev/null)
-    if has_env_dev_tag "$TAGS"; then
+    if should_delete_resource "$TAGS"; then
         DELETE_USER=true
     fi
 

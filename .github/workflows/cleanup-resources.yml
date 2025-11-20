@@ -56,7 +56,7 @@ jobs:
           echo "Execute Mode: ${{ github.event.inputs.execute_cleanup == 'true' && 'ENABLED' || 'DISABLED (dry-run)' }}"
           echo "Force Mode: ${{ github.event.inputs.force_cleanup == 'true' && 'ENABLED (dangerous)' || 'DISABLED (safe)' }}"
           echo "Verbose Mode: ${{ github.event.inputs.verbose_mode == 'true' && 'ENABLED' || 'DISABLED' }}"
-          echo "Target: Resources with tag Environment=dev"
+          echo "Target: Resources with Project=NT114_DevSecOps OR Environment=dev OR Terraform tags"
           echo "========================================="
 
       - name: Cleanup Resources WITHOUT Project Tag
@@ -82,7 +82,7 @@ jobs:
         run: |
           echo "### 🗑️ Cleanup Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Filter:** Resources with tag Environment=dev" >> $GITHUB_STEP_SUMMARY
+          echo "**Filter:** Resources with Project=NT114_DevSecOps OR Environment=dev OR Terraform tags" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "**Mode:** ${{ github.event.inputs.execute_cleanup == 'true' && 'EXECUTE' || 'DRY-RUN' }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
