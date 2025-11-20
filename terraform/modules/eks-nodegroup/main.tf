@@ -21,11 +21,14 @@ module "eks_managed_node_group" {
   create_iam_role = true
   iam_role_name   = "${var.node_group_name}-role"
   iam_role_additional_policies = {
-    AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    AmazonSSMManagedInstanceCore           = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    AmazonEC2ContainerRegistryReadOnly     = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
   }
 
-  # Enable launch template for metadata options
-  use_custom_launch_template = true
+  # Launch template configuration
+  # Note: The module will create and manage the launch template with proper IAM permissions
+  create_launch_template = true
+  launch_template_name   = "${var.node_group_name}-lt"
 
   # EC2 Instance Metadata Service configuration
   # hop_limit = 2 required for pods to access metadata through container networking
