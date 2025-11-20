@@ -115,10 +115,12 @@ module "eks_nodegroup" {
 module "alb_controller" {
   source = "../../modules/alb-controller"
 
-  cluster_name  = module.eks_cluster.cluster_name
-  aws_region    = var.aws_region
-  oidc_provider = module.eks_cluster.oidc_provider
-  node_group_id = module.eks_nodegroup.node_group_id
+  cluster_name      = module.eks_cluster.cluster_name
+  aws_region        = var.aws_region
+  vpc_id            = module.vpc.vpc_id
+  oidc_provider     = module.eks_cluster.oidc_provider
+  oidc_provider_arn = module.eks_cluster.oidc_provider_arn
+  node_group_id     = module.eks_nodegroup.node_group_id
 
   enable_alb_controller     = var.enable_alb_controller
   enable_ebs_csi_controller = var.enable_ebs_csi_controller

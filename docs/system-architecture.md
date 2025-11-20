@@ -110,12 +110,49 @@ graph LR
 - **Kubernetes Version**: 1.28
 - **Node Groups**: Managed node groups with auto-scaling
 - **Networking**: AWS VPC CNI with Calico for network policies
+- **Metadata Service**: IMDSv2 with hop limit 2 for pod-level access
+
+#### EC2 Metadata Service Network Path
+
+```mermaid
+graph LR
+    subgraph "Metadata Access Path"
+        EC2[EC2 Instance<br/>169.254.169.254]
+        CONTAINER[Container Runtime<br/>Hop 1]
+        POD[Pod/Application<br/>Hop 2]
+        IMDS[EC2 Instance Metadata<br/>Service v2]
+    end
+
+    POD -->|HTTP PUT Request| CONTAINER
+    CONTAINER -->|Forward Request| EC2
+    EC2 -->|Query| IMDS
+    IMDS -->|IAM Credentials| EC2
+    EC2 -->|Return| CONTAINER
+    CONTAINER -->|Return| POD
+```
+
+**Metadata Configuration:**
+- **http_endpoint**: enabled
+- **http_tokens**: required (IMDSv2 enforced)
+- **http_put_response_hop_limit**: 2 (critical for pod access)
+- **instance_metadata_tags**: disabled
+
+**Why Hop Limit = 2:**
+- Default hop limit of 1 only allows instance-level access
+- Container runtime adds 1 hop between instance and pod
+- ALB controller and other pods require hop limit of 2
+- Security maintained through IMDSv2 token requirement
 
 #### Pod Architecture
 
 ```mermaid
 graph TB
     subgraph "EKS Cluster Namespace: dev"
+        subgraph "Infrastructure Controllers"
+            ALB_CTRL[ALB Controller Pod<br/>kube-system<br/>Replicas: 2<br/>IRSA: IAM Role]
+            EBS_CSI[EBS CSI Driver<br/>kube-system<br/>DaemonSet]
+        end
+
         subgraph "Frontend Tier"
             FE_POD[Frontend Pod<br/>React:3000<br/>Replicas: 2]
             FE_SVC[frontend-service<br/>LoadBalancer<br/>Port: 80]
@@ -146,6 +183,9 @@ graph TB
         end
     end
 
+    ALB_CTRL -.->|Manages| FE_SVC
+    ALB_CTRL -.->|Manages| GW_SVC
+    EBS_CSI -.->|Provides Storage| PG_POD
     FE_POD --> FE_SVC
     GW_POD --> GW_SVC
     GW_POD --> UM_SVC
@@ -158,6 +198,52 @@ graph TB
     ES_POD --> EX_DB
     SS_POD --> SCORE_DB
     PG_POD --> PG_SVC
+```
+
+#### ALB Controller Architecture
+
+```mermaid
+graph TB
+    subgraph "ALB Controller Components"
+        HELM[Helm Chart v1.15.0<br/>eks-charts repository]
+
+        subgraph "Controller Pod"
+            CTRL_PROCESS[Controller Process<br/>AWS SDK]
+            SA[Service Account<br/>aws-load-balancer-controller]
+            IAM_ROLE[IAM Role via IRSA<br/>ALB management permissions]
+        end
+
+        subgraph "AWS Resources"
+            EC2_METADATA[EC2 Metadata Service<br/>Hop Limit: 2]
+            ALB_API[AWS ALB API<br/>Load Balancer Management]
+            VPC_RESOURCES[VPC Resources<br/>Subnets, Security Groups]
+        end
+
+        subgraph "Kubernetes Resources"
+            INGRESS[Ingress Resources<br/>Load Balancer Specs]
+            SERVICES[Service Resources<br/>Target Groups]
+        end
+    end
+
+    HELM -->|Deploys| CTRL_PROCESS
+    CTRL_PROCESS --> SA
+    SA -->|Assumes| IAM_ROLE
+    CTRL_PROCESS -->|Retrieves Credentials| EC2_METADATA
+    IAM_ROLE -->|Authenticates| ALB_API
+    CTRL_PROCESS -->|Watches| INGRESS
+    CTRL_PROCESS -->|Watches| SERVICES
+    CTRL_PROCESS -->|Creates/Updates| ALB_API
+    ALB_API -->|Configures| VPC_RESOURCES
+```
+
+**VPC ID Passing Mechanism:**
+```
+terraform/environments/dev/main.tf
+  └─> module.vpc.vpc_id
+      └─> module.alb_controller.vpc_id (variable)
+          └─> helm_release.aws_load_balancer_controller
+              └─> set { vpcId = var.vpc_id }
+                  └─> ALB Controller Pod Environment
 ```
 
 ### 2. Microservices Architecture
@@ -874,7 +960,8 @@ The architecture is production-ready with a clear roadmap for future enhancement
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: November 14, 2025
-**Next Review**: December 14, 2025
+**Document Version**: 2.1
+**Last Updated**: November 20, 2025
+**Next Review**: December 20, 2025
 **Architecture Status**: ✅ Production Ready
+**Recent Updates**: EC2 metadata network path, ALB controller architecture diagrams

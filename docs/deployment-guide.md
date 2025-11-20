@@ -318,6 +318,55 @@ kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-ebs-csi-driver
 kubectl get storageclass ebs-gp3-encrypted
 ```
 
+#### Verify ALB Controller
+```bash
+# Check ALB controller deployment status
+kubectl get deployment -n kube-system aws-load-balancer-controller
+
+# Check ALB controller pods
+kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+
+# Verify service account and IAM role
+kubectl describe sa aws-load-balancer-controller -n kube-system
+
+# Check controller logs
+kubectl logs -n kube-system deployment/aws-load-balancer-controller --tail=50
+```
+
+### 5. EC2 Instance Metadata Configuration
+
+#### Metadata Hop Limit for Pod Access
+EKS node groups require `http_put_response_hop_limit=2` to allow pods to access EC2 instance metadata through container networking layer.
+
+**Configuration in `terraform/modules/eks-nodegroup/main.tf`:**
+```hcl
+metadata_options = {
+  http_endpoint               = "enabled"
+  http_tokens                 = "required"  # IMDSv2 enforced
+  http_put_response_hop_limit = 2           # Allow pod metadata access
+  instance_metadata_tags      = "disabled"
+}
+```
+
+**Network Path**: EC2 Instance → Container Runtime → Pod
+- Default hop limit of 1 blocks pod-level metadata access
+- Hop limit of 2 enables pods (like ALB controller) to retrieve IAM credentials
+- IMDSv2 enforcement maintained for security
+
+**Validation:**
+```bash
+# Check node metadata configuration
+aws ec2 describe-instances \
+  --filters "Name=tag:eks:cluster-name,Values=eks-1" \
+  --query 'Reservations[*].Instances[*].[InstanceId,MetadataOptions.HttpPutResponseHopLimit,MetadataOptions.HttpTokens]' \
+  --output table
+
+# Expected output:
+# InstanceId: i-xxxxx
+# HttpPutResponseHopLimit: 2
+# HttpTokens: required
+```
+
 ---
 
 ## Application Deployment
@@ -599,6 +648,59 @@ kubectl get storageclass
 kubectl describe storageclass ebs-gp3-encrypted
 ```
 
+#### ALB Controller Pod Failures
+```bash
+# Check ALB controller pod status and events
+kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+kubectl describe pod -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+
+# Common issue: Metadata access failure
+# Error: "failed to introspect EC2 instance" or "unable to retrieve credentials"
+# Solution: Verify metadata hop limit configuration
+
+# Verify node metadata settings
+aws ec2 describe-instances \
+  --filters "Name=tag:eks:cluster-name,Values=eks-1" \
+  --query 'Reservations[*].Instances[*].MetadataOptions' \
+  --output json
+
+# Check required values:
+# - HttpPutResponseHopLimit: 2 (must be 2 for pod access)
+# - HttpTokens: required (IMDSv2 enforced)
+
+# If hop limit is incorrect, update node group terraform:
+# metadata_options.http_put_response_hop_limit = 2
+# Then: terraform apply
+
+# Check IAM role attachment
+kubectl describe sa aws-load-balancer-controller -n kube-system | grep "eks.amazonaws.com/role-arn"
+
+# Verify VPC ID is passed correctly
+kubectl get deployment aws-load-balancer-controller -n kube-system -o yaml | grep vpcId
+
+# Check Helm release status
+helm list -n kube-system | grep aws-load-balancer-controller
+helm status aws-load-balancer-controller -n kube-system
+```
+
+#### Helm Deployment Issues
+```bash
+# Check Helm repository
+helm repo list | grep eks-charts
+
+# Update Helm repositories
+helm repo update
+
+# Verify Helm chart version availability
+helm search repo eks/aws-load-balancer-controller --versions
+
+# Check Helm release history
+helm history aws-load-balancer-controller -n kube-system
+
+# Rollback if needed
+helm rollback aws-load-balancer-controller -n kube-system
+```
+
 #### SSH Connection Issues
 ```bash
 # Test SSH to bastion host
@@ -855,10 +957,11 @@ The infrastructure is production-ready with proper observability, security contr
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: November 14, 2025
-**Next Review**: December 14, 2025
+**Document Version**: 2.1
+**Last Updated**: November 20, 2025
+**Next Review**: December 20, 2025
 **Deployment Status**: ✅ Production Ready
+**Recent Updates**: ALB controller metadata hop limit fix, troubleshooting enhancements
 
 ## Support and Contact
 

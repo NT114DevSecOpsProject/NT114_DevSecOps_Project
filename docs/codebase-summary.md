@@ -66,6 +66,12 @@ NT114_DevSecOps_Project/
 terraform/
 ├── modules/
 │   ├── eks-cluster/           # EKS cluster configuration
+│   ├── eks-nodegroup/         # Node group with metadata config
+│   ├── alb-controller/        # ALB controller (refactored)
+│   │   ├── main.tf           # IAM roles and policies
+│   │   ├── helm-release.tf   # Helm chart deployment
+│   │   ├── variables.tf      # Module variables (vpc_id added)
+│   │   └── outputs.tf        # Module outputs
 │   ├── rds-postgresql/        # RDS PostgreSQL setup
 │   ├── bastion-host/          # Bastion host configuration
 │   └── vpc/                   # VPC networking setup
@@ -77,10 +83,33 @@ terraform/
 
 #### AWS Infrastructure Components
 - **EKS Cluster**: Kubernetes 1.28 with managed node groups
+- **Node Groups**: IMDSv2 with hop limit 2 for pod metadata access
+- **ALB Controller**: Helm chart v1.15.0 with VPC ID configuration
 - **VPC**: Multi-AZ configuration with public and private subnets
 - **RDS PostgreSQL**: Managed database with encryption and backups
 - **Bastion Host**: Secure SSH access point for administrative tasks
 - **Application Load Balancer**: Traffic distribution and SSL termination
+
+#### ALB Controller Module Details
+
+**Module Structure (Refactored from Monolithic):**
+- `main.tf`: IAM role creation with IRSA trust policy and ALB management permissions
+- `helm-release.tf`: Helm deployment with cluster name, region, VPC ID configuration
+- `variables.tf`: Input variables including vpc_id for controller operation
+- `outputs.tf`: Exposes IAM role ARN and controller status
+
+**Key Configuration:**
+- **Helm Chart Version**: 1.15.0 (pinned)
+- **Repository**: https://aws.github.io/eks-charts
+- **Service Account**: aws-load-balancer-controller with IRSA annotation
+- **VPC ID Passing**: terraform → module variable → helm set value → pod env
+- **Replica Count**: 2 for high availability
+- **Dependencies**: node_group_id, IAM role attachment
+
+**Metadata Access Requirements:**
+- Node group metadata hop limit = 2 (configured in eks-nodegroup module)
+- IMDSv2 enforced for security
+- Enables ALB controller pods to retrieve IAM credentials via IRSA
 
 ### 3. CI/CD Pipeline Architecture
 
@@ -94,6 +123,9 @@ terraform/
 - **Container Management**: Docker build and ECR registry integration
 - **Deployment Strategies**: Blue-green deployment capability
 - **Quality Gates**: Code quality checks and deployment validation
+- **Infrastructure Validation**: EBS CSI driver, PostgreSQL, ALB controller health checks
+- **Error Handling**: Comprehensive error recovery with automatic terraform destroy on failure
+- **Helm Repository Updates**: Pre-deployment helm repo update to ensure latest chart availability
 
 ### 4. Security Implementation
 
@@ -116,7 +148,7 @@ terraform/
 ### Recent Code Review Results
 
 **Overall Rating**: ⭐⭐⭐⭐⭐ (5/5 stars)
-**Critical Issues**: None
+**Critical Issues**: None (ALB controller metadata issue resolved)
 **High Priority Issues**: None
 **Security Issues**: None
 **Deployment Readiness**: ✅ Production Approved
@@ -124,9 +156,17 @@ terraform/
 #### Key Strengths
 1. **Excellent Error Handling**: Comprehensive validation and error recovery
 2. **Clean Architecture**: Well-structured, maintainable codebase
-3. **Security Implementation**: Robust security controls throughout
+3. **Security Implementation**: Robust security controls throughout (IMDSv2 enforced)
 4. **Documentation Quality**: Comprehensive operational procedures
 5. **Testing Coverage**: Adequate test coverage for critical functionality
+6. **Module Refactoring**: ALB controller properly modularized with separate concerns
+
+#### Recent Fixes Applied
+1. **Metadata Hop Limit**: Increased from 1 to 2 for pod-level metadata access
+2. **ALB Controller Module**: Refactored into main.tf, helm-release.tf, variables.tf, outputs.tf
+3. **VPC ID Configuration**: Added vpc_id variable and passed to Helm chart
+4. **Helm Chart Version**: Pinned to 1.15.0 for stability
+5. **Repository Reference**: Fixed Helm repository URL and added pre-deployment updates
 
 ### Code Standards Compliance
 
@@ -343,7 +383,8 @@ The project is well-positioned for production deployment with a solid foundation
 
 ---
 
-**Document Status**: Current as of November 14, 2025
-**Next Update**: December 14, 2025
+**Document Status**: Current as of November 20, 2025
+**Next Update**: December 20, 2025
 **Classification**: Internal - Technical
 **Contact**: Development Team
+**Recent Updates**: ALB controller module refactoring, metadata configuration details

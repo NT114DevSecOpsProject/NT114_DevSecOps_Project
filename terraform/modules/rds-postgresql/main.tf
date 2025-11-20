@@ -48,8 +48,9 @@ resource "aws_db_instance" "postgresql" {
 
 # Random password for RDS
 resource "random_password" "db_password" {
-  length  = 32
-  special = true
+  length           = 32
+  special          = false
+  override_special = "!#$%^&*()_+-="  # Only use AWS RDS-compatible special characters
 }
 
 # KMS key for encryption (if needed)

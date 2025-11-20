@@ -38,6 +38,12 @@ output "key_name" {
   value       = aws_key_pair.bastion.key_name
 }
 
+output "private_key" {
+  description = "SSH private key for bastion host access (only if key was generated)"
+  value       = var.public_key == null ? tls_private_key.bastion.private_key_pem : null
+  sensitive   = true
+}
+
 output "instance_state" {
   description = "Current state of the bastion host"
   value       = aws_instance.bastion.instance_state

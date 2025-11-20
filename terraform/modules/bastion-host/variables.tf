@@ -27,9 +27,10 @@ variable "key_name" {
 }
 
 variable "public_key" {
-  description = "Public key content for SSH access"
+  description = "Public key content for SSH access (optional - will be generated if not provided)"
   type        = string
   sensitive   = true
+  default     = null
 }
 
 variable "vpc_id" {

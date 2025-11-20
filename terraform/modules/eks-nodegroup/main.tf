@@ -24,8 +24,17 @@ module "eks_managed_node_group" {
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
   }
 
-  # Enable launch template
-  use_custom_launch_template = false
+  # Enable launch template for metadata options
+  use_custom_launch_template = true
+
+  # EC2 Instance Metadata Service configuration
+  # hop_limit = 2 required for pods to access metadata through container networking
+  metadata_options = {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required" # Enforce IMDSv2 for security
+    http_put_response_hop_limit = 2          # Allow pod-level metadata access
+    instance_metadata_tags      = "disabled"
+  }
 
   tags = var.tags
 }

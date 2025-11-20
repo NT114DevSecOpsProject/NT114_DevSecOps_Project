@@ -8,8 +8,18 @@ variable "aws_region" {
   type        = string
 }
 
+variable "vpc_id" {
+  description = "VPC ID where the ALB controller will operate"
+  type        = string
+}
+
 variable "oidc_provider" {
   description = "OIDC provider for the EKS cluster"
+  type        = string
+}
+
+variable "oidc_provider_arn" {
+  description = "OIDC provider ARN for the EKS cluster"
   type        = string
 }
 
@@ -55,9 +65,9 @@ variable "helm_chart_repository" {
 }
 
 variable "helm_chart_version" {
-  description = "Version of the Helm chart (leave null for latest)"
+  description = "Version of the Helm chart"
   type        = string
-  default     = null
+  default     = "1.15.0"
 }
 
 variable "service_account_name" {
