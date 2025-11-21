@@ -61,3 +61,5 @@ secrets/
 # Backup files
 *.backup
 actions-runner/
+*.txt
+*credentials*

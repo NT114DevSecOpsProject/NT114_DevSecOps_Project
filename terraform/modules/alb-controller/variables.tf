@@ -67,7 +67,7 @@ variable "helm_chart_repository" {
 variable "helm_chart_version" {
   description = "Version of the Helm chart"
   type        = string
-  default     = "1.15.0"
+  default     = "v2.6.0"
 }
 
 variable "service_account_name" {

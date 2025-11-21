@@ -126,7 +126,7 @@ Edit `terraform.tfvars` with your specific values:
 ```hcl
 aws_region      = "us-east-1"
 cluster_name    = "my-eks-cluster"
-cluster_version = "1.31"
+cluster_version = "1.33"
 node_capacity_type = "SPOT"  # or "ON_DEMAND"
 ```
 
@@ -212,7 +212,7 @@ The infrastructure is automatically deployed via GitHub Actions when changes are
 |----------|-------------|---------|--------|
 | `aws_region` | AWS region | `us-east-1` | All |
 | `cluster_name` | EKS cluster name | `eks-1` | All |
-| `cluster_version` | Kubernetes version | `1.31` | EKS |
+| `cluster_version` | Kubernetes version | `1.33` | EKS |
 | `vpc_cidr` | VPC CIDR block | `11.0.0.0/16` | VPC |
 | `node_instance_types` | Instance types | `["t3.large"]` | Node Group |
 | `node_capacity_type` | SPOT or ON_DEMAND | `SPOT` | Node Group |

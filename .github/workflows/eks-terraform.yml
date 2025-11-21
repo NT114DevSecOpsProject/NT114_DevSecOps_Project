@@ -1,12 +1,26 @@
 name: EKS Terraform Deployment
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'terraform/**'
   workflow_dispatch:
+    inputs:
+      action:
+        description: 'Choose action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
 
 env:
   AWS_REGION: us-east-1
@@ -19,11 +33,11 @@ permissions:
 
 jobs:
   terraform-deploy:
-    name: Terraform Plan & Apply
+    name: Terraform ${{ github.event.inputs.action || 'plan' }}
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: terraform/environments/dev
+        working-directory: terraform/environments/${{ github.event.inputs.environment || 'dev' }}
 
     steps:
       - name: Checkout repository
@@ -48,28 +62,43 @@ jobs:
 
       - name: Terraform Plan
         id: plan
+        if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
         id: apply
+        if: github.event.inputs.action == 'apply'
         run: terraform apply -auto-approve tfplan
 
+      - name: Terraform Destroy
+        id: destroy
+        if: github.event.inputs.action == 'destroy'
+        run: terraform destroy -auto-approve
+
       - name: Configure kubectl
+        if: github.event.inputs.action != 'destroy'
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name $(terraform output -raw cluster_name)
           kubectl get nodes
 
       - name: Deployment Summary
+        if: github.event.inputs.action != 'destroy'
         run: |
-          echo "### Infrastructure Deployment Successful 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "### Terraform ${{ github.event.inputs.action }} completed successfully 🎉" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action:** ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Cluster:** $(terraform output -raw cluster_name)" >> $GITHUB_STEP_SUMMARY
-          echo "**RDS Endpoint:** $(terraform output -raw rds_instance_endpoint)" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ github.event.inputs.action }}" != "destroy" ]]; then
+            echo "**Cluster:** $(terraform output -raw cluster_name)" >> $GITHUB_STEP_SUMMARY
+            echo "**RDS Endpoint:** $(terraform output -raw rds_instance_endpoint)" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Auto Destroy on Failure
         if: |
           always() &&
+          github.event.inputs.action != 'destroy' &&
+          github.event.inputs.action != 'plan' &&
           (steps.init.outcome == 'failure' ||
            steps.plan.outcome == 'failure' ||
            steps.apply.outcome == 'failure')
