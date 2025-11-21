@@ -86,7 +86,7 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "1.33"
+  default     = "1.31"
 }
 
 variable "bootstrap_self_managed_addons" {
