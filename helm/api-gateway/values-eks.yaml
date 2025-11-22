@@ -1,21 +1,22 @@
-replicaCount: 1
+# EKS Production Values for API Gateway
+replicaCount: 2
 
 image:
-  repository: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/api-gateway
-  pullPolicy: IfNotPresent
+  repository: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/api-gateway
+  pullPolicy: Always
   tag: "latest"
 
 imagePullSecrets:
   - name: ecr-secret
-nameOverride: ""
-fullnameOverride: ""
 
 serviceAccount:
   create: true
   annotations: {}
   name: ""
 
-podAnnotations: {}
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8000"
 
 podSecurityContext:
   fsGroup: 2000
@@ -46,8 +47,7 @@ ingress:
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
     alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
   hosts:
-    - host: api.example.com
-      paths:
+    - paths:
         - path: /
           pathType: Prefix
   tls: []
@@ -57,14 +57,14 @@ resources:
     cpu: 500m
     memory: 512Mi
   requests:
-    cpu: 250m
-    memory: 256Mi
+    cpu: 100m
+    memory: 128Mi
 
 autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 80
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
 nodeSelector: {}
@@ -76,8 +76,8 @@ affinity: {}
 livenessProbe:
   httpGet:
     path: /health
-    port: http
-  initialDelaySeconds: 60
+    port: 8000
+  initialDelaySeconds: 30
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 6
@@ -85,11 +85,11 @@ livenessProbe:
 readinessProbe:
   httpGet:
     path: /health
-    port: http
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 6
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
 
 env:
   - name: NODE_ENV

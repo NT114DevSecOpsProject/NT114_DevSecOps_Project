@@ -12,6 +12,14 @@ on:
           - staging
           - prod
         default: 'dev'
+      deployment_method:
+        description: 'Deployment method'
+        required: true
+        type: choice
+        options:
+          - argocd
+          - helm
+        default: 'argocd'
       services:
         description: 'Services to deploy (comma-separated or "all")'
         required: true
@@ -23,6 +31,11 @@ on:
         required: false
         type: string
         default: 'dev'
+      deployment_method:
+        description: 'Deployment method'
+        required: false
+        type: string
+        default: 'argocd'
       services:
         description: 'Services to deploy (comma-separated or "all")'
         required: false
@@ -55,12 +68,9 @@ jobs:
       - name: Set ECR Account ID
         id: aws-account
         run: |
-          # Hard-coded to match ECR repository location
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
-          echo "ECR Account ID (dynamic): $ACCOUNT_ID"
-          echo ""
-          echo "Current AWS Account: $(aws sts get-caller-identity --query Account --output text)"
+          echo "ECR Account ID: $ACCOUNT_ID"
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
@@ -76,9 +86,9 @@ jobs:
         run: |
           echo "Checking if EKS cluster '${{ env.CLUSTER_NAME }}' exists..."
           if aws eks describe-cluster --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }} > /dev/null 2>&1; then
-            echo "✅ Cluster found: ${{ env.CLUSTER_NAME }}"
+            echo "Cluster found: ${{ env.CLUSTER_NAME }}"
           else
-            echo "❌ ERROR: Cluster '${{ env.CLUSTER_NAME }}' not found!"
+            echo "ERROR: Cluster '${{ env.CLUSTER_NAME }}' not found!"
             echo ""
             echo "Available clusters:"
             aws eks list-clusters --region ${{ env.AWS_REGION }}
@@ -104,12 +114,8 @@ jobs:
         run: |
           kubectl create namespace ${{ inputs.environment }} --dry-run=client -o yaml | kubectl apply -f -
 
-  
-      - name: Create ECR Secret (Cross-Account)
+      - name: Create ECR Secret
         run: |
-          # Note: This assumes GitHub Actions AWS credentials have permission to access ECR in account ${{ steps.aws-account.outputs.account_id }}
-          # If using different accounts, ensure proper IAM permissions are configured
-
           echo "Creating ECR secret for account ${{ steps.aws-account.outputs.account_id }}..."
           kubectl create secret docker-registry ecr-secret \
             --docker-server=${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com \
@@ -118,135 +124,208 @@ jobs:
             --namespace=${{ inputs.environment }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          echo "ECR secret created. Note: Ensure AWS credentials have access to account ${{ steps.aws-account.outputs.account_id }} ECR."
+          echo "ECR secret created successfully"
 
-      - name: Cleanup Stuck Helm Releases
+      - name: Check ALB Controller Status
+        id: alb-check
+        continue-on-error: true
         run: |
-          echo "Checking for stuck Helm releases..."
+          echo "Checking ALB Controller status..."
 
+          # Check if ALB controller is running
+          if kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --no-headers 2>/dev/null | grep -q "Running"; then
+            echo "ALB Controller is running"
+            echo "alb_ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "ALB Controller is NOT running or not installed"
+            echo "alb_ready=false" >> $GITHUB_OUTPUT
+            echo ""
+            echo "ALB Controller pods:"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller 2>/dev/null || echo "No ALB controller pods found"
+          fi
+
+          # Check ingress class
+          echo ""
+          echo "Ingress classes:"
+          kubectl get ingressclass 2>/dev/null || echo "No ingress classes found"
+
+      - name: Deploy with ArgoCD
+        if: inputs.deployment_method == 'argocd' || inputs.deployment_method == ''
+        run: |
+          echo "=== Deploying with ArgoCD (GitOps) ==="
+
+          # Check if ArgoCD is installed
+          if ! kubectl get namespace argocd &>/dev/null; then
+            echo "Installing ArgoCD..."
+            kubectl create namespace argocd
+            kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+            echo "Waiting for ArgoCD to be ready..."
+            kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+          else
+            echo "ArgoCD already installed"
+          fi
+
+          # Update image tags in values-eks.yaml files with actual AWS account ID
+          echo "Updating Helm values with AWS Account ID..."
+          for service in api-gateway user-management-service exercises-service scores-service frontend; do
+            VALUES_FILE="helm/${service}/values-eks.yaml"
+            if [ -f "$VALUES_FILE" ]; then
+              sed -i "s/\${AWS_ACCOUNT_ID}/${{ steps.aws-account.outputs.account_id }}/g" "$VALUES_FILE"
+              echo "Updated: $VALUES_FILE"
+            fi
+          done
+
+          # Apply ArgoCD applications
+          echo "Applying ArgoCD applications..."
+          kubectl apply -f argocd/argocd-applications.yaml
+
+          echo ""
+          echo "=== ArgoCD Applications Status ==="
+          sleep 10
+          kubectl get applications -n argocd
+
+          echo ""
+          echo "ArgoCD will now sync applications automatically."
+          echo "Access ArgoCD UI to monitor deployment progress."
+
+      - name: Deploy with Helm (Direct)
+        if: inputs.deployment_method == 'helm'
+        run: |
+          echo "=== Deploying with Helm (Direct) ==="
+
+          # Cleanup stuck Helm releases
+          echo "Checking for stuck Helm releases..."
           SERVICES=("api-gateway" "user-management-service" "exercises-service" "scores-service" "frontend")
 
           for service in "${SERVICES[@]}"; do
             if helm status "$service" -n ${{ inputs.environment }} 2>/dev/null | grep -q "STATUS: pending"; then
-              echo "⚠️ Found stuck release: $service. Cleaning up..."
+              echo "Found stuck release: $service. Cleaning up..."
               helm uninstall "$service" -n ${{ inputs.environment }} --wait || true
             elif helm status "$service" -n ${{ inputs.environment }} 2>/dev/null | grep -q "STATUS: failed"; then
-              echo "⚠️ Found failed release: $service. Cleaning up..."
+              echo "Found failed release: $service. Cleaning up..."
               helm uninstall "$service" -n ${{ inputs.environment }} --wait || true
             fi
           done
 
-          echo "✅ Cleanup complete"
+          echo "Cleanup complete"
 
-  
-      - name: Deploy API Gateway
-        if: contains(inputs.services, 'all') || contains(inputs.services, 'api-gateway')
-        run: |
-          echo "Deploying API Gateway..."
+          # Set common Helm values
+          ECR_REPO="${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nt114-devsecops"
 
-          if helm upgrade --install api-gateway ./helm/api-gateway \
-            --namespace ${{ inputs.environment }} \
-            --set image.repository=${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nt114-devsecops/api-gateway \
-            --set image.tag=latest \
-            --wait --timeout 5m; then
-            echo "✅ API Gateway deployed successfully"
-          else
-            echo "❌ API Gateway deployment failed!"
+          # Deploy services
+          deploy_service() {
+            local service=$1
+            local port=$2
+
             echo ""
-            echo "=== POD STATUS ==="
-            kubectl get pods -l app.kubernetes.io/name=api-gateway -n ${{ inputs.environment }} || true
+            echo "Deploying $service..."
+
+            if helm upgrade --install "$service" "./helm/$service" \
+              --namespace ${{ inputs.environment }} \
+              --set image.repository="${ECR_REPO}/$service" \
+              --set image.tag=latest \
+              --set image.pullPolicy=Always \
+              -f "./helm/$service/values-eks.yaml" \
+              --wait --timeout 10m; then
+              echo "$service deployed successfully"
+            else
+              echo "$service deployment failed!"
+              echo ""
+              echo "=== POD STATUS ==="
+              kubectl get pods -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} || true
+              echo ""
+              echo "=== POD DESCRIBE ==="
+              kubectl describe pod -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} || true
+              echo ""
+              echo "=== POD LOGS ==="
+              kubectl logs -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} --tail=100 || true
+              return 1
+            fi
+          }
+
+          # Deploy all services
+          DEPLOY_FAILED=false
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"user-management-service"* ]]; then
+            deploy_service "user-management-service" 5001 || DEPLOY_FAILED=true
+          fi
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"exercises-service"* ]]; then
+            deploy_service "exercises-service" 5002 || DEPLOY_FAILED=true
+          fi
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"scores-service"* ]]; then
+            deploy_service "scores-service" 5003 || DEPLOY_FAILED=true
+          fi
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"api-gateway"* ]]; then
+            deploy_service "api-gateway" 8000 || DEPLOY_FAILED=true
+          fi
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"frontend"* ]]; then
+            deploy_service "frontend" 80 || DEPLOY_FAILED=true
+          fi
+
+          if [ "$DEPLOY_FAILED" = true ]; then
             echo ""
-            echo "=== POD DESCRIBE ==="
-            kubectl describe pod -l app.kubernetes.io/name=api-gateway -n ${{ inputs.environment }} || true
-            echo ""
-            echo "=== POD LOGS ==="
-            kubectl logs -l app.kubernetes.io/name=api-gateway -n ${{ inputs.environment }} --tail=100 || true
-            echo ""
-            echo "=== EVENTS ==="
-            kubectl get events -n ${{ inputs.environment }} --sort-by='.lastTimestamp' --field-selector involvedObject.kind=Pod | grep api-gateway | tail -20 || true
+            echo "One or more deployments failed!"
             exit 1
           fi
 
-      - name: Deploy User Management Service
-        if: contains(inputs.services, 'all') || contains(inputs.services, 'user-management-service')
+          echo ""
+          echo "All services deployed successfully!"
+
+      - name: Get Deployment Status
         run: |
-          echo "Deploying User Management Service..."
-
-          helm upgrade --install user-management-service ./helm/user-management-service \
-            --namespace ${{ inputs.environment }} \
-            --set image.repository=${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nt114-devsecops/user-management-service \
-            --set image.tag=latest \
-            --wait --timeout 10m
-
-          echo "✅ User Management Service deployed successfully"
-
-      - name: Deploy Exercises Service
-        if: contains(inputs.services, 'all') || contains(inputs.services, 'exercises-service')
-        run: |
-          echo "Deploying Exercises Service..."
-
-          helm upgrade --install exercises-service ./helm/exercises-service \
-            --namespace ${{ inputs.environment }} \
-            --set image.repository=${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nt114-devsecops/exercises-service \
-            --set image.tag=latest \
-            --wait --timeout 10m
-
-          echo "✅ Exercises Service deployed successfully"
-
-      - name: Deploy Scores Service
-        if: contains(inputs.services, 'all') || contains(inputs.services, 'scores-service')
-        run: |
-          echo "Deploying Scores Service..."
-
-          helm upgrade --install scores-service ./helm/scores-service \
-            --namespace ${{ inputs.environment }} \
-            --set image.repository=${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nt114-devsecops/scores-service \
-            --set image.tag=latest \
-            --wait --timeout 10m
-
-          echo "✅ Scores Service deployed successfully"
-
-      - name: Deploy Frontend
-        if: contains(inputs.services, 'all') || contains(inputs.services, 'frontend')
-        run: |
-          echo "Deploying Frontend..."
-
-          helm upgrade --install frontend ./helm/frontend \
-            --namespace ${{ inputs.environment }} \
-            --set image.repository=${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nt114-devsecops/frontend \
-            --set image.tag=latest \
-            --wait --timeout 10m
-
-          echo "✅ Frontend deployed successfully"
-
-      - name: Get Service URLs
-        run: |
-          echo "### 🚀 Deployment Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment Complete!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Method:** ${{ inputs.deployment_method }}" >> $GITHUB_STEP_SUMMARY
           echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "**Cluster:** ${{ env.CLUSTER_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "#### 📋 Deployed Services" >> $GITHUB_STEP_SUMMARY
+          echo "#### Deployed Services" >> $GITHUB_STEP_SUMMARY
           kubectl get deployments -n ${{ inputs.environment }} >> $GITHUB_STEP_SUMMARY || echo "No deployments found" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "#### 🌐 Service Endpoints" >> $GITHUB_STEP_SUMMARY
+          echo "#### Service Endpoints" >> $GITHUB_STEP_SUMMARY
           kubectl get services -n ${{ inputs.environment }} >> $GITHUB_STEP_SUMMARY || echo "No services found" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "#### 🔗 Ingress URLs" >> $GITHUB_STEP_SUMMARY
-          kubectl get ingress -n ${{ inputs.environment }} >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No ingress found (ALB Controller may not be installed)" >> $GITHUB_STEP_SUMMARY
-
-      - name: Check Pod Status
-        run: |
-          echo "### Pod Status" >> $GITHUB_STEP_SUMMARY
-          kubectl get pods -n ${{ inputs.environment }} -o wide >> $GITHUB_STEP_SUMMARY || true
+          echo "#### Ingress URLs" >> $GITHUB_STEP_SUMMARY
+          kubectl get ingress -n ${{ inputs.environment }} >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No ingress found" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Pod Events (if any issues)" >> $GITHUB_STEP_SUMMARY
-          kubectl get events -n ${{ inputs.environment }} --sort-by='.lastTimestamp' --field-selector type!=Normal | tail -20 >> $GITHUB_STEP_SUMMARY || echo "No concerning events" >> $GITHUB_STEP_SUMMARY
+          echo "#### Pod Status" >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n ${{ inputs.environment }} -o wide >> $GITHUB_STEP_SUMMARY || true
+
+      - name: Get ArgoCD Access Info
+        if: inputs.deployment_method == 'argocd' || inputs.deployment_method == ''
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### ArgoCD Access" >> $GITHUB_STEP_SUMMARY
+
+          # Get ArgoCD password
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d) || ARGOCD_PASSWORD="<not available>"
+
+          # Get ArgoCD URL
+          ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || ARGOCD_URL="<pending>"
+
+          echo "- **ArgoCD URL:** https://${ARGOCD_URL}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Username:** admin" >> $GITHUB_STEP_SUMMARY
+          echo "- **Password:** See workflow output (not shown in summary for security)" >> $GITHUB_STEP_SUMMARY
+
+          echo ""
+          echo "=== ArgoCD Access Information ==="
+          echo "URL: https://${ARGOCD_URL}"
+          echo "Username: admin"
+          echo "Password: ${ARGOCD_PASSWORD}"
+
+          echo ""
+          echo "=== ArgoCD Application Status ==="
+          kubectl get applications -n argocd
 
   verify:
     name: Verify Deployment
@@ -272,21 +351,55 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
 
-      - name: Verify All Pods Running
+      - name: Wait for Pods Ready
         run: |
-          echo "Waiting for all pods to be ready..."
-          kubectl wait --for=condition=ready pod --all -n ${{ inputs.environment }} --timeout=600s
+          echo "Waiting for pods to be ready..."
 
-          echo "### ✅ All Pods are Running!" >> $GITHUB_STEP_SUMMARY
-          kubectl get pods -n ${{ inputs.environment }} >> $GITHUB_STEP_SUMMARY
+          # Wait up to 10 minutes for pods
+          for i in {1..60}; do
+            PENDING_PODS=$(kubectl get pods -n ${{ inputs.environment }} --no-headers 2>/dev/null | grep -v "Running\|Completed" | wc -l)
+
+            if [ "$PENDING_PODS" -eq 0 ]; then
+              echo "All pods are running!"
+              break
+            fi
+
+            echo "Waiting for $PENDING_PODS pods to be ready... (attempt $i/60)"
+            sleep 10
+          done
+
+          echo ""
+          echo "=== Final Pod Status ==="
+          kubectl get pods -n ${{ inputs.environment }} -o wide
+
+          echo ""
+          echo "=== Deployment Status ==="
+          kubectl get deployments -n ${{ inputs.environment }}
 
       - name: Run Health Checks
         run: |
-          echo "### 🏥 Health Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Health Check Results" >> $GITHUB_STEP_SUMMARY
 
-          # Test API Gateway health
-          API_GATEWAY_IP=$(kubectl get service api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          if [ ! -z "$API_GATEWAY_IP" ]; then
-            echo "**API Gateway:** $API_GATEWAY_IP" >> $GITHUB_STEP_SUMMARY
-            curl -f http://$API_GATEWAY_IP/health || echo "❌ Health check failed" >> $GITHUB_STEP_SUMMARY
+          # Get API Gateway service endpoint
+          API_GATEWAY_SVC=$(kubectl get service api-gateway -n ${{ inputs.environment }} -o jsonpath='{.spec.clusterIP}' 2>/dev/null) || true
+
+          if [ ! -z "$API_GATEWAY_SVC" ]; then
+            echo "Testing API Gateway health endpoint..."
+
+            # Port-forward and test
+            kubectl port-forward svc/api-gateway -n ${{ inputs.environment }} 8080:8080 &
+            PF_PID=$!
+            sleep 5
+
+            if curl -sf http://localhost:8080/health; then
+              echo "API Gateway health check PASSED" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "API Gateway health check FAILED or not reachable" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            kill $PF_PID 2>/dev/null || true
           fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Events (Last 20)" >> $GITHUB_STEP_SUMMARY
+          kubectl get events -n ${{ inputs.environment }} --sort-by='.lastTimestamp' | tail -20 >> $GITHUB_STEP_SUMMARY || echo "No events" >> $GITHUB_STEP_SUMMARY

@@ -1,14 +1,13 @@
-replicaCount: 1
+# EKS Production Values for Frontend
+replicaCount: 2
 
 image:
-  repository: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/api-gateway
-  pullPolicy: IfNotPresent
+  repository: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/frontend
+  pullPolicy: Always
   tag: "latest"
 
 imagePullSecrets:
   - name: ecr-secret
-nameOverride: ""
-fullnameOverride: ""
 
 serviceAccount:
   create: true
@@ -17,21 +16,16 @@ serviceAccount:
 
 podAnnotations: {}
 
-podSecurityContext:
-  fsGroup: 2000
+podSecurityContext: {}
 
-securityContext:
-  capabilities:
-    drop:
-    - ALL
-  readOnlyRootFilesystem: false
-  runAsNonRoot: true
-  runAsUser: 1000
+securityContext: {}
+  # Nginx Alpine runs as root by default, but we've configured it to work with non-root
+  # The Dockerfile.prod sets proper permissions for nginx to run
 
 service:
   type: ClusterIP
-  port: 8080
-  targetPort: 8000
+  port: 80
+  targetPort: 80
 
 ingress:
   enabled: true
@@ -40,14 +34,14 @@ ingress:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
-    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/healthcheck-path: /
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
     alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
     alb.ingress.kubernetes.io/unhealthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/group.name: frontend
   hosts:
-    - host: api.example.com
-      paths:
+    - paths:
         - path: /
           pathType: Prefix
   tls: []
@@ -57,14 +51,14 @@ resources:
     cpu: 500m
     memory: 512Mi
   requests:
-    cpu: 250m
-    memory: 256Mi
+    cpu: 100m
+    memory: 128Mi
 
 autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 80
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
 nodeSelector: {}
@@ -75,30 +69,24 @@ affinity: {}
 
 livenessProbe:
   httpGet:
-    path: /health
-    port: http
-  initialDelaySeconds: 60
+    path: /
+    port: 80
+  initialDelaySeconds: 30
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 6
 
 readinessProbe:
   httpGet:
-    path: /health
-    port: http
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 6
+    path: /
+    port: 80
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
 
 env:
   - name: NODE_ENV
     value: "production"
-  - name: PORT
-    value: "8000"
-  - name: USER_SERVICE_URL
-    value: "http://user-management-service:8081"
-  - name: EXERCISES_SERVICE_URL
-    value: "http://exercises-service:8082"
-  - name: SCORES_SERVICE_URL
-    value: "http://scores-service:8083"
+  - name: VITE_API_URL
+    value: "http://api-gateway:8080"

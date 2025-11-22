@@ -40,7 +40,12 @@ jobs:
         run: |
           cd frontend
 
+          # Use production Dockerfile for EKS deployment
           docker buildx build --platform linux/amd64 \
+            -f Dockerfile.prod \
+            --build-arg VITE_API_URL=http://api-gateway:8080 \
+            --build-arg VITE_APP_TITLE="CodeLearn" \
+            --build-arg VITE_APP_ENV=production \
             -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/frontend:$IMAGE_TAG \
             -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/frontend:latest \
             --push .

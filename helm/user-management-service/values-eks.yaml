@@ -1,21 +1,22 @@
-replicaCount: 1
+# EKS Production Values for User Management Service
+replicaCount: 2
 
 image:
-  repository: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/scores-service
-  pullPolicy: IfNotPresent
+  repository: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/user-management-service
+  pullPolicy: Always
   tag: "latest"
 
 imagePullSecrets:
   - name: ecr-secret
-nameOverride: ""
-fullnameOverride: ""
 
 serviceAccount:
   create: true
   annotations: {}
   name: ""
 
-podAnnotations: {}
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "5001"
 
 podSecurityContext:
   fsGroup: 2000
@@ -30,8 +31,8 @@ securityContext:
 
 service:
   type: ClusterIP
-  port: 8083
-  targetPort: 5003
+  port: 8081
+  targetPort: 5001
 
 ingress:
   enabled: false
@@ -41,14 +42,14 @@ resources:
     cpu: 500m
     memory: 512Mi
   requests:
-    cpu: 250m
-    memory: 256Mi
+    cpu: 100m
+    memory: 128Mi
 
 autoscaling:
-  enabled: false
-  minReplicas: 1
+  enabled: true
+  minReplicas: 2
   maxReplicas: 5
-  targetCPUUtilizationPercentage: 80
+  targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
 nodeSelector: {}
@@ -60,16 +61,16 @@ affinity: {}
 livenessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 5001
   initialDelaySeconds: 30
   periodSeconds: 10
   timeoutSeconds: 5
-  failureThreshold: 3
+  failureThreshold: 6
 
 readinessProbe:
   httpGet:
     path: /health
-    port: http
+    port: 5001
   initialDelaySeconds: 10
   periodSeconds: 5
   timeoutSeconds: 3
@@ -79,4 +80,4 @@ env:
   - name: NODE_ENV
     value: "production"
   - name: PORT
-    value: "5003"
+    value: "5001"

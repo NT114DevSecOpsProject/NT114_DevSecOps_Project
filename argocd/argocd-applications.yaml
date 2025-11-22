@@ -14,17 +14,17 @@ spec:
     path: helm/frontend
     helm:
       valueFiles:
-        - values-local.yaml
+        - values-eks.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: dev
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
     retry:
       limit: 5
       backoff:
@@ -48,17 +48,17 @@ spec:
     path: helm/api-gateway
     helm:
       valueFiles:
-        - values-local.yaml
+        - values-eks.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: dev
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
     retry:
       limit: 5
       backoff:
@@ -82,17 +82,17 @@ spec:
     path: helm/user-management-service
     helm:
       valueFiles:
-        - values-local.yaml
+        - values-eks.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: dev
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
     retry:
       limit: 5
       backoff:
@@ -116,17 +116,17 @@ spec:
     path: helm/exercises-service
     helm:
       valueFiles:
-        - values-local.yaml
+        - values-eks.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: dev
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
     retry:
       limit: 5
       backoff:
@@ -150,17 +150,17 @@ spec:
     path: helm/scores-service
     helm:
       valueFiles:
-        - values-local.yaml
+        - values-eks.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: dev
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=false
+      - CreateNamespace=true
     retry:
       limit: 5
       backoff:

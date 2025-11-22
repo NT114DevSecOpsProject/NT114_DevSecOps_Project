@@ -9,21 +9,16 @@ spec:
   project: nt114-devsecops
 
   source:
-    repoURL: https://github.com/conghieu2004/NT114_DevSecOps_Project.git
+    repoURL: https://github.com/NT114DevSecOpsProject/NT114_DevSecOps_Project.git
     targetRevision: main
     path: helm/frontend
     helm:
       valueFiles:
-        - values.yaml
-      parameters:
-        - name: image.tag
-          value: latest
-        - name: image.repository
-          value: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/frontend
+        - values-eks.yaml
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: dev
 
   syncPolicy:
     automated:

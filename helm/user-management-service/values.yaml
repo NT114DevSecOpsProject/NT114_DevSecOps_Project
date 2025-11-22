@@ -31,7 +31,7 @@ securityContext:
 service:
   type: ClusterIP
   port: 8081
-  targetPort: 8081
+  targetPort: 5001
 
 ingress:
   enabled: false
@@ -79,4 +79,4 @@ env:
   - name: NODE_ENV
     value: "production"
   - name: PORT
-    value: "8081"
+    value: "5001"
