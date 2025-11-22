@@ -13,46 +13,40 @@ resource "helm_release" "aws_load_balancer_controller" {
 
   timeout = 1200 # 20 minutes timeout for Helm installation
 
-  set {
-    name  = "clusterName"
-    value = var.cluster_name
-  }
-
-  set {
-    name  = "region"
-    value = var.aws_region
-  }
-
-  set {
-    name  = "vpcId"
-    value = var.vpc_id
-  }
-
-  set {
-    name  = "serviceAccount.create"
-    value = "true"
-  }
-
-  set {
-    name  = "serviceAccount.name"
-    value = var.service_account_name
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.alb_controller[0].arn
-  }
-
-  set {
-    name  = "replicaCount"
-    value = 1
-  }
-
-  dynamic "set" {
-    for_each = var.additional_helm_values
-    content {
-      name  = set.key
-      value = set.value
+  set = concat([
+    {
+      name  = "clusterName"
+      value = var.cluster_name
+    },
+    {
+      name  = "region"
+      value = var.aws_region
+    },
+    {
+      name  = "vpcId"
+      value = var.vpc_id
+    },
+    {
+      name  = "serviceAccount.create"
+      value = true
+    },
+    {
+      name  = "serviceAccount.name"
+      value = var.service_account_name
+    },
+    {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = aws_iam_role.alb_controller[0].arn
+    },
+    {
+      name  = "replicaCount"
+      value = 1
     }
-  }
+  ],
+  [
+    for k, v in var.additional_helm_values : {
+      name  = k
+      value = v
+    }
+  ])
 }

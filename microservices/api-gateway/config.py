@@ -6,9 +6,9 @@ class Config:
     DEBUG = os.environ.get('FLASK_ENV', 'development') == 'development'
     
     # Service URLs
-    USER_MANAGEMENT_SERVICE_URL = os.environ.get('USER_SERVICE_URL', os.environ.get('USER_MANAGEMENT_SERVICE_URL', 'http://localhost:5001'))
-    EXERCISES_SERVICE_URL = os.environ.get('EXERCISES_SERVICE_URL', 'http://localhost:5002')
-    SCORES_SERVICE_URL = os.environ.get('SCORES_SERVICE_URL', 'http://localhost:5003')
+    USER_MANAGEMENT_SERVICE_URL = os.environ.get('USER_SERVICE_URL', 'http://user-management-service:8081')
+    EXERCISES_SERVICE_URL = os.environ.get('EXERCISES_SERVICE_URL', 'http://exercises-service:8082')
+    SCORES_SERVICE_URL = os.environ.get('SCORES_SERVICE_URL', 'http://scores-service:8083')
     
     # CORS Configuration
     CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://localhost:31184", "http://127.0.0.1:31184"]
