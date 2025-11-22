@@ -326,4 +326,4 @@ jobs:
           trivy fs --format json --security-checks vuln frontend/package-lock.json 2>/dev/null | jq -r '.Results[] | select(.Vulnerabilities != null) | "Total: \(.Vulnerabilities | length), Critical: \([.Vulnerabilities[] | select(.Severity == "CRITICAL")] | length), High: \([.Vulnerabilities[] | select(.Severity == "HIGH")] | length)"' || echo "No vulnerabilities or scan failed"
           
           echo ""
-          echo "=========================================="
+          echo "==============================="
