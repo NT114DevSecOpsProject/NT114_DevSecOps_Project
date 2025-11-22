@@ -27,6 +27,12 @@ terraform.rc
 .DS_Store
 Thumbs.db
 
+# Python virtual environments
+**/.venv/
+**/venv/
+**/env/
+**/.env/
+
 # Environment variables
 .env
 .env.local
