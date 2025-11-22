@@ -19,7 +19,7 @@ on:
         options:
           - argocd
           - helm
-        default: 'argocd'
+        default: 'helm'
       services:
         description: 'Services to deploy (comma-separated or "all")'
         required: true
@@ -35,7 +35,7 @@ on:
         description: 'Deployment method'
         required: false
         type: string
-        default: 'argocd'
+        default: 'helm'
       services:
         description: 'Services to deploy (comma-separated or "all")'
         required: false
@@ -126,31 +126,184 @@ jobs:
 
           echo "ECR secret created successfully"
 
-      - name: Check ALB Controller Status
-        id: alb-check
-        continue-on-error: true
+      - name: Install AWS Load Balancer Controller
+        id: alb-install
         run: |
-          echo "Checking ALB Controller status..."
+          echo "=== Installing/Checking AWS Load Balancer Controller ==="
 
-          # Check if ALB controller is running
+          # Get cluster info
+          CLUSTER_NAME="${{ env.CLUSTER_NAME }}"
+          VPC_ID=$(aws eks describe-cluster --name $CLUSTER_NAME --query "cluster.resourcesVpcConfig.vpcId" --output text)
+          echo "VPC ID: $VPC_ID"
+
+          # Check if ALB controller is already running
           if kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --no-headers 2>/dev/null | grep -q "Running"; then
-            echo "ALB Controller is running"
+            echo "ALB Controller is already running"
             echo "alb_ready=true" >> $GITHUB_OUTPUT
           else
-            echo "ALB Controller is NOT running or not installed"
-            echo "alb_ready=false" >> $GITHUB_OUTPUT
-            echo ""
-            echo "ALB Controller pods:"
-            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller 2>/dev/null || echo "No ALB controller pods found"
+            echo "Installing AWS Load Balancer Controller..."
+
+            # Add eks-charts repo
+            helm repo add eks https://aws.github.io/eks-charts
+            helm repo update
+
+            # Create IAM service account for ALB controller (if not exists)
+            # Note: This requires the IAM role to be created by Terraform first
+
+            # Check if service account exists
+            if ! kubectl get serviceaccount aws-load-balancer-controller -n kube-system &>/dev/null; then
+              echo "Creating service account..."
+
+              # Get OIDC provider
+              OIDC_PROVIDER=$(aws eks describe-cluster --name $CLUSTER_NAME --query "cluster.identity.oidc.issuer" --output text | sed 's|https://||')
+
+              # Create service account with IAM role annotation
+              cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: aws-load-balancer-controller
+            namespace: kube-system
+            annotations:
+              eks.amazonaws.com/role-arn: arn:aws:iam::${{ steps.aws-account.outputs.account_id }}:role/${{ env.CLUSTER_NAME }}-alb-controller
+          EOF
+            fi
+
+            # Install or upgrade ALB controller
+            helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
+              -n kube-system \
+              --set clusterName=$CLUSTER_NAME \
+              --set region=${{ env.AWS_REGION }} \
+              --set vpcId=$VPC_ID \
+              --set serviceAccount.create=false \
+              --set serviceAccount.name=aws-load-balancer-controller \
+              --wait --timeout 5m || true
+
+            # Wait for controller to be ready
+            echo "Waiting for ALB Controller to be ready..."
+            kubectl rollout status deployment/aws-load-balancer-controller -n kube-system --timeout=300s || true
+
+            echo "alb_ready=true" >> $GITHUB_OUTPUT
           fi
 
-          # Check ingress class
+          # Create IngressClass if not exists
+          if ! kubectl get ingressclass alb &>/dev/null; then
+            echo "Creating ALB IngressClass..."
+            cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: IngressClass
+          metadata:
+            name: alb
+            annotations:
+              ingressclass.kubernetes.io/is-default-class: "true"
+          spec:
+            controller: ingress.k8s.aws/alb
+          EOF
+          fi
+
           echo ""
-          echo "Ingress classes:"
-          kubectl get ingressclass 2>/dev/null || echo "No ingress classes found"
+          echo "=== ALB Controller Status ==="
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+          echo ""
+          echo "Ingress Classes:"
+          kubectl get ingressclass
+
+      - name: Deploy with Helm (Direct)
+        if: inputs.deployment_method == 'helm'
+        run: |
+          echo "=== Deploying with Helm (Direct) ==="
+
+          # Cleanup stuck Helm releases
+          echo "Checking for stuck Helm releases..."
+          SERVICES=("api-gateway" "user-management-service" "exercises-service" "scores-service" "frontend")
+
+          for service in "${SERVICES[@]}"; do
+            if helm status "$service" -n ${{ inputs.environment }} 2>/dev/null | grep -q "STATUS: pending"; then
+              echo "Found stuck release: $service. Cleaning up..."
+              helm uninstall "$service" -n ${{ inputs.environment }} --wait || true
+            elif helm status "$service" -n ${{ inputs.environment }} 2>/dev/null | grep -q "STATUS: failed"; then
+              echo "Found failed release: $service. Cleaning up..."
+              helm uninstall "$service" -n ${{ inputs.environment }} --wait || true
+            fi
+          done
+
+          echo "Cleanup complete"
+
+          # Set common Helm values
+          ECR_REPO="${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nt114-devsecops"
+
+          # Update values-eks.yaml with AWS Account ID
+          for service in api-gateway user-management-service exercises-service scores-service frontend; do
+            VALUES_FILE="helm/${service}/values-eks.yaml"
+            if [ -f "$VALUES_FILE" ]; then
+              sed -i "s/\${AWS_ACCOUNT_ID}/${{ steps.aws-account.outputs.account_id }}/g" "$VALUES_FILE"
+            fi
+          done
+
+          # Deploy services
+          deploy_service() {
+            local service=$1
+
+            echo ""
+            echo "Deploying $service..."
+
+            if helm upgrade --install "$service" "./helm/$service" \
+              --namespace ${{ inputs.environment }} \
+              --set image.repository="${ECR_REPO}/$service" \
+              --set image.tag=latest \
+              --set image.pullPolicy=Always \
+              -f "./helm/$service/values-eks.yaml" \
+              --wait --timeout 10m; then
+              echo "$service deployed successfully"
+            else
+              echo "$service deployment failed!"
+              echo ""
+              echo "=== POD STATUS ==="
+              kubectl get pods -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} || true
+              echo ""
+              echo "=== POD DESCRIBE ==="
+              kubectl describe pod -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} || true
+              echo ""
+              echo "=== POD LOGS ==="
+              kubectl logs -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} --tail=100 || true
+              return 1
+            fi
+          }
+
+          # Deploy all services
+          DEPLOY_FAILED=false
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"user-management-service"* ]]; then
+            deploy_service "user-management-service" || DEPLOY_FAILED=true
+          fi
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"exercises-service"* ]]; then
+            deploy_service "exercises-service" || DEPLOY_FAILED=true
+          fi
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"scores-service"* ]]; then
+            deploy_service "scores-service" || DEPLOY_FAILED=true
+          fi
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"api-gateway"* ]]; then
+            deploy_service "api-gateway" || DEPLOY_FAILED=true
+          fi
+
+          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"frontend"* ]]; then
+            deploy_service "frontend" || DEPLOY_FAILED=true
+          fi
+
+          if [ "$DEPLOY_FAILED" = true ]; then
+            echo ""
+            echo "One or more deployments failed!"
+            exit 1
+          fi
+
+          echo ""
+          echo "All services deployed successfully!"
 
       - name: Deploy with ArgoCD
-        if: inputs.deployment_method == 'argocd' || inputs.deployment_method == ''
+        if: inputs.deployment_method == 'argocd'
         run: |
           echo "=== Deploying with ArgoCD (GitOps) ==="
 
@@ -189,92 +342,34 @@ jobs:
           echo "ArgoCD will now sync applications automatically."
           echo "Access ArgoCD UI to monitor deployment progress."
 
-      - name: Deploy with Helm (Direct)
-        if: inputs.deployment_method == 'helm'
+      - name: Wait for ALB Provisioning
         run: |
-          echo "=== Deploying with Helm (Direct) ==="
+          echo "=== Waiting for ALB Ingress to be provisioned ==="
 
-          # Cleanup stuck Helm releases
-          echo "Checking for stuck Helm releases..."
-          SERVICES=("api-gateway" "user-management-service" "exercises-service" "scores-service" "frontend")
+          # Wait up to 5 minutes for ingress to get an address
+          for i in {1..30}; do
+            INGRESS_COUNT=$(kubectl get ingress -n ${{ inputs.environment }} --no-headers 2>/dev/null | wc -l)
 
-          for service in "${SERVICES[@]}"; do
-            if helm status "$service" -n ${{ inputs.environment }} 2>/dev/null | grep -q "STATUS: pending"; then
-              echo "Found stuck release: $service. Cleaning up..."
-              helm uninstall "$service" -n ${{ inputs.environment }} --wait || true
-            elif helm status "$service" -n ${{ inputs.environment }} 2>/dev/null | grep -q "STATUS: failed"; then
-              echo "Found failed release: $service. Cleaning up..."
-              helm uninstall "$service" -n ${{ inputs.environment }} --wait || true
+            if [ "$INGRESS_COUNT" -gt 0 ]; then
+              echo "Checking ingress addresses..."
+              kubectl get ingress -n ${{ inputs.environment }}
+
+              # Check if any ingress has an address
+              ADDRESSES=$(kubectl get ingress -n ${{ inputs.environment }} -o jsonpath='{.items[*].status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+
+              if [ ! -z "$ADDRESSES" ] && [ "$ADDRESSES" != "" ]; then
+                echo "ALB addresses found!"
+                break
+              fi
             fi
+
+            echo "Waiting for ALB to be provisioned... (attempt $i/30)"
+            sleep 10
           done
 
-          echo "Cleanup complete"
-
-          # Set common Helm values
-          ECR_REPO="${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/nt114-devsecops"
-
-          # Deploy services
-          deploy_service() {
-            local service=$1
-            local port=$2
-
-            echo ""
-            echo "Deploying $service..."
-
-            if helm upgrade --install "$service" "./helm/$service" \
-              --namespace ${{ inputs.environment }} \
-              --set image.repository="${ECR_REPO}/$service" \
-              --set image.tag=latest \
-              --set image.pullPolicy=Always \
-              -f "./helm/$service/values-eks.yaml" \
-              --wait --timeout 10m; then
-              echo "$service deployed successfully"
-            else
-              echo "$service deployment failed!"
-              echo ""
-              echo "=== POD STATUS ==="
-              kubectl get pods -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} || true
-              echo ""
-              echo "=== POD DESCRIBE ==="
-              kubectl describe pod -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} || true
-              echo ""
-              echo "=== POD LOGS ==="
-              kubectl logs -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} --tail=100 || true
-              return 1
-            fi
-          }
-
-          # Deploy all services
-          DEPLOY_FAILED=false
-
-          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"user-management-service"* ]]; then
-            deploy_service "user-management-service" 5001 || DEPLOY_FAILED=true
-          fi
-
-          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"exercises-service"* ]]; then
-            deploy_service "exercises-service" 5002 || DEPLOY_FAILED=true
-          fi
-
-          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"scores-service"* ]]; then
-            deploy_service "scores-service" 5003 || DEPLOY_FAILED=true
-          fi
-
-          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"api-gateway"* ]]; then
-            deploy_service "api-gateway" 8000 || DEPLOY_FAILED=true
-          fi
-
-          if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"frontend"* ]]; then
-            deploy_service "frontend" 80 || DEPLOY_FAILED=true
-          fi
-
-          if [ "$DEPLOY_FAILED" = true ]; then
-            echo ""
-            echo "One or more deployments failed!"
-            exit 1
-          fi
-
           echo ""
-          echo "All services deployed successfully!"
+          echo "=== Final Ingress Status ==="
+          kubectl get ingress -n ${{ inputs.environment }} -o wide || echo "No ingress resources found"
 
       - name: Get Deployment Status
         run: |
@@ -287,22 +382,63 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "#### Deployed Services" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           kubectl get deployments -n ${{ inputs.environment }} >> $GITHUB_STEP_SUMMARY || echo "No deployments found" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "#### Service Endpoints" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           kubectl get services -n ${{ inputs.environment }} >> $GITHUB_STEP_SUMMARY || echo "No services found" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "#### Ingress URLs" >> $GITHUB_STEP_SUMMARY
-          kubectl get ingress -n ${{ inputs.environment }} >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No ingress found" >> $GITHUB_STEP_SUMMARY
+          echo "#### ALB Ingress URLs" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get ingress -n ${{ inputs.environment }} -o wide >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No ingress found" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "#### Pod Status" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           kubectl get pods -n ${{ inputs.environment }} -o wide >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Display Access URLs
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "         APPLICATION ACCESS URLS              "
+          echo "=============================================="
+          echo ""
+
+          # Get Frontend URL
+          FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || FRONTEND_URL=""
+          if [ ! -z "$FRONTEND_URL" ]; then
+            echo "Frontend URL: http://${FRONTEND_URL}"
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+            echo "- **Frontend:** http://${FRONTEND_URL}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Frontend: Ingress not ready yet"
+          fi
+
+          # Get API Gateway URL
+          API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || API_URL=""
+          if [ ! -z "$API_URL" ]; then
+            echo "API Gateway URL: http://${API_URL}"
+            echo "- **API Gateway:** http://${API_URL}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "API Gateway: Ingress not ready yet"
+          fi
+
+          echo ""
+          echo "Note: ALB provisioning may take 2-5 minutes."
+          echo "If URLs are empty, run: kubectl get ingress -n ${{ inputs.environment }}"
+          echo ""
 
       - name: Get ArgoCD Access Info
-        if: inputs.deployment_method == 'argocd' || inputs.deployment_method == ''
+        if: inputs.deployment_method == 'argocd'
         run: |
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "#### ArgoCD Access" >> $GITHUB_STEP_SUMMARY
@@ -376,30 +512,57 @@ jobs:
           echo "=== Deployment Status ==="
           kubectl get deployments -n ${{ inputs.environment }}
 
+      - name: Verify ALB and Display URLs
+        run: |
+          echo "### Final Access URLs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "=== Ingress Status ==="
+          kubectl get ingress -n ${{ inputs.environment }} -o wide
+
+          # Frontend
+          FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || true
+          if [ ! -z "$FRONTEND_URL" ]; then
+            echo ""
+            echo "Frontend URL: http://${FRONTEND_URL}"
+            echo "- **Frontend:** http://${FRONTEND_URL}" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # API Gateway
+          API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || true
+          if [ ! -z "$API_URL" ]; then
+            echo "API Gateway URL: http://${API_URL}"
+            echo "- **API Gateway:** http://${API_URL}" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Run Health Checks
         run: |
           echo "### Health Check Results" >> $GITHUB_STEP_SUMMARY
 
-          # Get API Gateway service endpoint
-          API_GATEWAY_SVC=$(kubectl get service api-gateway -n ${{ inputs.environment }} -o jsonpath='{.spec.clusterIP}' 2>/dev/null) || true
+          # Get Frontend URL and test
+          FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || true
+          if [ ! -z "$FRONTEND_URL" ]; then
+            echo "Testing Frontend at http://${FRONTEND_URL}..."
+            if curl -sf --max-time 10 "http://${FRONTEND_URL}" > /dev/null; then
+              echo "Frontend health check PASSED" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "Frontend health check FAILED or not reachable yet" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
 
-          if [ ! -z "$API_GATEWAY_SVC" ]; then
-            echo "Testing API Gateway health endpoint..."
-
-            # Port-forward and test
-            kubectl port-forward svc/api-gateway -n ${{ inputs.environment }} 8080:8080 &
-            PF_PID=$!
-            sleep 5
-
-            if curl -sf http://localhost:8080/health; then
+          # Get API Gateway URL and test
+          API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || true
+          if [ ! -z "$API_URL" ]; then
+            echo "Testing API Gateway at http://${API_URL}/health..."
+            if curl -sf --max-time 10 "http://${API_URL}/health"; then
               echo "API Gateway health check PASSED" >> $GITHUB_STEP_SUMMARY
             else
-              echo "API Gateway health check FAILED or not reachable" >> $GITHUB_STEP_SUMMARY
+              echo "API Gateway health check FAILED or not reachable yet" >> $GITHUB_STEP_SUMMARY
             fi
-
-            kill $PF_PID 2>/dev/null || true
           fi
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "#### Events (Last 20)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           kubectl get events -n ${{ inputs.environment }} --sort-by='.lastTimestamp' | tail -20 >> $GITHUB_STEP_SUMMARY || echo "No events" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
