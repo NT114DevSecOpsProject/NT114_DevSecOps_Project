@@ -59,21 +59,36 @@ def register_error_handlers(app, logger):
 def register_health_route(app, user_management_client, exercises_client, scores_client):
     @app.route('/health', methods=['GET'])
     def health_check():
-        statuses = [
-            _check_service_health(user_management_client),
-            _check_service_health(exercises_client),
-            _check_service_health(scores_client)
-        ]
-        overall_status = 200 if all(s["response_code"] == 200 for s in statuses) else 503
-        gateway_status = {
-            "status": "healthy" if overall_status == 200 else "unhealthy",
-            "services": {
-                "user_management_service": statuses[0],
-                "exercises_service": statuses[1],
-                "scores_service": statuses[2]
+        # Simple health check - API Gateway is healthy if it can respond
+        return jsonify({
+            "status": "healthy",
+            "message": "API Gateway is running"
+        }), 200
+
+    # Detailed health check endpoint for monitoring
+    @app.route('/health/detailed', methods=['GET'])
+    def detailed_health_check():
+        try:
+            statuses = [
+                _check_service_health(user_management_client),
+                _check_service_health(exercises_client),
+                _check_service_health(scores_client)
+            ]
+            overall_status = 200 if all(s["response_code"] == 200 for s in statuses) else 503
+            gateway_status = {
+                "status": "healthy" if overall_status == 200 else "unhealthy",
+                "services": {
+                    "user_management_service": statuses[0],
+                    "exercises_service": statuses[1],
+                    "scores_service": statuses[2]
+                }
             }
-        }
-        return jsonify(gateway_status), overall_status
+            return jsonify(gateway_status), overall_status
+        except Exception as e:
+            return jsonify({
+                "status": "unhealthy",
+                "error": str(e)
+            }), 503
 
 def register_auth_routes(app, user_management_client, auth_middleware):
     @app.route('/auth/register', methods=['POST'])
