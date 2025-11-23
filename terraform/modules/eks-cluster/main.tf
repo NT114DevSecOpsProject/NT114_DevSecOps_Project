@@ -16,7 +16,6 @@ module "eks" {
   cluster_endpoint_private_access = var.cluster_endpoint_private_access
 
   # IAM and permissions
-  enable_cluster_creator_admin_permissions = var.enable_cluster_creator_admin_permissions
   enable_irsa = var.enable_irsa
 
   # Encryption

@@ -123,11 +123,6 @@ variable "cluster_endpoint_private_access" {
   default     = true
 }
 
-variable "enable_cluster_creator_admin_permissions" {
-  description = "Enable cluster creator admin permissions"
-  type        = bool
-  default     = true
-}
 
 variable "enable_irsa" {
   description = "Enable IAM Roles for Service Accounts"
