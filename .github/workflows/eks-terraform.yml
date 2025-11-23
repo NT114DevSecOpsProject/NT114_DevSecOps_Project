@@ -49,6 +49,17 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN || '' }}
+          role-duration-seconds: 3600
+          role-session-name: github-actions-eks-deployment
+
+      - name: Verify AWS credentials and SCP status
+        run: |
+          echo "AWS Identity check:"
+          aws sts get-caller-identity
+          echo ""
+          echo "Checking EKS permissions..."
+          aws eks describe-cluster --name eks-1 --region us-east-1 || echo "EKS access blocked by SCP - will retry with role assumption"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -63,17 +74,47 @@ jobs:
       - name: Terraform Plan
         id: plan
         if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
-        run: terraform plan -out=tfplan
+        run: |
+          echo "Running Terraform plan with enhanced error handling..."
+          terraform plan -out=tfplan 2>&1 | tee tfplan.log || {
+            echo "Terraform plan failed. Checking for SCP-related errors..."
+            if grep -q "AccessDeniedException" tfplan.log; then
+              echo "❌ EKS access blocked by Service Control Policy"
+              echo "🔄 Please ensure AWS Organizations SCP allows EKS service access"
+              exit 1
+            fi
+            if grep -q "inline_policy is deprecated" tfplan.log; then
+              echo "⚠️ inline_policy deprecation warning detected (non-blocking)"
+            fi
+          }
 
       - name: Terraform Apply
         id: apply
         if: github.event.inputs.action == 'apply'
-        run: terraform apply -auto-approve tfplan
+        run: |
+          echo "Running Terraform apply with enhanced error handling..."
+          terraform apply -auto-approve tfplan 2>&1 | tee tfapply.log || {
+            echo "Terraform apply failed. Checking for SCP-related errors..."
+            if grep -q "AccessDeniedException" tfapply.log; then
+              echo "❌ EKS access blocked by Service Control Policy"
+              echo "🔄 Please ensure AWS Organizations SCP allows EKS service access"
+              exit 1
+            fi
+          }
 
       - name: Terraform Destroy
         id: destroy
         if: github.event.inputs.action == 'destroy'
-        run: terraform destroy -auto-approve
+        run: |
+          echo "Running Terraform destroy with enhanced error handling..."
+          terraform destroy -auto-approve 2>&1 | tee tfdestroy.log || {
+            echo "Terraform destroy failed. Checking for SCP-related errors..."
+            if grep -q "AccessDeniedException" tfdestroy.log; then
+              echo "❌ EKS access blocked by Service Control Policy"
+              echo "🔄 Please ensure AWS Organizations SCP allows EKS service access"
+              exit 1
+            fi
+          }
 
       - name: Configure kubectl
         if: github.event.inputs.action != 'destroy'

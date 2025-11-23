@@ -262,37 +262,36 @@ module "bastion_host" {
   ]
 }
 
-# IAM Access Control Module - DISABLED for EKS v19.0 compatibility
-# This module requires EKS v20.0 API_AND_CONFIG_MAP authentication mode
-# module "iam_access" {
-#   source = "../../modules/iam-access"
-#
-#   cluster_name = module.eks_cluster.cluster_name
-#
-#   create_admin_group        = var.create_admin_group
-#   admin_group_name          = var.admin_group_name
-#   create_admin_role         = var.create_admin_role
-#   admin_role_name           = var.admin_role_name
-#   attach_admin_policy       = var.attach_admin_policy
-#   create_assume_role_policy = var.create_assume_role_policy
-#   assume_role_policy_name   = var.assume_role_policy_name
-#
-#   create_eks_access_entry  = var.create_eks_access_entry
-#   access_entry_type        = var.access_entry_type
-#   create_eks_access_policy = var.create_eks_access_policy
-#   eks_access_policy_arn    = var.eks_access_policy_arn
-#   access_scope_type        = var.access_scope_type
-#   access_scope_namespaces  = var.access_scope_namespaces
-#
-#   tags = merge(
-#     var.tags,
-#     {
-#       Module = "iam-access"
-#     }
-#   )
-#
-#   depends_on = [module.eks_cluster]
-# }
+# IAM Access Control Module - ENABLED for EKS v20.0 API_AND_CONFIG_MAP authentication mode
+module "iam_access" {
+  source = "../../modules/iam-access"
+
+  cluster_name = module.eks_cluster.cluster_name
+
+  create_admin_group        = var.create_admin_group
+  admin_group_name          = var.admin_group_name
+  create_admin_role         = var.create_admin_role
+  admin_role_name           = var.admin_role_name
+  attach_admin_policy       = var.attach_admin_policy
+  create_assume_role_policy = var.create_assume_role_policy
+  assume_role_policy_name   = var.assume_role_policy_name
+
+  create_eks_access_entry  = var.create_eks_access_entry
+  access_entry_type        = var.access_entry_type
+  create_eks_access_policy = var.create_eks_access_policy
+  eks_access_policy_arn    = var.eks_access_policy_arn
+  access_scope_type        = var.access_scope_type
+  access_scope_namespaces  = var.access_scope_namespaces
+
+  tags = merge(
+    var.tags,
+    {
+      Module = "iam-access"
+    }
+  )
+
+  depends_on = [module.eks_cluster]
+}
 
 # ECR Module
 module "ecr" {

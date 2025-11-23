@@ -1,8 +1,8 @@
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 19.0"
+  version = "~> 20.0"
 
-  # Core cluster parameters (these should work in v20.0)
+  # Core cluster parameters (v20.0 compatible)
   cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
 
@@ -18,9 +18,15 @@ module "eks" {
   # IAM and permissions
   enable_irsa = var.enable_irsa
 
+  # Authentication mode (required for v20.0)
+  authentication_mode = "API_AND_CONFIG_MAP"
+
   # Encryption
   create_kms_key            = false
-  cluster_encryption_config = {}
+  cluster_encryption_config = var.cluster_encryption_config
+
+  # Cluster addons
+  cluster_addons = var.cluster_addons
 
   # Tags
   tags = var.tags

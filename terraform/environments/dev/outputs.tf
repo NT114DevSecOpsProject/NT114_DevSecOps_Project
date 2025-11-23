@@ -92,21 +92,21 @@ output "alb_controller_helm_release_status" {
   value       = module.alb_controller.helm_release_status
 }
 
-# IAM Access Outputs - DISABLED for EKS v19.0 compatibility
-# output "admin_group_name" {
-#   description = "Name of the admin IAM group"
-#   value       = module.iam_access.admin_group_name
-# }
-#
-# output "admin_role_name" {
-#   description = "Name of the admin IAM role"
-#   value       = module.iam_access.admin_role_name
-# }
-#
-# output "admin_role_arn" {
-#   description = "ARN of the admin IAM role"
-#   value       = module.iam_access.admin_role_arn
-# }
+# IAM Access Outputs - ENABLED for EKS v20.0 compatibility
+output "admin_group_name" {
+  description = "Name of the admin IAM group"
+  value       = module.iam_access.admin_group_name
+}
+
+output "admin_role_name" {
+  description = "Name of the admin IAM role"
+  value       = module.iam_access.admin_role_name
+}
+
+output "admin_role_arn" {
+  description = "ARN of the admin IAM role"
+  value       = module.iam_access.admin_role_arn
+}
 
 # kubectl Configuration
 output "configure_kubectl" {

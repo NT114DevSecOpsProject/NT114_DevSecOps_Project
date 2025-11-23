@@ -24,9 +24,16 @@ variable "cluster_addons" {
   description = "Map of cluster addon configurations"
   type        = any
   default = {
-    eks-pod-identity-agent = {}
-    kube-proxy             = {}
-    vpc-cni                = {}
+    coredns = {
+      most_recent = true
+    }
+    eks-pod-identity-agent = {
+      before_compute = true
+    }
+    kube-proxy = {}
+    vpc-cni = {
+      before_compute = true
+    }
   }
 }
 
@@ -62,6 +69,12 @@ variable "subnet_ids" {
 variable "control_plane_subnet_ids" {
   description = "List of subnet IDs for the control plane"
   type        = list(string)
+}
+
+variable "cluster_encryption_config" {
+  description = "Configuration block with encryption configuration for the cluster"
+  type        = any
+  default     = {}
 }
 
 variable "tags" {
