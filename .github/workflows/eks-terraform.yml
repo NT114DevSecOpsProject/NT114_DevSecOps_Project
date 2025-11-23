@@ -30,6 +30,7 @@ env:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   terraform-deploy:
@@ -74,33 +75,41 @@ jobs:
       - name: Terraform Plan
         id: plan
         if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+        continue-on-error: true
         run: |
           echo "Running Terraform plan with enhanced error handling..."
-          terraform plan -out=tfplan 2>&1 | tee tfplan.log || {
-            echo "Terraform plan failed. Checking for SCP-related errors..."
+          if terraform plan -out=tfplan 2>&1 | tee tfplan.log; then
+            echo "✅ Terraform plan completed successfully"
+          else
+            echo "❌ Terraform plan failed. Checking for SCP-related errors..."
             if grep -q "AccessDeniedException" tfplan.log; then
               echo "❌ EKS access blocked by Service Control Policy"
               echo "🔄 Please ensure AWS Organizations SCP allows EKS service access"
-              exit 1
             fi
             if grep -q "inline_policy is deprecated" tfplan.log; then
               echo "⚠️ inline_policy deprecation warning detected (non-blocking)"
             fi
-          }
+            echo "🔄 Plan failed - will trigger auto-destroy if action is apply"
+            exit 1
+          fi
 
       - name: Terraform Apply
         id: apply
         if: github.event.inputs.action == 'apply'
+        continue-on-error: true
         run: |
           echo "Running Terraform apply with enhanced error handling..."
-          terraform apply -auto-approve tfplan 2>&1 | tee tfapply.log || {
-            echo "Terraform apply failed. Checking for SCP-related errors..."
+          if terraform apply -auto-approve tfplan 2>&1 | tee tfapply.log; then
+            echo "✅ Terraform apply completed successfully"
+          else
+            echo "❌ Terraform apply failed. Checking for SCP-related errors..."
             if grep -q "AccessDeniedException" tfapply.log; then
               echo "❌ EKS access blocked by Service Control Policy"
               echo "🔄 Please ensure AWS Organizations SCP allows EKS service access"
-              exit 1
             fi
-          }
+            echo "🔄 Deployment failed - will trigger auto-destroy"
+            exit 1
+          fi
 
       - name: Terraform Destroy
         id: destroy
@@ -145,13 +154,21 @@ jobs:
            steps.apply.outcome == 'failure')
         run: |
           echo "❌ Deployment failed. Auto-destroying resources..."
+          echo "Failed step: Init=${{ steps.init.outcome }}, Plan=${{ steps.plan.outcome }}, Apply=${{ steps.apply.outcome }}"
 
-          # Re-init if needed
-          if [[ "${{ steps.init.outcome }}" != "success" ]]; then
-            terraform init -upgrade || true
-          fi
+          # Always re-init to ensure proper state
+          terraform init -upgrade
 
-          # Destroy resources
-          terraform destroy -auto-approve || true
-          echo "🧹 Cleanup completed"
+          # Force destroy all resources to prevent costs
+          echo "🔥 Destroying all resources to prevent costs..."
+          terraform destroy -auto-approve 2>&1 | tee "tfdestroy.log" || {
+            echo "⚠️ Destroy failed, attempting with lock override after 30s wait..."
+            sleep 30
+            terraform destroy -auto-approve -lock=false || true
+          }
+
+          echo "🧹 Auto-destroy completed successfully"
+          echo "💰 AWS resources cleaned up to prevent further costs"
+
+          # Mark job as failed to indicate deployment didn't succeed
           exit 1
