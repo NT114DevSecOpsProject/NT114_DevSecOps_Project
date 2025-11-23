@@ -1,5 +1,4 @@
 name: Complete CI/CD Pipeline with Security Scans
-
 on:
   push:
     branches:
