@@ -44,6 +44,16 @@ jobs:
           echo "🖥️ Runner: $(hostname)"
           echo "📍 Region: ${{ env.AWS_REGION }}"
           uname -a
+
+      - name: Install Trivy CLI (user-local, no sudo)
+        run: |
+          mkdir -p $HOME/.local/bin
+          TRIVY_VERSION=0.45.2
+          curl -sfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -o /tmp/trivy.tar.gz
+          tar -xzf /tmp/trivy.tar.gz -C /tmp
+          mv /tmp/trivy $HOME/.local/bin/trivy
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          trivy --version
       
       # Update Trivy DB
       - name: Update Trivy Database
