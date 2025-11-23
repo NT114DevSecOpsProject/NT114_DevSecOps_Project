@@ -45,13 +45,16 @@ jobs:
           echo "📍 Region: ${{ env.AWS_REGION }}"
           uname -a
 
-      - name: Install Trivy (user-local, no sudo)
+      - name: Install Trivy CLI (robust, user-local)
         run: |
           mkdir -p "$HOME/.local/bin"
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o /tmp/install_trivy.sh
           chmod +x /tmp/install_trivy.sh
           /tmp/install_trivy.sh -b "$HOME/.local/bin"
+          # Persist for subsequent steps
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # Make available immediately in this step
+          export PATH="$HOME/.local/bin:$PATH"
           trivy --version
       
       # Update Trivy DB
