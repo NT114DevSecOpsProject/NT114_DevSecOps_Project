@@ -240,23 +240,37 @@ jobs:
             fi
           done
 
-          # Deploy services
+          # Deploy services in correct order with dependency management
           deploy_service() {
             local service=$1
+            local wait_for_ready=${2:-true}
 
             echo ""
             echo "Deploying $service..."
 
+            # Remove existing failed deployment if exists
+            if helm status "$service" -n ${{ inputs.environment }} 2>/dev/null | grep -q "STATUS: failed\|STATUS: pending"; then
+              echo "Removing failed deployment of $service..."
+              helm uninstall "$service" -n ${{ inputs.environment }} --wait || true
+              sleep 10
+            fi
+
+            # Deploy with correct values (AWS account ID already substituted)
             if helm upgrade --install "$service" "./helm/$service" \
               --namespace ${{ inputs.environment }} \
-              --set image.repository="${ECR_REPO}/$service" \
               --set image.tag=latest \
               --set image.pullPolicy=Always \
               -f "./helm/$service/values-eks.yaml" \
               --wait --timeout 10m; then
-              echo "$service deployed successfully"
+              echo "✅ $service deployed successfully"
+
+              # Additional health check if requested
+              if [ "$wait_for_ready" = true ]; then
+                echo "Waiting for $service pods to be ready..."
+                kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} --timeout=300s || true
+              fi
             else
-              echo "$service deployment failed!"
+              echo "❌ $service deployment failed!"
               echo ""
               echo "=== POD STATUS ==="
               kubectl get pods -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} || true
@@ -266,41 +280,59 @@ jobs:
               echo ""
               echo "=== POD LOGS ==="
               kubectl logs -l app.kubernetes.io/name=$service -n ${{ inputs.environment }} --tail=100 || true
+              echo ""
+              echo "=== EVENTS ==="
+              kubectl get events -n ${{ inputs.environment }} --sort-by='.lastTimestamp' --field-selector involvedObject.kind=Pod | grep "$service" | tail -10 || true
               return 1
             fi
           }
 
-          # Deploy all services
+          # Deploy services in dependency order
           DEPLOY_FAILED=false
 
+          echo "🚀 Starting deployment in dependency order..."
+
+          # Phase 1: Backend Services (no dependencies)
           if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"user-management-service"* ]]; then
+            echo ""
+            echo "=== Phase 1: User Management Service ==="
             deploy_service "user-management-service" || DEPLOY_FAILED=true
           fi
 
           if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"exercises-service"* ]]; then
+            echo ""
+            echo "=== Phase 1: Exercises Service ==="
             deploy_service "exercises-service" || DEPLOY_FAILED=true
           fi
 
           if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"scores-service"* ]]; then
+            echo ""
+            echo "=== Phase 1: Scores Service ==="
             deploy_service "scores-service" || DEPLOY_FAILED=true
           fi
 
+          # Phase 2: API Gateway (depends on backend services)
           if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"api-gateway"* ]]; then
+            echo ""
+            echo "=== Phase 2: API Gateway ==="
             deploy_service "api-gateway" || DEPLOY_FAILED=true
           fi
 
+          # Phase 3: Frontend (depends on API Gateway)
           if [[ "${{ inputs.services }}" == "all" ]] || [[ "${{ inputs.services }}" == *"frontend"* ]]; then
+            echo ""
+            echo "=== Phase 3: Frontend ==="
             deploy_service "frontend" || DEPLOY_FAILED=true
           fi
 
           if [ "$DEPLOY_FAILED" = true ]; then
             echo ""
-            echo "One or more deployments failed!"
+            echo "❌ One or more deployments failed!"
             exit 1
           fi
 
           echo ""
-          echo "All services deployed successfully!"
+          echo "🎉 All services deployed successfully!"
 
       - name: Deploy with ArgoCD
         if: inputs.deployment_method == 'argocd'
@@ -319,15 +351,8 @@ jobs:
             echo "ArgoCD already installed"
           fi
 
-          # Update image tags in values-eks.yaml files with actual AWS account ID
-          echo "Updating Helm values with AWS Account ID..."
-          for service in api-gateway user-management-service exercises-service scores-service frontend; do
-            VALUES_FILE="helm/${service}/values-eks.yaml"
-            if [ -f "$VALUES_FILE" ]; then
-              sed -i "s/\${AWS_ACCOUNT_ID}/${{ steps.aws-account.outputs.account_id }}/g" "$VALUES_FILE"
-              echo "Updated: $VALUES_FILE"
-            fi
-          done
+          # AWS Account ID already substituted in values-eks.yaml files
+          echo "Using pre-configured values-eks.yaml files with AWS Account ID..."
 
           # Apply ArgoCD applications
           echo "Applying ArgoCD applications..."

@@ -2,7 +2,7 @@
 replicaCount: 2
 
 image:
-  repository: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/scores-service
+  repository: 117116125763.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/scores-service
   pullPolicy: Always
   tag: "latest"
 
@@ -26,8 +26,8 @@ securityContext:
     drop:
     - ALL
   readOnlyRootFilesystem: false
-  runAsNonRoot: true
-  runAsUser: 1000
+  runAsNonRoot: false
+  # Allow temporary root access for log directory creation
 
 service:
   type: ClusterIP
