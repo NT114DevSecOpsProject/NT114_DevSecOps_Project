@@ -82,15 +82,17 @@ output "node_group_status" {
 }
 
 # ALB Controller Outputs
-output "alb_controller_helm_release_name" {
-  description = "Name of the ALB controller Helm release"
-  value       = module.alb_controller.helm_release_name
-}
-
-output "alb_controller_helm_release_status" {
-  description = "Status of the ALB controller Helm release"
-  value       = module.alb_controller.helm_release_status
-}
+# ALB Controller outputs - Comment out for initial deployment
+# Uncomment after ALB controller module is uncommented
+# output "alb_controller_helm_release_name" {
+#   description = "Name of the ALB controller Helm release"
+#   value       = module.alb_controller.helm_release_name
+# }
+#
+# output "alb_controller_helm_release_status" {
+#   description = "Status of the ALB controller Helm release"
+#   value       = module.alb_controller.helm_release_status
+# }
 
 # IAM Access Outputs - ENABLED for EKS v20.0 compatibility
 output "admin_group_name" {

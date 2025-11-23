@@ -1,9 +1,29 @@
 # Helm release for AWS Load Balancer Controller
 
+# Ensure EKS cluster is available before deploying Helm chart
+data "aws_eks_cluster" "cluster" {
+  name = var.cluster_name
+}
+
+# Create Kubernetes namespace for ALB controller
+resource "kubernetes_namespace" "alb_controller" {
+  count = var.enable_alb_controller ? 1 : 0
+
+  metadata {
+    name = var.helm_namespace
+
+    labels = {
+      name = var.helm_namespace
+    }
+  }
+
+  depends_on = [data.aws_eks_cluster.cluster]
+}
+
 resource "helm_release" "aws_load_balancer_controller" {
   count = var.enable_alb_controller ? 1 : 0
 
-  depends_on = [var.node_group_id, aws_iam_role_policy_attachment.alb_controller]
+  depends_on = [var.node_group_id, aws_iam_role_policy_attachment.alb_controller, data.aws_eks_cluster.cluster, kubernetes_namespace.alb_controller]
 
   name       = var.helm_release_name
   namespace  = var.helm_namespace

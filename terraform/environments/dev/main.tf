@@ -30,12 +30,12 @@ module "eks_cluster" {
   cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
 
-  bootstrap_self_managed_addons            = var.bootstrap_self_managed_addons
-  cluster_support_type                     = var.cluster_support_type
-  cluster_addons                           = var.cluster_addons
-  cluster_endpoint_public_access           = var.cluster_endpoint_public_access
-  cluster_endpoint_private_access          = var.cluster_endpoint_private_access
-  enable_irsa                              = var.enable_irsa
+  bootstrap_self_managed_addons   = var.bootstrap_self_managed_addons
+  cluster_support_type            = var.cluster_support_type
+  cluster_addons                  = var.cluster_addons
+  cluster_endpoint_public_access  = var.cluster_endpoint_public_access
+  cluster_endpoint_private_access = var.cluster_endpoint_private_access
+  enable_irsa                     = var.enable_irsa
 
   vpc_id                   = module.vpc.vpc_id
   subnet_ids               = module.vpc.private_subnets
@@ -51,30 +51,8 @@ module "eks_cluster" {
   depends_on = [module.vpc]
 }
 
-# Configure Kubernetes provider for Helm operations
-provider "kubernetes" {
-  host                   = module.eks_cluster.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks_cluster.cluster_certificate_authority_data)
-
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", module.eks_cluster.cluster_name]
-  }
-}
-
-provider "helm" {
-  kubernetes {
-    host                   = module.eks_cluster.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks_cluster.cluster_certificate_authority_data)
-
-    exec {
-      api_version = "client.authentication.k8s.io/v1beta1"
-      command     = "aws"
-      args        = ["eks", "get-token", "--cluster-name", module.eks_cluster.cluster_name]
-    }
-  }
-}
+# Kubernetes and Helm providers will be configured after EKS cluster creation
+# Comment out ALB controller module for initial deployment
 
 # EKS Node Group Module
 module "eks_nodegroup" {
@@ -110,46 +88,48 @@ module "eks_nodegroup" {
   depends_on = [module.eks_cluster]
 }
 
-# ALB Controller Module
-module "alb_controller" {
-  source = "../../modules/alb-controller"
+# ALB Controller Module - Comment out for initial deployment
+# Uncomment after EKS cluster is created and Helm providers are configured
+# module "alb_controller" {
+#   source = "../../modules/alb-controller"
+#
+#   cluster_name      = module.eks_cluster.cluster_name
+#   aws_region        = var.aws_region
+#   vpc_id            = module.vpc.vpc_id
+#   oidc_provider     = module.eks_cluster.oidc_provider
+#   oidc_provider_arn = module.eks_cluster.oidc_provider_arn
+#   node_group_id     = module.eks_nodegroup.node_group_id
+#
+#   enable_alb_controller     = var.enable_alb_controller
+#   enable_ebs_csi_controller = var.enable_ebs_csi_controller
+#
+#   helm_release_name      = var.helm_release_name
+#   helm_namespace         = var.helm_namespace
+#   helm_chart_name        = var.helm_chart_name
+#   helm_chart_repository  = var.helm_chart_repository
+#   helm_chart_version     = var.helm_chart_version
+#   service_account_name   = var.service_account_name
+#   additional_helm_values = var.additional_helm_values
+# }
 
-  cluster_name      = module.eks_cluster.cluster_name
-  aws_region        = var.aws_region
-  vpc_id            = module.vpc.vpc_id
-  oidc_provider     = module.eks_cluster.oidc_provider
-  oidc_provider_arn = module.eks_cluster.oidc_provider_arn
-  node_group_id     = module.eks_nodegroup.node_group_id
-
-  enable_alb_controller     = var.enable_alb_controller
-  enable_ebs_csi_controller = var.enable_ebs_csi_controller
-
-  helm_release_name      = var.helm_release_name
-  helm_namespace         = var.helm_namespace
-  helm_chart_name        = var.helm_chart_name
-  helm_chart_repository  = var.helm_chart_repository
-  helm_chart_version     = var.helm_chart_version
-  service_account_name   = var.service_account_name
-  additional_helm_values = var.additional_helm_values
-}
-
-# EBS CSI Driver Addon (added after IAM role is created)
-resource "aws_eks_addon" "ebs_csi_driver" {
-  count = var.enable_ebs_csi_controller ? 1 : 0
-
-  cluster_name             = module.eks_cluster.cluster_name
-  addon_name               = "aws-ebs-csi-driver"
-  addon_version            = var.ebs_csi_addon_version
-  service_account_role_arn = module.alb_controller.ebs_csi_controller_role_arn
-
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
-
-  depends_on = [
-    module.eks_nodegroup,
-    module.alb_controller
-  ]
-}
+# EBS CSI Driver Addon - Comment out for initial deployment (depends on ALB controller)
+# Uncomment after ALB controller module is uncommented
+# resource "aws_eks_addon" "ebs_csi_driver" {
+#   count = var.enable_ebs_csi_controller ? 1 : 0
+#
+#   cluster_name             = module.eks_cluster.cluster_name
+#   addon_name               = "aws-ebs-csi-driver"
+#   addon_version            = var.ebs_csi_addon_version
+#   service_account_role_arn = module.alb_controller.ebs_csi_controller_role_arn
+#
+#   resolve_conflicts_on_create = "OVERWRITE"
+#   resolve_conflicts_on_update = "OVERWRITE"
+#
+#   depends_on = [
+#     module.eks_nodegroup,
+#     module.alb_controller
+#   ]
+# }
 
 # RDS PostgreSQL Module
 module "rds_postgresql" {
