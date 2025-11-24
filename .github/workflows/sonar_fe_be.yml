@@ -38,7 +38,6 @@ jobs:
         with:
           fetch-depth: 0  # Full history for SonarQube
 
-
       - name: Print runner info
         run: |
           echo "🖥️ Runner: $(hostname)"
