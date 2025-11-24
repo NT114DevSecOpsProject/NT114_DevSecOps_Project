@@ -28,7 +28,6 @@ jobs:
     runs-on:
       - self-hosted
       - linux
-      - ec2
     
     outputs:
       sonar-passed: ${{ steps.sonar-gate.outputs.passed }}
@@ -74,7 +73,7 @@ jobs:
           npm -v
           make --version
 
-          
+
       - name: Print runner info
         run: |
           echo "🖥️ Runner: $(hostname)"
