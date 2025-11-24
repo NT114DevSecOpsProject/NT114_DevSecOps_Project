@@ -37,41 +37,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for SonarQube
-      
-      # 🛠️ [MỚI] Cài đặt dependencies hệ thống cho Amazon Linux
-      # Thay thế cho các setup-action bị lỗi, đảm bảo môi trường luôn sạch và đủ thư viện
-      
-      - name: Install System Dependencies (EC2)
-        run: |
-          if [ -f /opt/ci_bootstrap_done ]; then
-            echo "System dependencies already installed — skipping"
-          else
-            echo "Installing dependencies for Amazon Linux 2023..."
-            sudo dnf update -y
-
-            # core tools
-            sudo dnf install -y libicu git unzip tar gzip make
-
-            # Java 17
-            sudo dnf install -y java-17-amazon-corretto-devel
-
-            # Python 3.11 + pip
-            sudo dnf install -y python3.11 python3.11-pip
-
-            # Install Node.js 20 (ensure Vite compatibility)
-            curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-            sudo dnf install -y nodejs
-
-            # mark done to avoid repeating on subsequent runs
-            sudo touch /opt/ci_bootstrap_done
-          fi
-
-          echo "Versions installed:"
-          java -version
-          python3.11 --version
-          node -v
-          npm -v
-          make --version
 
 
       - name: Print runner info
