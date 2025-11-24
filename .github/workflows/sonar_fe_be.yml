@@ -44,22 +44,29 @@ jobs:
       
       - name: Install System Dependencies (EC2)
         run: |
-          echo "Installing dependencies for Amazon Linux 2023..."
-          sudo dnf update -y
-          
-          # 1. Cài libicu (Sửa lỗi .NET/SonarQube) và công cụ cơ bản
-          sudo dnf install -y libicu git unzip tar gzip make
-          
-          # 2. Cài Java 17 (Amazon Corretto)
-          sudo dnf install -y java-17-amazon-corretto-devel
-          
-          # 3. Cài Python 3.11 và Pip
-          sudo dnf install -y python3.11 python3.11-pip
-          
-          # 4. Cài Node.js 18+ (Có sẵn trong repo AL2023)
-          sudo dnf install -y nodejs npm
-          
-          # Kiểm tra phiên bản
+          if [ -f /opt/ci_bootstrap_done ]; then
+            echo "System dependencies already installed — skipping"
+          else
+            echo "Installing dependencies for Amazon Linux 2023..."
+            sudo dnf update -y
+
+            # core tools
+            sudo dnf install -y libicu git unzip tar gzip make
+
+            # Java 17
+            sudo dnf install -y java-17-amazon-corretto-devel
+
+            # Python 3.11 + pip
+            sudo dnf install -y python3.11 python3.11-pip
+
+            # Install Node.js 20 (ensure Vite compatibility)
+            curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+            sudo dnf install -y nodejs
+
+            # mark done to avoid repeating on subsequent runs
+            sudo touch /opt/ci_bootstrap_done
+          fi
+
           echo "Versions installed:"
           java -version
           python3.11 --version
@@ -76,11 +83,9 @@ jobs:
       - name: Install Trivy CLI
         run: |
           mkdir -p "$HOME/.local/bin"
-          # Thêm -k để bỏ qua lỗi SSL nếu có, hoặc dùng bản binary trực tiếp nếu script lỗi
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o /tmp/install_trivy.sh
           chmod +x /tmp/install_trivy.sh
           /tmp/install_trivy.sh -b "$HOME/.local/bin"
-          
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.local/bin:$PATH"
           trivy --version
