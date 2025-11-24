@@ -398,3 +398,4 @@ jobs:
             echo "### 🎉 Deployment Ready!" >> $GITHUB_STEP_SUMMARY
             echo "All images have been successfully pushed to ECR and are ready for deployment." >> $GITHUB_STEP_SUMMARY
           fi
+          
