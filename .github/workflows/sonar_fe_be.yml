@@ -39,21 +39,47 @@ jobs:
         with:
           fetch-depth: 0  # Full history for SonarQube
       
+      # 🛠️ [MỚI] Cài đặt dependencies hệ thống cho Amazon Linux
+      # Thay thế cho các setup-action bị lỗi, đảm bảo môi trường luôn sạch và đủ thư viện
+      - name: Install System Dependencies (EC2)
+        run: |
+          echo "Installing dependencies for Amazon Linux 2023..."
+          sudo dnf update -y
+          
+          # 1. Cài libicu (Sửa lỗi .NET/SonarQube) và công cụ cơ bản
+          sudo dnf install -y libicu git unzip tar gzip Make
+          
+          # 2. Cài Java 17 (Amazon Corretto)
+          sudo dnf install -y java-17-amazon-corretto-devel
+          
+          # 3. Cài Python 3.11 và Pip
+          sudo dnf install -y python3.11 python3.11-pip
+          
+          # 4. Cài Node.js 18+ (Có sẵn trong repo AL2023)
+          sudo dnf install -y nodejs npm
+          
+          # Kiểm tra phiên bản
+          echo "Versions installed:"
+          java -version
+          python3.11 --version
+          node -v
+          npm -v
+
       - name: Print runner info
         run: |
           echo "🖥️ Runner: $(hostname)"
           echo "📍 Region: ${{ env.AWS_REGION }}"
           uname -a
 
-      - name: Install Trivy CLI (robust, user-local)
+      - name: Install Trivy CLI
         run: |
           mkdir -p "$HOME/.local/bin"
+          # Thêm -k để bỏ qua lỗi SSL nếu có, hoặc dùng bản binary trực tiếp nếu script lỗi
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o /tmp/install_trivy.sh
           chmod +x /tmp/install_trivy.sh
           /tmp/install_trivy.sh -b "$HOME/.local/bin"
-          # Persist for subsequent steps
+          
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          # Make available immediately in this step
           export PATH="$HOME/.local/bin:$PATH"
           trivy --version
       
@@ -63,25 +89,6 @@ jobs:
           echo "=== Updating Trivy vulnerability database ==="
           trivy image --download-db-only
           echo "✅ Database updated successfully"
-      
-      # Setup tools
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: "17"
-          distribution: temurin
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
       
       # Install SonarQube Scanner
       - name: Setup SonarQube Scanner
@@ -156,13 +163,13 @@ jobs:
             echo "📦 Analyzing: $SERVICE_NAME"
             echo "============================================"
             
-            # Install dependencies
+            # Install dependencies using python3.11 specifically
             cd "$SERVICE_PATH"
-            python -m pip install --upgrade pip
-            pip install -r requirements.txt
+            python3.11 -m pip install --upgrade pip
+            python3.11 -m pip install -r requirements.txt
             
             # Run tests with coverage
-            python -m pytest --cov=app --cov-report=xml --cov-report=term || true
+            python3.11 -m pytest --cov=app --cov-report=xml --cov-report=term || true
             
             # Trivy scan dependencies
             echo "### 🔍 $SERVICE_NAME - Dependencies" >> $GITHUB_STEP_SUMMARY
@@ -233,7 +240,7 @@ jobs:
           echo "passed=true" >> $GITHUB_OUTPUT
 
   # ============================================
-  # Stage 2: Build Docker Images
+  # Stage 2: Build Docker Images (Giữ nguyên vì chạy trên ubuntu-latest)
   # ============================================
   build-images:
     name: Build & Scan Docker Images
@@ -293,7 +300,7 @@ jobs:
           retention-days: 1
 
   # ============================================
-  # Stage 3: Push to ECR
+  # Stage 3: Push to ECR (Giữ nguyên vì chạy trên ubuntu-latest)
   # ============================================
   push-to-ecr:
     name: Push to Amazon ECR
@@ -398,4 +405,3 @@ jobs:
             echo "### 🎉 Deployment Ready!" >> $GITHUB_STEP_SUMMARY
             echo "All images have been successfully pushed to ECR and are ready for deployment." >> $GITHUB_STEP_SUMMARY
           fi
-          
