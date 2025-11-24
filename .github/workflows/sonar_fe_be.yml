@@ -47,7 +47,7 @@ jobs:
           sudo dnf update -y
           
           # 1. Cài libicu (Sửa lỗi .NET/SonarQube) và công cụ cơ bản
-          sudo dnf install -y libicu git unzip tar gzip Make
+          sudo dnf install -y libicu git unzip tar gzip make
           
           # 2. Cài Java 17 (Amazon Corretto)
           sudo dnf install -y java-17-amazon-corretto-devel
@@ -64,6 +64,7 @@ jobs:
           python3.11 --version
           node -v
           npm -v
+          make --version
 
       - name: Print runner info
         run: |
