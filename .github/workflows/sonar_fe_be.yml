@@ -117,68 +117,123 @@ jobs:
       # ============================================
       - name: Analyze Backend Services
         run: |
-          SERVICES=(
-            "api-gateway:NT114-api-gateway"
-            "exercises-service:NT114-exercises-service"
-            "scores-service:NT114-scores-service"
-            "user-management-service:NT114-user-service"
-          )
-          
-          for SERVICE_INFO in "${SERVICES[@]}"; do
-            SERVICE_NAME="${SERVICE_INFO%%:*}"
-            SONAR_KEY="${SERVICE_INFO##*:}"
-            SERVICE_PATH="microservices/$SERVICE_NAME"
-            
-            echo ""
-            echo "============================================"
-            echo "📦 Analyzing: $SERVICE_NAME"
-            echo "============================================"
-            
-            # Install dependencies using python3.11 specifically
-            cd "$SERVICE_PATH"
-            python3.11 -m pip install --upgrade pip
-            python3.11 -m pip install -r requirements.txt
-            
-            # Run tests with coverage
-            python3.11 -m pytest --cov=app --cov-report=xml --cov-report=term || true
-            
-            # Trivy scan dependencies
-            echo "### 🔍 $SERVICE_NAME - Dependencies" >> $GITHUB_STEP_SUMMARY
-            trivy fs \
-              --format table \
-              --security-checks vuln \
-              requirements.txt | tee /tmp/${SERVICE_NAME}-deps.txt || true
-            
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            head -n 50 /tmp/${SERVICE_NAME}-deps.txt >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            
-            # Trivy scan source
-            echo "🔍 Scanning source code..."
-            trivy fs \
-              --scanners vuln,secret,misconfig \
-              --format table \
-              . || true
-            
-            # Trivy scan Dockerfile
-            echo "🔍 Scanning Dockerfile..."
-            trivy config Dockerfile || true
-            
-            # SonarQube scan
-            cd ../..
-            sonar-scanner \
-              -Dsonar.projectKey=$SONAR_KEY \
-              -Dsonar.sources=$SERVICE_PATH/app \
-              -Dsonar.tests=$SERVICE_PATH/tests \
-              -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
-              -Dsonar.token=${{ env.SONAR_TOKEN }} \
-              -Dsonar.language=py \
-              -Dsonar.sourceEncoding=UTF-8 \
-              -Dsonar.python.coverage.reportPaths=$SERVICE_PATH/coverage.xml
-            
-            echo "✅ $SERVICE_NAME analysis complete"
-          done
+          # Ensure Python is set up for subsequent service steps
+          echo "Setting up Python for backend analysis"
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.8"
+
+      # API-GATEWAY
+      - name: Install API-GATEWAY Dependencies
+        working-directory: microservices/api-gateway
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
       
+      - name: Run Pytest and Generate Coverage for API-GATEWAY
+        working-directory: microservices/api-gateway
+        run: |
+          python -m pytest --cov=. --cov-report=xml || true
+      
+      - name: Run SonarQube Scanner - API-GATEWAY
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-api-gateway \
+            -Dsonar.sources=microservices/api-gateway \
+            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
+            -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
+
+      # EXERCISES-SERVICE
+      - name: Install Exercises-Service Dependencies
+        working-directory: microservices/exercises-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Pytest and Generate Coverage for Exercises-Service
+        working-directory: microservices/exercises-service
+        run: |
+          python -m pytest --cov --cov-config=.coveragerc --cov-report=xml
+      
+      - name: Show coverage.xml (debug)
+        working-directory: microservices/exercises-service
+        run: |
+          echo "coverage.xml size:"
+          ls -l coverage.xml || true
+          head -n 20 coverage.xml || true
+      
+      - name: Run SonarQube Scanner - EXERCISES-SERVICE
+        working-directory: microservices/exercises-service
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-exercises-service \
+            -Dsonar.sources=app \
+            -Dsonar.tests=tests \
+            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=requirements.txt,Dockerfile \
+            -Dsonar.coverage.exclusions=tests/**,**/migrations/** \
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+
+      # SCORES-SERVICE
+      - name: Install Scores-Service Dependencies
+        working-directory: microservices/scores-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install --ignore-installed --no-clean -r requirements.txt
+      
+      - name: Run Pytest and Generate Coverage for Scores-Service
+        working-directory: microservices/scores-service
+        run: |
+          python -m pytest --cov=app --cov-report=xml || true
+      
+      - name: Run SonarQube Scanner - SCORES-SERVICE
+        working-directory: microservices/scores-service
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-scores-service \
+            -Dsonar.sources=app \
+            -Dsonar.tests=tests \
+            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=requirements.txt,Dockerfile \
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+
+      # USER-MANAGEMENT-SERVICE
+      - name: Install User-Management-Service Dependencies
+        working-directory: microservices/user-management-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Pytest and Generate Coverage for User-Management-Service
+        working-directory: microservices/user-management-service
+        run: |
+          python -m pytest --cov=app --cov-report=xml || true
+      
+      - name: Run SonarQube Scanner - USER-MANAGEMENT-SERVICE
+        working-directory: microservices/user-management-service
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-user-service \
+            -Dsonar.sources=app \
+            -Dsonar.tests=tests \
+            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=requirements.txt,Dockerfile \
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+
       # Generate Security Summary
       - name: 📊 Generate Security Summary
         continue-on-error: true
