@@ -115,7 +115,7 @@ jobs:
             -Dsonar.tests=src/test \
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
       
-      # ============================================
+      # ===============================================
       # BACKEND SERVICES Analysis
       # ============================================
       - name: Analyze Backend Services
