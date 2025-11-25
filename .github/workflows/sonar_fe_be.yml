@@ -151,6 +151,27 @@ jobs:
             -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
             -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
 
+      - name: Run Trivy Scan - API-GATEWAY Dependencies
+        working-directory: microservices/api-gateway
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Dependency Scan (API Gateway) - ALL SEVERITIES ==="
+          trivy fs \
+            --format table \
+            --security-checks vuln \
+            requirements.txt
+          
+          
+      - name: Run Trivy Scan - API-GATEWAY Source
+        working-directory: microservices/api-gateway
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Source Scan (API Gateway) - ALL SEVERITIES ==="
+          trivy fs \
+            --scanners vuln,secret,misconfig \
+            --format table \
+            .
+
       # EXERCISES-SERVICE
       - name: Install Exercises-Service Dependencies
         working-directory: microservices/exercises-service
@@ -184,6 +205,26 @@ jobs:
             -Dsonar.exclusions=requirements.txt,Dockerfile \
             -Dsonar.coverage.exclusions=tests/**,**/migrations/** \
             -Dsonar.python.coverage.reportPaths=coverage.xml
+      
+      - name: Run Trivy Scan - EXERCISES-SERVICE Dependencies
+        working-directory: microservices/exercises-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Dependency Scan (Exercises Service) - ALL SEVERITIES ==="
+          trivy fs \
+            --format table \
+            --security-checks vuln \
+            requirements.txt
+      
+      - name: Run Trivy Scan - EXERCISES-SERVICE Source
+        working-directory: microservices/exercises-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Source Scan (Exercises Service) - ALL ==="
+          trivy fs \
+            --scanners vuln,secret,misconfig \
+            --format table \
+            .
 
       # SCORES-SERVICE
       - name: Install Scores-Service Dependencies
@@ -210,6 +251,26 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=requirements.txt,Dockerfile \
             -Dsonar.python.coverage.reportPaths=coverage.xml
+      
+      - name: Run Trivy Scan - SCORES-SERVICE Dependencies
+        working-directory: microservices/scores-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Dependency Scan (Scores Service) - ALL SEVERITIES ==="
+          trivy fs \
+            --format table \
+            --security-checks vuln \
+            requirements.txt
+      
+      - name: Run Trivy Scan - SCORES-SERVICE Source
+        working-directory: microservices/scores-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Source Scan (Scores Service) - ALL ==="
+          trivy fs \
+            --scanners vuln,secret,misconfig \
+            --format table \
+            .
 
       # USER-MANAGEMENT-SERVICE
       - name: Install User-Management-Service Dependencies
@@ -236,6 +297,26 @@ jobs:
             -Dsonar.sourceEncoding=UTF-8 \
             -Dsonar.exclusions=requirements.txt,Dockerfile \
             -Dsonar.python.coverage.reportPaths=coverage.xml
+
+      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Dependencies
+        working-directory: microservices/user-management-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Dependency Scan (User Management Service) - ALL SEVERITIES ==="
+          trivy fs \
+            --format table \
+            --security-checks vuln \
+            requirements.txt
+          
+      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Source
+        working-directory: microservices/user-management-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Source Scan (User Management Service) - ALL ==="
+          trivy fs \
+            --scanners vuln,secret,misconfig \
+            --format table \
+            .
 
       # Generate Security Summary
       - name: 📊 Generate Security Summary
@@ -297,6 +378,17 @@ jobs:
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Install Trivy (Ubuntu runner)
+        run: |
+          echo "Installing Trivy CLI..."
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o /tmp/install_trivy.sh
+          chmod +x /tmp/install_trivy.sh
+          sudo /tmp/install_trivy.sh -b /usr/local/bin
+          trivy --versions
       
       - name: Build Docker Image
         run: |
