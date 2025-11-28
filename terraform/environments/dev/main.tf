@@ -263,6 +263,14 @@ module "iam_access" {
   access_scope_type        = var.access_scope_type
   access_scope_namespaces  = var.access_scope_namespaces
 
+  # GitHub Actions EKS Access Configuration
+  create_github_actions_access_entry       = true
+  github_actions_user_arn                 = "arn:aws:iam::039612870452:user/NT114_DevSecOps_Project-github-actions-user"
+  create_github_actions_access_policy      = true
+  github_actions_access_policy_arn         = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  github_actions_access_scope_type        = "cluster"
+  github_actions_access_scope_namespaces  = []
+
   tags = merge(
     var.tags,
     {

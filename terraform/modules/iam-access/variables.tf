@@ -86,3 +86,40 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# GitHub Actions EKS Access Variables
+variable "create_github_actions_access_entry" {
+  description = "Whether to create EKS access entry for GitHub Actions"
+  type        = bool
+  default     = true
+}
+
+variable "github_actions_user_arn" {
+  description = "ARN of GitHub Actions IAM user/role"
+  type        = string
+  default     = "arn:aws:iam::039612870452:user/NT114_DevSecOps_Project-github-actions-user"
+}
+
+variable "create_github_actions_access_policy" {
+  description = "Whether to create EKS access policy association for GitHub Actions"
+  type        = bool
+  default     = true
+}
+
+variable "github_actions_access_policy_arn" {
+  description = "ARN of EKS access policy for GitHub Actions"
+  type        = string
+  default     = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+}
+
+variable "github_actions_access_scope_type" {
+  description = "Type of access scope for GitHub Actions (cluster or namespace)"
+  type        = string
+  default     = "cluster"
+}
+
+variable "github_actions_access_scope_namespaces" {
+  description = "List of namespaces for GitHub Actions access scope"
+  type        = list(string)
+  default     = []
+}

@@ -108,3 +108,35 @@ resource "aws_eks_access_policy_association" "admin_policy" {
     ignore_changes = [access_scope]
   }
 }
+
+# EKS Access Entry for GitHub Actions User
+# This allows GitHub Actions to authenticate with the EKS cluster
+resource "aws_eks_access_entry" "github_actions_user_access" {
+  count         = var.create_github_actions_access_entry ? 1 : 0
+  cluster_name  = var.cluster_name
+  principal_arn = var.github_actions_user_arn
+  type          = "STANDARD"
+
+  tags = var.tags
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
+}
+
+# EKS Access Policy Association for GitHub Actions User
+resource "aws_eks_access_policy_association" "github_actions_user_policy" {
+  count         = var.create_github_actions_access_entry && var.create_github_actions_access_policy ? 1 : 0
+  cluster_name  = var.cluster_name
+  policy_arn    = var.github_actions_access_policy_arn
+  principal_arn = var.github_actions_user_arn
+
+  access_scope {
+    type       = var.github_actions_access_scope_type
+    namespaces = var.github_actions_access_scope_namespaces
+  }
+
+  lifecycle {
+    ignore_changes = [access_scope]
+  }
+}
