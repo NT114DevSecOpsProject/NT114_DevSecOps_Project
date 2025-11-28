@@ -31,6 +31,7 @@ env:
 permissions:
   contents: read
   id-token: write
+  pull-requests: write
 
 jobs:
   terraform-deploy:
@@ -47,20 +48,33 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN || '' }}
-          role-duration-seconds: 3600
-          role-session-name: github-actions-eks-deployment
+          role-to-assume: ${{ secrets.GITHUB_ACTIONS_IAM_ROLE_ARN || secrets.AWS_IAM_ROLE_ARN }}
+          role-duration-seconds: 7200
+          role-session-name: github-actions-eks-deployment-${{ github.run_id }}
 
       - name: Verify AWS credentials and SCP status
         run: |
-          echo "AWS Identity check:"
-          aws sts get-caller-identity
+          echo "### AWS Identity Verification" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          aws sts get-caller-identity >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "✅ AWS credentials configured successfully"
           echo ""
-          echo "Checking EKS permissions..."
-          aws eks describe-cluster --name eks-1 --region us-east-1 || echo "EKS access blocked by SCP - will retry with role assumption"
+          echo "### EKS Cluster Status Check" >> $GITHUB_STEP_SUMMARY
+
+          # Wait a moment for credentials to propagate
+          sleep 5
+
+          # Check if we can describe the cluster
+          if aws eks describe-cluster --name eks-1 --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1; then
+            echo "✅ EKS cluster access verified"
+          else
+            echo "⚠️ EKS cluster access blocked - checking alternative permissions..."
+            aws eks list-clusters --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1 || echo "EKS API access restricted"
+          fi
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -125,11 +139,94 @@ jobs:
             fi
           }
 
-      - name: Configure kubectl
+      - name: Configure kubectl and Verify EKS Access
         if: github.event.inputs.action != 'destroy'
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name $(terraform output -raw cluster_name)
-          kubectl get nodes
+          echo "### Configuring kubectl for EKS Cluster Access" >> $GITHUB_STEP_SUMMARY
+
+          # Get cluster name from Terraform output
+          CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "eks-1")
+          echo "Cluster Name: $CLUSTER_NAME" >> $GITHUB_STEP_SUMMARY
+
+          # Configure kubectl with enhanced error handling
+          echo "Updating kubeconfig..." >> $GITHUB_STEP_SUMMARY
+          if aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name $CLUSTER_NAME \
+            --alias $CLUSTER_NAME; then
+            echo "✅ kubeconfig updated successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Failed to update kubeconfig" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # Verify kubectl configuration
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### kubectl Configuration Verification" >> $GITHUB_STEP_SUMMARY
+          echo "Current context:" >> $GITHUB_STEP_SUMMARY
+          kubectl config current-context >> $GITHUB_STEP_SUMMARY 2>&1
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Test EKS token generation
+          echo "### EKS Token Generation Test" >> $GITHUB_STEP_SUMMARY
+          if aws eks get-token --cluster-name $CLUSTER_NAME --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1; then
+            echo "✅ EKS token generation successful" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ EKS token generation failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          # Wait for credentials to propagate
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Waiting for credentials to propagate..." >> $GITHUB_STEP_SUMMARY
+          sleep 10
+
+          # Test kubectl access with retry logic
+          echo "### Testing kubectl Access" >> $GITHUB_STEP_SUMMARY
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempt $((RETRY_COUNT + 1)) of $MAX_RETRIES" >> $GITHUB_STEP_SUMMARY
+
+            if kubectl get nodes --v=2 >> $GITHUB_STEP_SUMMARY 2>&1; then
+              echo "✅ kubectl access verified successfully" >> $GITHUB_STEP_SUMMARY
+              break
+            else
+              echo "⚠️ kubectl access failed, retrying..." >> $GITHUB_STEP_SUMMARY
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              sleep 15
+
+              # Refresh AWS credentials before retry
+              aws sts get-caller-identity > /dev/null 2>&1
+
+              # Refresh kubectl token
+              aws eks update-kubeconfig \
+                --region ${{ env.AWS_REGION }} \
+                --name $CLUSTER_NAME \
+                --alias $CLUSTER_NAME
+            fi
+          done
+
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "❌ All kubectl access attempts failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Debugging Information" >> $GITHUB_STEP_SUMMARY
+            echo "AWS Identity:" >> $GITHUB_STEP_SUMMARY
+            aws sts get-caller-identity >> $GITHUB_STEP_SUMMARY 2>&1
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl config:" >> $GITHUB_STEP_SUMMARY
+            kubectl config view --raw >> $GITHUB_STEP_SUMMARY 2>&1
+            exit 1
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Cluster Information" >> $GITHUB_STEP_SUMMARY
+          echo "Node status:" >> $GITHUB_STEP_SUMMARY
+          kubectl get nodes -o wide >> $GITHUB_STEP_SUMMARY 2>&1
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Namespace status:" >> $GITHUB_STEP_SUMMARY
+          kubectl get namespaces >> $GITHUB_STEP_SUMMARY 2>&1
 
       - name: Deployment Summary
         if: github.event.inputs.action != 'destroy'

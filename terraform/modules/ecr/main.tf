@@ -109,6 +109,72 @@ resource "aws_iam_policy" "github_actions_ecr_policy" {
         Resource = [
           for repo in aws_ecr_repository.repositories : repo.arn
         ]
+      },
+      {
+        Sid    = "AllowEKSManagement"
+        Effect = "Allow"
+        Action = [
+          "eks:DescribeCluster",
+          "eks:ListClusters",
+          "eks:AccessKubernetesApi",
+          "eks:DescribeNodegroup",
+          "eks:ListNodegroups",
+          "eks:DescribeAddon",
+          "eks:ListAddons"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowIAMForOIDC"
+        Effect = "Allow"
+        Action = [
+          "iam:PassRole",
+          "iam:GetRole",
+          "iam:CreateServiceLinkedRole",
+          "iam:ListOpenIDConnectProviders",
+          "iam:GetOpenIDConnectProvider"
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowKubernetesAPIAccess"
+        Effect = "Allow"
+        Action = [
+          "kubernetes:CreateNamespace",
+          "kubernetes:GetNamespace",
+          "kubernetes:ListNamespaces",
+          "kubernetes:UpdateNamespace",
+          "kubernetes:DeleteNamespace",
+          "kubernetes:CreatePod",
+          "kubernetes:GetPod",
+          "kubernetes:ListPods",
+          "kubernetes:WatchPods",
+          "kubernetes:UpdatePod",
+          "kubernetes:DeletePod",
+          "kubernetes:CreateDeployment",
+          "kubernetes:GetDeployment",
+          "kubernetes:ListDeployments",
+          "kubernetes:WatchDeployments",
+          "kubernetes:UpdateDeployment",
+          "kubernetes:DeleteDeployment",
+          "kubernetes:CreateService",
+          "kubernetes:GetService",
+          "kubernetes:ListServices",
+          "kubernetes:WatchServices",
+          "kubernetes:UpdateService",
+          "kubernetes:DeleteService",
+          "kubernetes:CreateConfigMap",
+          "kubernetes:GetConfigMap",
+          "kubernetes:ListConfigMaps",
+          "kubernetes:UpdateConfigMap",
+          "kubernetes:DeleteConfigMap",
+          "kubernetes:CreateSecret",
+          "kubernetes:GetSecret",
+          "kubernetes:ListSecrets",
+          "kubernetes:UpdateSecret",
+          "kubernetes:DeleteSecret"
+        ]
+        Resource = "*"
       }
     ]
   })
