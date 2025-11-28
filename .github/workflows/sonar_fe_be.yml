@@ -1,5 +1,4 @@
 name: Complete CI/CD Pipeline with Security Scans
-
 on:
   push:
     branches:
@@ -29,7 +28,6 @@ jobs:
     runs-on:
       - self-hosted
       - linux
-      - ec2
     
     outputs:
       sonar-passed: ${{ steps.sonar-gate.outputs.passed }}
@@ -39,12 +37,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for SonarQube
-      
+
       - name: Print runner info
         run: |
           echo "🖥️ Runner: $(hostname)"
           echo "📍 Region: ${{ env.AWS_REGION }}"
           uname -a
+
+      - name: Install Trivy CLI
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o /tmp/install_trivy.sh
+          chmod +x /tmp/install_trivy.sh
+          /tmp/install_trivy.sh -b "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          trivy --version
       
       # Update Trivy DB
       - name: Update Trivy Database
@@ -52,25 +60,6 @@ jobs:
           echo "=== Updating Trivy vulnerability database ==="
           trivy image --download-db-only
           echo "✅ Database updated successfully"
-      
-      # Setup tools
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: "17"
-          distribution: temurin
-      
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
       
       # Install SonarQube Scanner
       - name: Setup SonarQube Scanner
@@ -112,84 +101,223 @@ jobs:
             --format table \
             .
       
-      - name: SonarQube Scan - Frontend
+      - name: Run SonarQube Scanner - FRONTEND
+        working-directory: frontend
         run: |
-          sonar-scanner \
-            -Dsonar.projectKey=nt114-frontend \
-            -Dsonar.sources=frontend/src \
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=nt114-project \
+            -Dsonar.sources=. \
             -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
             -Dsonar.token=${{ env.SONAR_TOKEN }} \
             -Dsonar.language=js \
             -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=frontend/node_modules/**,frontend/dist/**,frontend/coverage/**
+            -Dsonar.exclusions=node_modules/**,dist/**,coverage/**,src/test/** \
+            -Dsonar.tests=src/test \
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
       
-      # ============================================
+      # ===============================================
       # BACKEND SERVICES Analysis
       # ============================================
       - name: Analyze Backend Services
         run: |
-          SERVICES=(
-            "api-gateway:NT114-api-gateway"
-            "exercises-service:NT114-exercises-service"
-            "scores-service:NT114-scores-service"
-            "user-management-service:NT114-user-service"
-          )
-          
-          for SERVICE_INFO in "${SERVICES[@]}"; do
-            SERVICE_NAME="${SERVICE_INFO%%:*}"
-            SONAR_KEY="${SERVICE_INFO##*:}"
-            SERVICE_PATH="microservices/$SERVICE_NAME"
-            
-            echo ""
-            echo "============================================"
-            echo "📦 Analyzing: $SERVICE_NAME"
-            echo "============================================"
-            
-            # Install dependencies
-            cd "$SERVICE_PATH"
-            python -m pip install --upgrade pip
-            pip install -r requirements.txt
-            
-            # Run tests with coverage
-            python -m pytest --cov=app --cov-report=xml --cov-report=term || true
-            
-            # Trivy scan dependencies
-            echo "### 🔍 $SERVICE_NAME - Dependencies" >> $GITHUB_STEP_SUMMARY
-            trivy fs \
-              --format table \
-              --security-checks vuln \
-              requirements.txt | tee /tmp/${SERVICE_NAME}-deps.txt || true
-            
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            head -n 50 /tmp/${SERVICE_NAME}-deps.txt >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            
-            # Trivy scan source
-            echo "🔍 Scanning source code..."
-            trivy fs \
-              --scanners vuln,secret,misconfig \
-              --format table \
-              . || true
-            
-            # Trivy scan Dockerfile
-            echo "🔍 Scanning Dockerfile..."
-            trivy config Dockerfile || true
-            
-            # SonarQube scan
-            cd ../..
-            sonar-scanner \
-              -Dsonar.projectKey=$SONAR_KEY \
-              -Dsonar.sources=$SERVICE_PATH/app \
-              -Dsonar.tests=$SERVICE_PATH/tests \
-              -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
-              -Dsonar.token=${{ env.SONAR_TOKEN }} \
-              -Dsonar.language=py \
-              -Dsonar.sourceEncoding=UTF-8 \
-              -Dsonar.python.coverage.reportPaths=$SERVICE_PATH/coverage.xml
-            
-            echo "✅ $SERVICE_NAME analysis complete"
-          done
+          # Ensure Python is set up for subsequent service steps
+          echo "Setting up Python for backend analysis"
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.8"
+
+      # API-GATEWAY
+      - name: Install API-GATEWAY Dependencies
+        working-directory: microservices/api-gateway
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
       
+      - name: Run Pytest and Generate Coverage for API-GATEWAY
+        working-directory: microservices/api-gateway
+        run: |
+          python -m pytest --cov=. --cov-report=xml || true
+      
+      - name: Run SonarQube Scanner - API-GATEWAY
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-api-gateway \
+            -Dsonar.sources=microservices/api-gateway \
+            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
+            -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
+
+      - name: Run Trivy Scan - API-GATEWAY Dependencies
+        working-directory: microservices/api-gateway
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Dependency Scan (API Gateway) - ALL SEVERITIES ==="
+          trivy fs \
+            --format table \
+            --security-checks vuln \
+            requirements.txt
+          
+          
+      - name: Run Trivy Scan - API-GATEWAY Source
+        working-directory: microservices/api-gateway
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Source Scan (API Gateway) - ALL SEVERITIES ==="
+          trivy fs \
+            --scanners vuln,secret,misconfig \
+            --format table \
+            .
+
+      # EXERCISES-SERVICE
+      - name: Install Exercises-Service Dependencies
+        working-directory: microservices/exercises-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Pytest and Generate Coverage for Exercises-Service
+        working-directory: microservices/exercises-service
+        run: |
+          python -m pytest --cov --cov-config=.coveragerc --cov-report=xml
+      
+      - name: Show coverage.xml (debug)
+        working-directory: microservices/exercises-service
+        run: |
+          echo "coverage.xml size:"
+          ls -l coverage.xml || true
+          head -n 20 coverage.xml || true
+      
+      - name: Run SonarQube Scanner - EXERCISES-SERVICE
+        working-directory: microservices/exercises-service
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-exercises-service \
+            -Dsonar.sources=app \
+            -Dsonar.tests=tests \
+            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=requirements.txt,Dockerfile \
+            -Dsonar.coverage.exclusions=tests/**,**/migrations/** \
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+      
+      - name: Run Trivy Scan - EXERCISES-SERVICE Dependencies
+        working-directory: microservices/exercises-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Dependency Scan (Exercises Service) - ALL SEVERITIES ==="
+          trivy fs \
+            --format table \
+            --security-checks vuln \
+            requirements.txt
+      
+      - name: Run Trivy Scan - EXERCISES-SERVICE Source
+        working-directory: microservices/exercises-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Source Scan (Exercises Service) - ALL ==="
+          trivy fs \
+            --scanners vuln,secret,misconfig \
+            --format table \
+            .
+
+      # SCORES-SERVICE
+      - name: Install Scores-Service Dependencies
+        working-directory: microservices/scores-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install --ignore-installed --no-clean -r requirements.txt
+      
+      - name: Run Pytest and Generate Coverage for Scores-Service
+        working-directory: microservices/scores-service
+        run: |
+          python -m pytest --cov=app --cov-report=xml || true
+      
+      - name: Run SonarQube Scanner - SCORES-SERVICE
+        working-directory: microservices/scores-service
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-scores-service \
+            -Dsonar.sources=app \
+            -Dsonar.tests=tests \
+            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=requirements.txt,Dockerfile \
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+      
+      - name: Run Trivy Scan - SCORES-SERVICE Dependencies
+        working-directory: microservices/scores-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Dependency Scan (Scores Service) - ALL SEVERITIES ==="
+          trivy fs \
+            --format table \
+            --security-checks vuln \
+            requirements.txt
+      
+      - name: Run Trivy Scan - SCORES-SERVICE Source
+        working-directory: microservices/scores-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Source Scan (Scores Service) - ALL ==="
+          trivy fs \
+            --scanners vuln,secret,misconfig \
+            --format table \
+            .
+
+      # USER-MANAGEMENT-SERVICE
+      - name: Install User-Management-Service Dependencies
+        working-directory: microservices/user-management-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Pytest and Generate Coverage for User-Management-Service
+        working-directory: microservices/user-management-service
+        run: |
+          python -m pytest --cov=app --cov-report=xml || true
+      
+      - name: Run SonarQube Scanner - USER-MANAGEMENT-SERVICE
+        working-directory: microservices/user-management-service
+        run: |
+          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=NT114-user-service \
+            -Dsonar.sources=app \
+            -Dsonar.tests=tests \
+            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ env.SONAR_TOKEN }} \
+            -Dsonar.language=py \
+            -Dsonar.sourceEncoding=UTF-8 \
+            -Dsonar.exclusions=requirements.txt,Dockerfile \
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+
+      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Dependencies
+        working-directory: microservices/user-management-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Dependency Scan (User Management Service) - ALL SEVERITIES ==="
+          trivy fs \
+            --format table \
+            --security-checks vuln \
+            requirements.txt
+          
+      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Source
+        working-directory: microservices/user-management-service
+        continue-on-error: true
+        run: |
+          echo "=== Trivy Source Scan (User Management Service) - ALL ==="
+          trivy fs \
+            --scanners vuln,secret,misconfig \
+            --format table \
+            .
+
       # Generate Security Summary
       - name: 📊 Generate Security Summary
         continue-on-error: true
@@ -222,7 +350,7 @@ jobs:
           echo "passed=true" >> $GITHUB_OUTPUT
 
   # ============================================
-  # Stage 2: Build Docker Images
+  # Stage 2: Build Docker Images (Giữ nguyên vì chạy trên ubuntu-latest)
   # ============================================
   build-images:
     name: Build & Scan Docker Images
@@ -250,6 +378,17 @@ jobs:
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Install Trivy (Ubuntu runner)
+        run: |
+          echo "Installing Trivy CLI..."
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o /tmp/install_trivy.sh
+          chmod +x /tmp/install_trivy.sh
+          sudo /tmp/install_trivy.sh -b /usr/local/bin
+          trivy --version
       
       - name: Build Docker Image
         run: |
@@ -282,7 +421,7 @@ jobs:
           retention-days: 1
 
   # ============================================
-  # Stage 3: Push to ECR
+  # Stage 3: Push to ECR (Giữ nguyên vì chạy trên ubuntu-latest)
   # ============================================
   push-to-ecr:
     name: Push to Amazon ECR
