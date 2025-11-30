@@ -69,3 +69,7 @@ secrets/
 actions-runner/
 *.txt
 *credentials*
+
+# Markdown files
+*.md
+!README.md
