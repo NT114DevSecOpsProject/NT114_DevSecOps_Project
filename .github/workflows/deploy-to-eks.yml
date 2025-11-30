@@ -72,6 +72,79 @@ jobs:
           echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
           echo "ECR Account ID: $ACCOUNT_ID"
 
+      - name: Verify IAM Identity for EKS Access
+        id: verify-identity
+        run: |
+          echo "=== Verifying IAM Identity for EKS Access ==="
+
+          # Get current IAM identity
+          CALLER_IDENTITY=$(aws sts get-caller-identity --output json)
+          echo "Current IAM Identity:"
+          echo "$CALLER_IDENTITY" | jq .
+
+          CALLER_ARN=$(echo "$CALLER_IDENTITY" | jq -r '.Arn')
+          CALLER_USER_ID=$(echo "$CALLER_IDENTITY" | jq -r '.UserId')
+          CALLER_ACCOUNT=$(echo "$CALLER_IDENTITY" | jq -r '.Account')
+
+          echo ""
+          echo "Caller ARN: $CALLER_ARN"
+          echo "Caller User ID: $CALLER_USER_ID"
+          echo "Account: $CALLER_ACCOUNT"
+
+          # Expected IAM user for EKS access
+          EXPECTED_USER="nt114-devsecops-github-actions-user"
+          EXPECTED_ARN="arn:aws:iam::${CALLER_ACCOUNT}:user/${EXPECTED_USER}"
+
+          echo ""
+          echo "Expected IAM User: $EXPECTED_USER"
+          echo "Expected ARN: $EXPECTED_ARN"
+
+          # Check if current identity matches expected
+          if [[ "$CALLER_ARN" == "$EXPECTED_ARN" ]]; then
+            echo ""
+            echo "✅ Identity verification PASSED!"
+            echo "Current credentials match the IAM user with EKS access entry."
+            echo "identity_verified=true" >> $GITHUB_OUTPUT
+          else
+            echo ""
+            echo "❌ WARNING: Identity mismatch detected!"
+            echo "Current ARN: $CALLER_ARN"
+            echo "Expected ARN: $EXPECTED_ARN"
+            echo ""
+            echo "The AWS credentials may not match the IAM user configured for EKS access."
+            echo "This may cause kubectl authentication failures."
+            echo ""
+            echo "Please verify that AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+            echo "in GitHub Secrets belong to user: $EXPECTED_USER"
+            echo "identity_verified=false" >> $GITHUB_OUTPUT
+          fi
+
+          # List EKS access entries for verification
+          echo ""
+          echo "=== EKS Access Entries for cluster: ${{ env.CLUSTER_NAME }} ==="
+          aws eks list-access-entries \
+            --cluster-name ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --output json | jq -r '.accessEntries[]'
+
+          # Check if current identity has access entry
+          echo ""
+          echo "Checking if current identity has EKS access entry..."
+          if aws eks list-access-entries \
+            --cluster-name ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --output json | jq -r '.accessEntries[]' | grep -q "$CALLER_ARN"; then
+            echo "✅ Access entry found for current identity"
+          else
+            echo "❌ No access entry found for: $CALLER_ARN"
+            echo ""
+            echo "To grant access, add an EKS access entry for this identity:"
+            echo "aws eks create-access-entry \\"
+            echo "  --cluster-name ${{ env.CLUSTER_NAME }} \\"
+            echo "  --principal-arn $CALLER_ARN \\"
+            echo "  --region ${{ env.AWS_REGION }}"
+          fi
+
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
@@ -100,14 +173,54 @@ jobs:
 
       - name: Configure kubectl
         run: |
-          echo "Configuring kubectl for cluster: ${{ env.CLUSTER_NAME }}"
+          echo "=== Configuring kubectl for cluster: ${{ env.CLUSTER_NAME }} ==="
+
+          # Update kubeconfig
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
 
-          echo "Cluster info:"
-          kubectl cluster-info
+          echo ""
+          echo "=== Testing kubectl authentication ==="
+
+          # Test kubectl access with detailed error handling
+          if kubectl cluster-info 2>&1 | tee /tmp/kubectl-output.txt; then
+            echo ""
+            echo "✅ kubectl authentication successful!"
+          else
+            echo ""
+            echo "❌ kubectl authentication FAILED!"
+            echo ""
+            echo "=== Troubleshooting Information ==="
+
+            # Show error output
+            echo "Error output:"
+            cat /tmp/kubectl-output.txt
+
+            echo ""
+            echo "Current IAM identity:"
+            aws sts get-caller-identity
+
+            echo ""
+            echo "EKS access entries:"
+            aws eks list-access-entries \
+              --cluster-name ${{ env.CLUSTER_NAME }} \
+              --region ${{ env.AWS_REGION }}
+
+            echo ""
+            echo "Kubeconfig content:"
+            cat ~/.kube/config | grep -A 20 "current-context"
+
+            echo ""
+            echo "=== Possible Solutions ==="
+            echo "1. Verify AWS credentials match IAM user: nt114-devsecops-github-actions-user"
+            echo "2. Check EKS access entry exists for this IAM user"
+            echo "3. Verify EKS access policy association grants required permissions"
+            echo "4. Check if aws-auth ConfigMap needs updating (for API_AND_CONFIG_MAP mode)"
+
+            exit 1
+          fi
 
           echo ""
-          echo "Node status:"
+          echo "=== Node status ==="
           kubectl get nodes
 
       - name: Create namespace
@@ -510,7 +623,17 @@ jobs:
 
       - name: Configure kubectl
         run: |
+          echo "Configuring kubectl for cluster: ${{ env.CLUSTER_NAME }}"
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+          # Test kubectl access
+          if ! kubectl cluster-info > /dev/null 2>&1; then
+            echo "❌ kubectl authentication failed in verify job"
+            echo "Current IAM identity:"
+            aws sts get-caller-identity
+            exit 1
+          fi
+          echo "✅ kubectl configured successfully"
 
       - name: Wait for Pods Ready
         run: |
