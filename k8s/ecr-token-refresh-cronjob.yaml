@@ -1,0 +1,52 @@
+# ECR Token Refresh CronJob
+# Template variables will be substituted by workflow:
+# - ${AWS_ACCOUNT_ID}
+# - ${K8S_NAMESPACE}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ecr-token-refresh
+  namespace: ${K8S_NAMESPACE}
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          name: ecr-token-refresh
+        spec:
+          # Use node IAM role (simpler approach)
+          restartPolicy: OnFailure
+          containers:
+          - name: refresh-token
+            image: amazon/aws-cli:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Refreshing ECR token..."
+
+              # Get ECR login token
+              TOKEN=$(aws ecr get-login-password --region ${AWS_REGION})
+
+              # Update secret
+              kubectl create secret docker-registry ecr-secret \
+                --docker-server=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com \
+                --docker-username=AWS \
+                --docker-password=$TOKEN \
+                --namespace=${K8S_NAMESPACE} \
+                --dry-run=client -o yaml | kubectl apply -f -
+
+              echo "✅ ECR secret refreshed at $(date)"
+            env:
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: AWS_ACCOUNT_ID
+              value: "${AWS_ACCOUNT_ID}"
+            - name: K8S_NAMESPACE
+              value: "${K8S_NAMESPACE}"

@@ -1,0 +1,227 @@
+# Universal Database Initialization Job
+# Works for both Helm and ArgoCD deployments
+# Template variables will be substituted by workflow:
+# - ${K8S_NAMESPACE}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: database-schema-setup
+  namespace: ${K8S_NAMESPACE}
+  annotations:
+    # ArgoCD hook: runs before sync
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 300  # Auto-cleanup after 5 minutes
+  backoffLimit: 3
+  template:
+    metadata:
+      name: database-schema-setup
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: schema-setup
+        image: python:3.9-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "=============================================="
+          echo "  Database Schema Initialization"
+          echo "=============================================="
+          echo "Installing dependencies..."
+          pip install -q psycopg2-binary
+
+          echo ""
+          echo "Running database schema setup..."
+          python3 << 'SCRIPT'
+          import os
+          import psycopg2
+          import sys
+          from datetime import datetime
+
+          def log(message, level="INFO"):
+              timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+              print(f"[{timestamp}] [{level}] {message}", flush=True)
+
+          try:
+              log("Connecting to PostgreSQL server...")
+              log(f"Host: {os.environ['DB_HOST']}")
+              log(f"Port: {os.environ['DB_PORT']}")
+
+              conn = psycopg2.connect(
+                  host=os.environ['DB_HOST'],
+                  port=int(os.environ['DB_PORT']),
+                  database='postgres',  # Connect to default DB first
+                  user=os.environ['DB_USER'],
+                  password=os.environ['DB_PASSWORD'],
+                  connect_timeout=10
+              )
+              conn.autocommit = True
+              cursor = conn.cursor()
+
+              log("✅ Connected to PostgreSQL server")
+
+              # Create database if not exists
+              log("Checking if database 'auth_db' exists...")
+              cursor.execute("SELECT 1 FROM pg_database WHERE datname = 'auth_db'")
+              if not cursor.fetchone():
+                  log("Creating database 'auth_db'...")
+                  cursor.execute('CREATE DATABASE auth_db')
+                  log('✅ Database auth_db created')
+              else:
+                  log('✅ Database auth_db already exists (idempotent)')
+
+              cursor.close()
+              conn.close()
+
+              # Connect to auth_db and create tables
+              log("Connecting to auth_db database...")
+              conn = psycopg2.connect(
+                  host=os.environ['DB_HOST'],
+                  port=int(os.environ['DB_PORT']),
+                  database='auth_db',
+                  user=os.environ['DB_USER'],
+                  password=os.environ['DB_PASSWORD'],
+                  connect_timeout=10
+              )
+              cursor = conn.cursor()
+
+              log("✅ Connected to auth_db database")
+
+              # Create tables (idempotent)
+              log("Creating database tables (idempotent)...")
+
+              # Users table
+              log("  - Creating 'users' table...")
+              cursor.execute('''
+                  CREATE TABLE IF NOT EXISTS users (
+                      id SERIAL PRIMARY KEY,
+                      email VARCHAR(255) UNIQUE NOT NULL,
+                      password_hash VARCHAR(255) NOT NULL,
+                      full_name VARCHAR(255),
+                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      is_active BOOLEAN DEFAULT TRUE
+                  )
+              ''')
+              log('    ✅ Users table ready')
+
+              # Exercises table
+              log("  - Creating 'exercises' table...")
+              cursor.execute('''
+                  CREATE TABLE IF NOT EXISTS exercises (
+                      id SERIAL PRIMARY KEY,
+                      title VARCHAR(255) NOT NULL,
+                      description TEXT,
+                      difficulty_level INTEGER DEFAULT 1,
+                      category VARCHAR(100),
+                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                  )
+              ''')
+              log('    ✅ Exercises table ready')
+
+              # User progress table
+              log("  - Creating 'user_progress' table...")
+              cursor.execute('''
+                  CREATE TABLE IF NOT EXISTS user_progress (
+                      id SERIAL PRIMARY KEY,
+                      user_id INTEGER NOT NULL,
+                      exercise_id INTEGER NOT NULL,
+                      completed BOOLEAN DEFAULT FALSE,
+                      score INTEGER DEFAULT 0,
+                      completed_at TIMESTAMP,
+                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      FOREIGN KEY (exercise_id) REFERENCES exercises(id),
+                      UNIQUE(user_id, exercise_id)
+                  )
+              ''')
+              log('    ✅ User progress table ready')
+
+              # Scores table
+              log("  - Creating 'scores' table...")
+              cursor.execute('''
+                  CREATE TABLE IF NOT EXISTS scores (
+                      id SERIAL PRIMARY KEY,
+                      user_id INTEGER NOT NULL,
+                      exercise_id INTEGER NOT NULL,
+                      score INTEGER NOT NULL,
+                      max_score INTEGER DEFAULT 100,
+                      attempt_count INTEGER DEFAULT 1,
+                      completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                      FOREIGN KEY (exercise_id) REFERENCES exercises(id)
+                  )
+              ''')
+              log('    ✅ Scores table ready')
+
+              conn.commit()
+
+              # Verify tables
+              log("")
+              log("Verifying database schema...")
+              cursor.execute("""
+                  SELECT table_name FROM information_schema.tables
+                  WHERE table_schema = 'public'
+                  ORDER BY table_name
+              """)
+              tables = [row[0] for row in cursor.fetchall()]
+              log(f"Tables in database: {', '.join(tables)}")
+
+              required_tables = ['users', 'exercises', 'user_progress', 'scores']
+              missing_tables = [t for t in required_tables if t not in tables]
+
+              if missing_tables:
+                  log(f"❌ Missing tables: {', '.join(missing_tables)}", "ERROR")
+                  sys.exit(1)
+
+              log("")
+              log('='*50)
+              log('✅ ALL DATABASE TABLES CREATED SUCCESSFULLY!')
+              log('='*50)
+              log(f"Database: auth_db")
+              log(f"Tables: {len(tables)} ({', '.join(tables)})")
+
+          except psycopg2.OperationalError as e:
+              log(f'❌ Database connection error: {e}', "ERROR")
+              log("Check RDS endpoint, credentials, and security groups", "ERROR")
+              sys.exit(1)
+          except Exception as e:
+              log(f'❌ Unexpected error: {e}', "ERROR")
+              import traceback
+              traceback.print_exc()
+              sys.exit(1)
+          finally:
+              if 'conn' in locals() and conn:
+                  conn.close()
+                  log("Database connection closed")
+          SCRIPT
+
+          echo ""
+          echo "=============================================="
+          echo "  Database schema setup complete!"
+          echo "=============================================="
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: user-management-db-secret
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: user-management-db-secret
+              key: DB_PORT
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: user-management-db-secret
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: user-management-db-secret
+              key: DB_PASSWORD
