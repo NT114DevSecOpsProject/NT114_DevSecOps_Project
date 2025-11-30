@@ -43,6 +43,10 @@ def reset_logger(name):
 
 def add_rotating_file_handler(logger, file_path, level=logging.INFO, max_bytes=1024 * 1024, backup_count=1):
     """Attach a RotatingFileHandler to a logger and return the handler."""
+    # Use /tmp for logs in Kubernetes if path doesn't start with /tmp
+    if not file_path.startswith('/tmp'):
+        file_path = f'/tmp/{file_path}'
+
     # Ensure directory exists
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     handler = RotatingFileHandler(file_path, maxBytes=max_bytes, backupCount=backup_count)
