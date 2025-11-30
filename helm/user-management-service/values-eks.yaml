@@ -2,7 +2,7 @@
 replicaCount: 2
 
 image:
-  repository: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/user-management-service
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/user-management-service
   pullPolicy: Always
   tag: "latest"
 
@@ -79,5 +79,32 @@ readinessProbe:
 env:
   - name: NODE_ENV
     value: "production"
+  - name: FLASK_ENV
+    value: "production"
   - name: PORT
     value: "5001"
+  - name: DB_HOST
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_HOST
+  - name: DB_PORT
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_PORT
+  - name: DB_NAME
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_NAME
+  - name: DB_USER
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_USER
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_PASSWORD

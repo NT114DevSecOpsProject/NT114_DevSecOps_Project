@@ -26,11 +26,16 @@ def create_app():
     # Register blueprints
     app.register_blueprint(auth_blueprint, url_prefix="/api/auth")
     app.register_blueprint(users_blueprint, url_prefix="/api/users")
-    
+
+    # Health check endpoint
+    @app.route('/health', methods=['GET'])
+    def health_check():
+        return {'status': 'healthy', 'service': 'user-management-service'}, 200
+
     # Create tables
     with app.app_context():
         db.create_all()
-    
+
     return app
 
 # Create app instance
