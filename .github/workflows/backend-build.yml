@@ -1,6 +1,12 @@
 name: Backend Microservices Build
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'microservices/**'
+      - '.github/workflows/backend-build.yml'
   workflow_dispatch:
 
 env:
