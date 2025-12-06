@@ -2,7 +2,8 @@
 // Các hằng số của ứng dụng
 
 // API Configuration
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+// Use empty string for production (nginx proxy) or VITE_API_URL for dev
+export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 // Local Storage Keys
 export const STORAGE_KEYS = {
