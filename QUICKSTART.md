@@ -1,743 +1,585 @@
-# Quick Start Guide - Step by Step
+# Quick Start Guide - NT114 DevSecOps Project
 
-Complete guide to deploy the NT114 DevSecOps project from scratch to running application.
+Hướng dẫn đầy đủ từ đầu đến cuối để deploy application lên AWS EKS.
 
-## Prerequisites Checklist
+---
 
-Before starting, ensure you have:
+## 📋 Prerequisites
 
-- [ ] AWS Account with admin access
-- [ ] AWS CLI installed and configured (`aws --version`)
-- [ ] Terraform >= 1.5.0 installed (`terraform --version`)
-- [ ] kubectl installed (`kubectl version --client`)
-- [ ] Helm >= 3.x installed (`helm version`)
-- [ ] Docker installed and running (`docker --version`)
-- [ ] Git installed (`git --version`)
-- [ ] This repository cloned locally
+Đảm bảo đã cài đặt:
 
-## Step 1: Verify Prerequisites
+- ✅ **AWS Account** với admin access
+- ✅ **AWS CLI** configured (`aws configure`)
+- ✅ **Terraform** >= 1.5.0
+- ✅ **kubectl**
+- ✅ **Helm** >= 3.x
+- ✅ **Git**
+- ✅ **GitHub Account** (đã fork repo này)
 
+**Kiểm tra:**
 ```bash
-# Check all tools are installed
-echo "Checking prerequisites..."
 aws --version
 terraform --version
 kubectl version --client
 helm version
-docker --version
 git --version
-
-# Verify AWS credentials
-aws sts get-caller-identity
 ```
-
-**Expected Output:**
-```
-{
-    "UserId": "AIDAXXXXXXXXXXXXXXXXX",
-    "Account": "123456789012",
-    "Arn": "arn:aws:iam::123456789012:user/your-user"
-}
-```
-
-✅ **Checkpoint**: All tools installed and AWS credentials working
 
 ---
 
-## Step 2: Configure Deployment Settings
+## 🚀 Bước 1: Tạo Infrastructure với Terraform
 
-Navigate to the project directory and run the configuration script:
-
-```bash
-cd /path/to/NT114_DevSecOps_Project
-
-# Run configuration script
-./scripts/configure-deployment.sh
-```
-
-**What happens:**
-- Script detects or prompts for AWS Account ID
-- Prompts for AWS region (default: us-east-1)
-- Updates all Helm charts with ECR repository URLs
-- Updates all ArgoCD applications
-- Configures Terraform variables
-
-**Example interaction:**
-```
-✓ Detected AWS Account ID: 123456789012
-Use this AWS Account ID? (y/n): y
-Enter AWS region (default: us-east-1): [press Enter]
-
-Configuration:
-  AWS Account ID: 123456789012
-  AWS Region: us-east-1
-  GitHub Repo: https://github.com/conghieu2004/NT114_DevSecOps_Project.git
-
-Proceed with configuration update? (y/n): y
-
-Updating Helm charts...
-  ✓ Updated helm/frontend/values.yaml
-  ✓ Updated helm/api-gateway/values.yaml
-  ...
-```
-
-✅ **Checkpoint**: Configuration files updated with your AWS settings
-
----
-
-## Step 3: Create ECR Repositories
-
-Create Docker image repositories in AWS ECR:
+### 1.1 - Navigate to Terraform directory
 
 ```bash
-./scripts/create-ecr-repos.sh
-```
-
-**What happens:**
-- Creates ECR repository for each service
-- Enables image scanning on push
-- Sets lifecycle policy (keeps last 10 images)
-- Enables encryption
-
-**Expected Output:**
-```
-Creating ECR repositories...
-
-Creating repository for frontend... ✓ Created
-Creating repository for api-gateway... ✓ Created
-Creating repository for user-management-service... ✓ Created
-Creating repository for exercises-service... ✓ Created
-Creating repository for scores-service... ✓ Created
-
-Repository URLs:
-  frontend: 123456789012.dkr.ecr.us-east-1.amazonaws.com/frontend
-  api-gateway: 123456789012.dkr.ecr.us-east-1.amazonaws.com/api-gateway
-  ...
-```
-
-✅ **Checkpoint**: ECR repositories created
-
----
-
-## Step 4: Build and Push Docker Images
-
-Build Docker images and push to ECR:
-
-```bash
-./scripts/build-and-push.sh
-```
-
-**What happens:**
-- Logs into AWS ECR
-- Builds frontend React application
-- Builds all microservices
-- Tags images with ECR URLs
-- Pushes all images to ECR
-
-**Expected Output:**
-```
-Logging in to ECR...
-✓ Logged in to ECR
-
-Building frontend...
-[+] Building 45.3s (15/15) FINISHED
-✓ Frontend pushed
-
-Building api-gateway...
-[+] Building 32.1s (12/12) FINISHED
-✓ api-gateway pushed
-
-...
-```
-
-**Note**: This step may take 10-15 minutes depending on your internet speed.
-
-✅ **Checkpoint**: All Docker images built and pushed to ECR
-
----
-
-## Step 5: Deploy Infrastructure with Terraform
-
-Deploy AWS infrastructure (VPC, EKS cluster, node groups):
-
-```bash
-# Navigate to Terraform directory
 cd terraform/environments/dev
+```
 
-# Initialize Terraform
+### 1.2 - Initialize Terraform
+
+```bash
 terraform init
 ```
 
-**Note**: The `providers.tf` file has been fixed to handle circular dependencies. See [PROVIDER_FIX.md](../../terraform/environments/dev/PROVIDER_FIX.md) if you encounter any provider configuration issues.
-
-**Expected Output:**
+**Output mong đợi:**
 ```
 Initializing modules...
 Initializing the backend...
-Initializing provider plugins...
-- Finding hashicorp/aws versions matching ">= 5.0"...
-- Installing hashicorp/aws v5.x.x...
-
 Terraform has been successfully initialized!
 ```
 
+### 1.3 - Review Plan
+
 ```bash
-# Review the plan
 terraform plan
 ```
 
-**Expected Output:**
-```
-Plan: 56 to add, 0 to change, 0 to destroy.
-```
+**Output:** Sẽ tạo ~50-60 resources bao gồm:
+- VPC với public/private subnets
+- NAT Gateway, Internet Gateway
+- EKS Cluster (eks-1)
+- EKS Node Group (2 nodes t3.large)
+- RDS PostgreSQL instance
+- Security Groups
+- IAM Roles
+
+### 1.4 - Apply Infrastructure
 
 ```bash
-# Apply configuration
 terraform apply
 ```
 
-**Prompt:**
-```
-Do you want to perform these actions?
-  Terraform will perform the actions described above.
-  Only 'yes' will be accepted to approve.
+**Nhập:** `yes` khi được hỏi
 
-  Enter a value: yes
-```
+⏱️ **Thời gian:** ~15-20 phút
 
-**What gets created:**
-- VPC with public and private subnets
-- NAT Gateway
-- Internet Gateway
-- EKS Control Plane (Kubernetes 1.31)
-- EKS Managed Node Group (2 t3.large nodes)
-- IAM roles and policies
-- AWS Load Balancer Controller
-- Security groups
-
-**Note**: This step takes approximately 15-20 minutes.
-
-**Expected Output:**
+**Output cuối cùng:**
 ```
 Apply complete! Resources: 56 added, 0 changed, 0 destroyed.
 
 Outputs:
-
-cluster_endpoint = "https://XXXXX.eks.us-east-1.amazonaws.com"
 cluster_name = "eks-1"
-configure_kubectl = "aws eks update-kubeconfig --region us-east-1 --name eks-1"
+cluster_endpoint = "https://xxxxx.eks.us-east-1.amazonaws.com"
 vpc_id = "vpc-xxxxx"
+database_endpoint = "nt114-auth-db.xxxxx.us-east-1.rds.amazonaws.com"
 ```
 
-✅ **Checkpoint**: AWS infrastructure deployed successfully
+✅ **Checkpoint:** Infrastructure đã được tạo
 
 ---
 
-## Step 6: Configure kubectl
+## 🔧 Bước 2: Configure kubectl
 
-Configure kubectl to access your EKS cluster:
+### 2.1 - Update kubeconfig
 
 ```bash
 aws eks update-kubeconfig --region us-east-1 --name eks-1
 ```
 
-**Expected Output:**
-```
-Added new context arn:aws:eks:us-east-1:123456789012:cluster/eks-1 to /home/user/.kube/config
-```
+### 2.2 - Verify cluster access
 
-**Verify cluster access:**
 ```bash
 kubectl get nodes
 ```
 
-**Expected Output:**
+**Output mong đợi:**
 ```
-NAME                            STATUS   ROLES    AGE   VERSION
-ip-11-0-1-123.ec2.internal     Ready    <none>   5m    v1.31.0-eks-xxxxx
-ip-11-0-2-234.ec2.internal     Ready    <none>   5m    v1.31.0-eks-xxxxx
+NAME                           STATUS   ROLES    AGE   VERSION
+ip-11-0-1-xxx.ec2.internal     Ready    <none>   5m    v1.31.x
+ip-11-0-2-xxx.ec2.internal     Ready    <none>   5m    v1.31.x
 ```
 
-**Check cluster info:**
+### 2.3 - Check namespaces
+
 ```bash
-kubectl cluster-info
+kubectl get namespaces
 ```
 
-**Expected Output:**
-```
-Kubernetes control plane is running at https://XXXXX.eks.us-east-1.amazonaws.com
-CoreDNS is running at https://XXXXX.eks.us-east-1.amazonaws.com/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
-```
+**Output:** Sẽ thấy `dev` namespace đã được tạo bởi Terraform
 
-✅ **Checkpoint**: kubectl configured and cluster accessible
+✅ **Checkpoint:** kubectl đã connect đến EKS cluster
 
 ---
 
-## Step 7: Install ArgoCD
+## 📦 Bước 3: Setup GitHub Secrets
 
-Navigate to ArgoCD directory and install:
+### 3.1 - Get AWS credentials
+
+Lấy AWS Access Key và Secret Key từ AWS Console hoặc:
 
 ```bash
-cd ../../../argocd
-./install-argocd.sh
+aws configure list
 ```
 
-**What happens:**
-- Creates `argocd` namespace
-- Installs ArgoCD components
-- Configures LoadBalancer service
-- Retrieves admin password
-- Displays ArgoCD URL
+### 3.2 - Add GitHub Secrets
 
-**Expected Output:**
-```
-=====================================
-Installing ArgoCD on EKS Cluster
-=====================================
+Vào GitHub repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
-Creating argocd namespace...
-namespace/argocd created
+Thêm 2 secrets:
+- `AWS_ACCESS_KEY_ID`: Your AWS access key
+- `AWS_SECRET_ACCESS_KEY`: Your AWS secret key
 
-Installing ArgoCD...
-customresourcedefinition.apiextensions.k8s.io/applications.argoproj.io created
-customresourcedefinition.apiextensions.k8s.io/applicationsets.argoproj.io created
-...
-
-Waiting for ArgoCD to be ready...
-deployment.apps/argocd-server condition met
-
-=====================================
-ArgoCD Installation Complete!
-=====================================
-
-Getting ArgoCD admin password...
-ArgoCD Admin Password: Xy9kL2mN4pQ7rS
-
-ArgoCD URL: https://a1b2c3d4-123456789.us-east-1.elb.amazonaws.com
-
-Login with:
-  Username: admin
-  Password: Xy9kL2mN4pQ7rS
-```
-
-**⚠️ Important**: Save the admin password! You'll need it to access the UI.
-
-**Verify ArgoCD installation:**
-```bash
-kubectl get pods -n argocd
-```
-
-**Expected Output:**
-```
-NAME                                  READY   STATUS    RESTARTS   AGE
-argocd-server-xxxxx                   1/1     Running   0          2m
-argocd-repo-server-xxxxx              1/1     Running   0          2m
-argocd-application-controller-xxxxx   1/1     Running   0          2m
-argocd-dex-server-xxxxx               1/1     Running   0          2m
-argocd-redis-xxxxx                    1/1     Running   0          2m
-```
-
-✅ **Checkpoint**: ArgoCD installed and running
+✅ **Checkpoint:** GitHub secrets đã được thêm
 
 ---
 
-## Step 8: Access ArgoCD UI (Optional but Recommended)
+## 🏗️ Bước 4: Build và Push Docker Images
 
-Open ArgoCD UI in your browser:
+### 4.1 - Trigger Frontend Build
 
-1. Copy the URL from the install output
-2. Open in browser: `https://<alb-url>`
-3. You'll see a security warning (self-signed cert) - click "Advanced" → "Proceed"
-4. Login with:
-   - **Username**: `admin`
-   - **Password**: (from install output)
+**Cách 1:** Push code changes trong folder `frontend/`
 
-**First Login Screen:**
-- You should see the ArgoCD dashboard
-- Currently showing 0 applications
+**Cách 2:** Manual trigger qua GitHub Actions
+- Vào tab **Actions** → **Frontend Build** → **Run workflow**
 
-✅ **Checkpoint**: ArgoCD UI accessible
+⏱️ **Thời gian:** ~3-5 phút
+
+**Kết quả:** Image được push lên ECR:
+```
+039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/frontend:latest
+```
+
+### 4.2 - Trigger Backend Build
+
+**Cách 1:** Push code changes trong folder `microservices/`
+
+**Cách 2:** Manual trigger qua GitHub Actions
+- Vào tab **Actions** → **Backend Microservices Build** → **Run workflow**
+
+⏱️ **Thời gian:** ~5-8 phút (build 4 services song song)
+
+**Kết quả:** 4 images được push lên ECR:
+- `api-gateway:latest`
+- `user-management-service:latest`
+- `exercises-service:latest`
+- `scores-service:latest`
+
+### 4.3 - Verify images in ECR
+
+```bash
+aws ecr list-images --repository-name nt114-devsecops/frontend --region us-east-1
+aws ecr list-images --repository-name nt114-devsecops/api-gateway --region us-east-1
+```
+
+✅ **Checkpoint:** Tất cả images đã có trên ECR
 
 ---
 
-## Step 9: Deploy Applications with ArgoCD
+## 🗄️ Bước 5: Setup Database
 
-Deploy all microservices and frontend:
+### 5.1 - Get RDS endpoint
 
 ```bash
-./deploy-all.sh
+cd terraform/environments/dev
+terraform output database_endpoint
 ```
 
-**What happens:**
-- Creates ArgoCD project `nt114-devsecops`
-- Deploys 5 applications:
-  - frontend
-  - api-gateway
-  - user-management-service
-  - exercises-service
-  - scores-service
-- ArgoCD automatically syncs from GitHub
-- Kubernetes resources created
+**Output:** `nt114-auth-db.xxxxxx.us-east-1.rds.amazonaws.com`
 
-**Expected Output:**
-```
-=====================================
-Deploying NT114 Applications to ArgoCD
-=====================================
+### 5.2 - Create database schema
 
-Creating ArgoCD project...
-appproject.argoproj.io/nt114-devsecops created
+Từ root folder của project:
 
-Deploying applications...
-application.argoproj.io/frontend created
-application.argoproj.io/api-gateway created
-application.argoproj.io/user-management-service created
-application.argoproj.io/exercises-service created
-application.argoproj.io/scores-service created
-
-=====================================
-Deployment Complete!
-=====================================
-
-Applications deployed:
-  - frontend
-  - api-gateway
-  - user-management-service
-  - exercises-service
-  - scores-service
-
-Check application status:
-  kubectl get applications -n argocd
-```
-
-**Check deployment status:**
 ```bash
-kubectl get applications -n argocd
+# Set environment variables
+export DB_HOST="<RDS_ENDPOINT_FROM_ABOVE>"
+export DB_PORT="5432"
+export DB_NAME="auth_db"
+export DB_USER="postgres"
+export DB_PASSWORD="postgres123"  # Hoặc password bạn đã set trong Terraform
+
+# Run schema creation script
+python3 create_db_schema.py
 ```
 
-**Expected Output:**
+**Output mong đợi:**
 ```
-NAME                        SYNC STATUS   HEALTH STATUS
-frontend                    Synced        Progressing
-api-gateway                 Synced        Progressing
-user-management-service     Synced        Progressing
-exercises-service           Synced        Progressing
-scores-service              Synced        Progressing
+Connecting to database...
+Creating users table...
+Creating exercises table...
+Creating scores table...
+✓ Database schema created successfully!
 ```
 
-**Note**: Status will change from "Progressing" to "Healthy" in 2-3 minutes.
+### 5.3 - Verify tables created
 
-✅ **Checkpoint**: Applications deployed to Kubernetes
+```bash
+# Connect to RDS
+psql -h $DB_HOST -U $DB_USER -d $DB_NAME
+
+# List tables
+\dt
+
+# Exit
+\q
+```
+
+**Hoặc dùng kubectl exec vào một pod và connect:**
+
+```bash
+kubectl exec -it -n dev deployment/user-management-service -- bash
+psql -h nt114-auth-db.xxxxx.us-east-1.rds.amazonaws.com -U postgres -d auth_db
+```
+
+✅ **Checkpoint:** Database đã sẵn sàng
 
 ---
 
-## Step 10: Monitor Deployment Progress
+## 🔐 Bước 6: Create Kubernetes Secrets
 
-### Option A: Using kubectl
-
-Watch pods being created:
+### 6.1 - Create database secret
 
 ```bash
-kubectl get pods -w
+kubectl create secret generic user-management-db-secret \
+  --from-literal=DB_HOST='<RDS_ENDPOINT>' \
+  --from-literal=DB_PORT='5432' \
+  --from-literal=DB_NAME='auth_db' \
+  --from-literal=DB_USER='postgres' \
+  --from-literal=DB_PASSWORD='postgres123' \
+  -n dev
 ```
 
-**Expected Output:**
-```
-NAME                                      READY   STATUS              RESTARTS   AGE
-frontend-xxxxx                            0/1     ContainerCreating   0          10s
-api-gateway-xxxxx                         0/1     ContainerCreating   0          10s
-user-management-service-xxxxx             0/1     ContainerCreating   0          10s
-exercises-service-xxxxx                   0/1     ContainerCreating   0          10s
-scores-service-xxxxx                      0/1     ContainerCreating   0          10s
-
-# After 1-2 minutes:
-frontend-xxxxx                            1/1     Running             0          2m
-api-gateway-xxxxx                         1/1     Running             0          2m
-...
-```
-
-Press `Ctrl+C` to stop watching.
-
-### Option B: Using ArgoCD UI
-
-1. Refresh the ArgoCD UI
-2. You'll see 5 application cards
-3. Click on any application to see detailed view
-4. Watch resources being created in real-time
-
-### Option C: Using ArgoCD CLI (if installed)
+### 6.2 - Create ECR pull secret
 
 ```bash
-argocd app list
-argocd app get frontend
+# Get ECR login password
+ECR_PASSWORD=$(aws ecr get-login-password --region us-east-1)
+
+# Create secret
+kubectl create secret docker-registry ecr-secret \
+  --docker-server=039612870452.dkr.ecr.us-east-1.amazonaws.com \
+  --docker-username=AWS \
+  --docker-password=$ECR_PASSWORD \
+  -n dev
 ```
 
-**Wait for all pods to be Running:**
+### 6.3 - Verify secrets
+
 ```bash
-kubectl get pods
+kubectl get secrets -n dev
 ```
 
-**Expected Final Output:**
+**Output:**
+```
+NAME                           TYPE                             DATA   AGE
+user-management-db-secret      Opaque                           5      10s
+ecr-secret                     kubernetes.io/dockerconfigjson   1      5s
+```
+
+✅ **Checkpoint:** Secrets đã được tạo
+
+---
+
+## 📱 Bước 7: Deploy Services với Helm
+
+### 7.1 - Deploy API Gateway
+
+```bash
+cd helm
+helm install api-gateway ./api-gateway -f ./api-gateway/values-eks.yaml -n dev
+```
+
+### 7.2 - Deploy User Management Service
+
+```bash
+helm install user-management-service ./user-management-service -f ./user-management-service/values-eks.yaml -n dev
+```
+
+### 7.3 - Deploy Exercises Service
+
+```bash
+helm install exercises-service ./exercises-service -f ./exercises-service/values-eks.yaml -n dev
+```
+
+### 7.4 - Deploy Scores Service
+
+```bash
+helm install scores-service ./scores-service -f ./scores-service/values-eks.yaml -n dev
+```
+
+### 7.5 - Deploy Frontend
+
+```bash
+helm install frontend ./frontend -f ./frontend/values-eks.yaml -n dev
+```
+
+### 7.6 - Verify deployments
+
+```bash
+kubectl get pods -n dev
+```
+
+**Output mong đợi (sau 2-3 phút):**
 ```
 NAME                                      READY   STATUS    RESTARTS   AGE
-frontend-xxxxx-xxxxx                      1/1     Running   0          3m
-frontend-xxxxx-xxxxx                      1/1     Running   0          3m
-api-gateway-xxxxx-xxxxx                   1/1     Running   0          3m
-api-gateway-xxxxx-xxxxx                   1/1     Running   0          3m
-user-management-service-xxxxx-xxxxx       1/1     Running   0          3m
-user-management-service-xxxxx-xxxxx       1/1     Running   0          3m
-exercises-service-xxxxx-xxxxx             1/1     Running   0          3m
-exercises-service-xxxxx-xxxxx             1/1     Running   0          3m
-scores-service-xxxxx-xxxxx                1/1     Running   0          3m
-scores-service-xxxxx-xxxxx                1/1     Running   0          3m
+api-gateway-xxxxx-xxxxx                   1/1     Running   0          2m
+api-gateway-xxxxx-xxxxx                   1/1     Running   0          2m
+user-management-service-xxxxx-xxxxx       1/1     Running   0          2m
+user-management-service-xxxxx-xxxxx       1/1     Running   0          2m
+exercises-service-xxxxx-xxxxx             1/1     Running   0          2m
+exercises-service-xxxxx-xxxxx             1/1     Running   0          2m
+scores-service-xxxxx-xxxxx                1/1     Running   0          2m
+scores-service-xxxxx-xxxxx                1/1     Running   0          2m
+frontend-xxxxx-xxxxx                      1/1     Running   0          2m
+frontend-xxxxx-xxxxx                      1/1     Running   0          2m
 ```
 
-✅ **Checkpoint**: All pods running successfully
+✅ **Checkpoint:** Tất cả services đang chạy
 
 ---
 
-## Step 11: Verify Services
+## 🌐 Bước 8: Expose Services
 
-Check that all services are created:
+### 8.1 - Check services
 
 ```bash
-kubectl get svc
+kubectl get svc -n dev
 ```
 
-**Expected Output:**
+**Output:**
 ```
-NAME                        TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
-frontend                    ClusterIP   172.20.100.10    <none>        80/TCP     5m
-api-gateway                 ClusterIP   172.20.100.20    <none>        8080/TCP   5m
-user-management-service     ClusterIP   172.20.100.30    <none>        8081/TCP   5m
-exercises-service           ClusterIP   172.20.100.40    <none>        8082/TCP   5m
-scores-service              ClusterIP   172.20.100.50    <none>        8083/TCP   5m
+NAME                        TYPE           CLUSTER-IP      EXTERNAL-IP                          PORT(S)
+api-gateway                 LoadBalancer   10.100.x.x      axxxxx.us-east-1.elb.amazonaws.com   8080:30336/TCP
+frontend                    LoadBalancer   10.100.x.x      axxxxx.us-east-1.elb.amazonaws.com   80:31184/TCP
+user-management-service     ClusterIP      10.100.x.x      <none>                               8081/TCP
+exercises-service           ClusterIP      10.100.x.x      <none>                               8082/TCP
+scores-service              ClusterIP      10.100.x.x      <none>                               8083/TCP
 ```
 
-✅ **Checkpoint**: All services created
+### 8.2 - Get application URLs
+
+```bash
+# Frontend URL
+FRONTEND_URL=$(kubectl get svc frontend -n dev -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "Frontend: http://$FRONTEND_URL"
+
+# API Gateway URL
+API_URL=$(kubectl get svc api-gateway -n dev -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "API Gateway: http://$API_URL:8080"
+```
+
+**Lưu lại 2 URLs này!**
+
+✅ **Checkpoint:** Services đã được expose qua LoadBalancer
 
 ---
 
-## Step 12: Check Ingress and Get Application URLs
+## ✅ Bước 9: Verify Application
 
-Check ingress resources:
+### 9.1 - Test API Gateway
 
 ```bash
-kubectl get ingress
+# Health check
+curl http://$API_URL:8080/health
+
+# Test registration
+curl -X POST http://$API_URL:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "username": "testuser",
+    "password": "password123"
+  }'
 ```
 
-**Expected Output:**
-```
-NAME          CLASS   HOSTS                   ADDRESS                                              PORTS   AGE
-frontend      alb     frontend.example.com    k8s-default-frontend-xxxxx.us-east-1.elb.amazonaws.com   80      5m
-api-gateway   alb     api.example.com         k8s-default-apigatewy-xxxxx.us-east-1.elb.amazonaws.com  80      5m
+**Output mong đợi:**
+```json
+{
+  "message": "User registered successfully.",
+  "status": "success"
+}
 ```
 
-**Note**: It may take 2-3 minutes for the ALB (Application Load Balancer) to be provisioned and ADDRESS to appear.
+### 9.2 - Test Login
 
-**Get the frontend URL:**
 ```bash
-kubectl get ingress frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+curl -X POST http://$API_URL:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "password123"
+  }'
 ```
 
-**Example Output:**
-```
-k8s-default-frontend-1234567890.us-east-1.elb.amazonaws.com
+**Output:**
+```json
+{
+  "auth_token": "eyJhbGci...",
+  "data": {
+    "email": "test@example.com",
+    "username": "testuser"
+  },
+  "status": "success"
+}
 ```
 
-**Get the API Gateway URL:**
-```bash
-kubectl get ingress api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-```
+### 9.3 - Test Frontend
 
-✅ **Checkpoint**: Ingress configured and ALB URLs available
+Mở browser và truy cập: `http://<FRONTEND_URL>`
+
+**Bạn sẽ thấy:**
+- ✅ Trang web hiển thị
+- ✅ Có thể đăng ký tài khoản
+- ✅ Có thể đăng nhập
+- ✅ Có thể vào Dashboard sau khi login
+- ✅ Có thể xem Scores và Exercises
+
+✅ **Checkpoint:** Application hoạt động hoàn toàn!
 
 ---
 
-## Step 13: Test the Application
+## 🎉 Hoàn Thành!
 
-### Test Frontend
+Bạn đã deploy thành công ứng dụng với:
 
-```bash
-# Get frontend URL
-FRONTEND_URL=$(kubectl get ingress frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-
-# Test with curl
-curl http://$FRONTEND_URL
-
-# Or open in browser
-echo "Open in browser: http://$FRONTEND_URL"
-```
-
-**Expected**: HTML content of the React application
-
-### Test API Gateway
-
-```bash
-# Get API Gateway URL
-API_URL=$(kubectl get ingress api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-
-# Test health endpoint
-curl http://$API_URL/health
-
-# Test API
-curl http://$API_URL/api/users
-```
-
-**Expected**: JSON response from the API
-
-### Test from Browser
-
-1. Open Frontend URL: `http://<frontend-alb-url>`
-2. You should see the application interface
-3. Try interacting with the application
-
-✅ **Checkpoint**: Application is accessible and working
+- ✅ **EKS Cluster** với 2 worker nodes
+- ✅ **RDS PostgreSQL** database
+- ✅ **5 services** running (1 frontend + 4 backend microservices)
+- ✅ **Load Balancers** cho external access
+- ✅ **Auto-scaling** enabled (HPA)
+- ✅ **Monitoring** với health checks
 
 ---
 
-## Step 14: Verify Auto-Scaling
+## 🔧 Useful Commands
 
-Check Horizontal Pod Autoscalers:
-
+### Check Pods
 ```bash
-kubectl get hpa
+kubectl get pods -n dev
+kubectl logs -f <pod-name> -n dev
+kubectl describe pod <pod-name> -n dev
 ```
 
-**Expected Output:**
-```
-NAME                        REFERENCE                              TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
-frontend                    Deployment/frontend                    15%/80%         2         10        2          10m
-api-gateway                 Deployment/api-gateway                 20%/80%         2         10        2          10m
-user-management-service     Deployment/user-management-service     10%/80%         2         5         2          10m
-exercises-service           Deployment/exercises-service           12%/80%         2         5         2          10m
-scores-service              Deployment/scores-service              8%/80%          2         5         2          10m
+### Check Services
+```bash
+kubectl get svc -n dev
+kubectl describe svc <service-name> -n dev
 ```
 
-✅ **Checkpoint**: Auto-scaling configured
+### Check HPA (Auto-scaling)
+```bash
+kubectl get hpa -n dev
+```
+
+### Restart a service
+```bash
+kubectl rollout restart deployment/<service-name> -n dev
+```
+
+### Update a service
+```bash
+# After changing Helm values
+helm upgrade <service-name> ./helm/<service-name> -f ./helm/<service-name>/values-eks.yaml -n dev
+```
+
+### Delete all services
+```bash
+helm uninstall api-gateway -n dev
+helm uninstall user-management-service -n dev
+helm uninstall exercises-service -n dev
+helm uninstall scores-service -n dev
+helm uninstall frontend -n dev
+```
+
+### Destroy infrastructure
+```bash
+cd terraform/environments/dev
+terraform destroy
+```
 
 ---
 
-## Step 15: View Application Logs
+## 🐛 Troubleshooting
 
-View logs from any service:
-
-```bash
-# View frontend logs
-kubectl logs -l app.kubernetes.io/name=frontend --tail=50
-
-# View API gateway logs
-kubectl logs -l app.kubernetes.io/name=api-gateway --tail=50
-
-# Follow logs in real-time
-kubectl logs -l app.kubernetes.io/name=frontend -f
-```
-
-✅ **Checkpoint**: Logs are accessible
-
----
-
-## 🎉 Success! Your Application is Running
-
-You now have:
-- ✅ AWS EKS cluster running
-- ✅ All microservices deployed
-- ✅ Frontend accessible via ALB
-- ✅ API Gateway accessible via ALB
-- ✅ ArgoCD managing deployments
-- ✅ Auto-scaling enabled
-- ✅ Load balancing configured
-
-## Quick Reference Commands
+### Pod không start
 
 ```bash
 # Check pod status
-kubectl get pods
+kubectl get pods -n dev
 
-# Check services
-kubectl get svc
+# Check events
+kubectl describe pod <pod-name> -n dev
 
-# Check ingress
-kubectl get ingress
-
-# View logs
-kubectl logs -l app.kubernetes.io/name=<service-name>
-
-# Describe pod (for troubleshooting)
-kubectl describe pod <pod-name>
-
-# Get events
-kubectl get events --sort-by='.lastTimestamp'
-
-# ArgoCD applications
-kubectl get applications -n argocd
-
-# Access ArgoCD UI
-kubectl get svc argocd-server -n argocd
+# Check logs
+kubectl logs <pod-name> -n dev
 ```
 
-## Application URLs
+**Common issues:**
+- **ImagePullBackOff**: ECR secret chưa đúng hoặc image không tồn tại
+  - Fix: Recreate ECR secret với credentials mới
+- **CrashLoopBackOff**: Container bị crash
+  - Fix: Check logs để xem lỗi gì
+- **Pending**: Node không đủ resources
+  - Fix: Scale up node group hoặc giảm resource requests
 
-Save these for quick access:
+### Service không accessible
 
 ```bash
-# Frontend
-echo "Frontend: http://$(kubectl get ingress frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+# Check service
+kubectl get svc <service-name> -n dev
 
-# API Gateway
-echo "API Gateway: http://$(kubectl get ingress api-gateway -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
-
-# ArgoCD UI
-echo "ArgoCD: https://$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+# Check endpoints
+kubectl get endpoints <service-name> -n dev
 ```
 
-## Making Changes
-
-### Update Application Code
-
-1. Make code changes
-2. Build new Docker image:
-   ```bash
-   cd frontend
-   docker build -t frontend:v1.1.0 .
-   docker tag frontend:v1.1.0 <ECR_URL>/frontend:v1.1.0
-   docker push <ECR_URL>/frontend:v1.1.0
-   ```
-
-3. Update image tag in `helm/frontend/values.yaml`:
-   ```yaml
-   image:
-     tag: v1.1.0
-   ```
-
-4. Commit and push to GitHub
-5. ArgoCD will automatically detect and deploy changes
-
-### Manual Sync (if needed)
+### Database connection issues
 
 ```bash
-# Via ArgoCD UI: Click "Sync" button
+# Verify secret exists
+kubectl get secret user-management-db-secret -n dev
 
-# Via CLI:
-kubectl patch application frontend -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
+# Check pod can connect to RDS
+kubectl exec -it <pod-name> -n dev -- bash
+nc -zv <RDS_ENDPOINT> 5432
 ```
 
-## Troubleshooting
+**Common fix:** Check Security Groups - RDS phải allow inbound từ EKS nodes
 
-See [DEPLOYMENT.md](DEPLOYMENT.md#troubleshooting) for detailed troubleshooting guide.
+### Frontend can't connect to API
 
-## Next Steps
+1. Check API Gateway LoadBalancer URL
+2. Verify nginx config forwards requests correctly
+3. Check CORS settings
+4. Verify frontend env var `VITE_API_URL` is empty (uses nginx proxy)
 
-1. **Custom Domains**: Configure Route53 for custom domains
-2. **HTTPS**: Add SSL/TLS certificates
-3. **Monitoring**: Install Prometheus and Grafana
-4. **Logging**: Set up centralized logging
-5. **Backup**: Configure backup solutions
-6. **CI/CD**: Integrate with GitHub Actions for automated deployments
+---
 
-## Need Help?
+## 📚 Next Steps
 
-- Check logs: `kubectl logs <pod-name>`
-- Check events: `kubectl describe pod <pod-name>`
-- View ArgoCD sync status in UI
-- See [Documentation](README.md) for more details
+1. **Custom Domain**: Setup Route53 for custom domain
+2. **HTTPS**: Add SSL certificate via ACM
+3. **Monitoring**: Install Prometheus & Grafana
+4. **Logging**: Setup CloudWatch Logs or ELK stack
+5. **CI/CD**: Automate deployments via GitHub Actions
+6. **Backup**: Setup database backups
+7. **Security**: Implement WAF, security groups hardening
+
+---
+
+## 📞 Support
+
+Nếu gặp vấn đề:
+1. Check [DEPLOYMENT.md](DEPLOYMENT.md) cho chi tiết hơn
+2. Check logs: `kubectl logs <pod-name> -n dev`
+3. Check events: `kubectl get events -n dev --sort-by='.lastTimestamp'`
+4. Verify all prerequisites được cài đúng version
