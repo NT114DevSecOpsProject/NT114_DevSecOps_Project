@@ -4,7 +4,13 @@
 function getApiBaseUrl(): string {
   // Try env var first
   const envUrl = import.meta.env.VITE_API_URL;
-  if (envUrl) {
+
+  // If explicitly set (including empty string for nginx proxy), use it
+  if (envUrl !== undefined) {
+    // Empty string means use relative URLs (nginx proxy handles routing)
+    if (envUrl === '') {
+      return '';
+    }
     return envUrl.startsWith('http') ? envUrl : `http://${envUrl}`;
   }
 
