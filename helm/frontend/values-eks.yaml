@@ -2,7 +2,7 @@
 replicaCount: 2
 
 image:
-  repository: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/frontend
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/frontend
   pullPolicy: Always
   tag: "latest"
 
@@ -89,4 +89,4 @@ env:
   - name: NODE_ENV
     value: "production"
   - name: VITE_API_URL
-    value: "http://api-gateway:8080"
+    value: "http://aee8a3890198c453b9bdcca0794caf6c-2083561066.us-east-1.elb.amazonaws.com:8080"
