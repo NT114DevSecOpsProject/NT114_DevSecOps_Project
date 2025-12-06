@@ -1175,11 +1175,7 @@ jobs:
             fi
 
             # Show current status
-            kubectl get applications -n argocd -o custom-columns=\
-NAME:.metadata.name,\
-SYNC:.status.sync.status,\
-HEALTH:.status.health.status,\
-MESSAGE:.status.conditions[0].message
+            kubectl get applications -n argocd -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,MESSAGE:.status.conditions[0].message
 
             if [ $i -eq 60 ]; then
               echo "❌ Timeout waiting for applications to sync"
@@ -1361,7 +1357,7 @@ MESSAGE:.status.conditions[0].message
 
           # Get Frontend URL
           FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || FRONTEND_URL="")
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           if [ ! -z "$FRONTEND_URL" ]; then
             echo "Frontend URL: http://${FRONTEND_URL}"
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -1376,7 +1372,7 @@ MESSAGE:.status.conditions[0].message
 
           # Get API Gateway URL
           API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || API_URL="")
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           if [ ! -z "$API_URL" ]; then
             echo "API Gateway URL: http://${API_URL}"
             echo "| API Gateway | http://${API_URL} |" >> $GITHUB_STEP_SUMMARY
@@ -1398,10 +1394,10 @@ MESSAGE:.status.conditions[0].message
           echo "=== Testing Application Endpoints ==="
 
           FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || FRONTEND_URL="")
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
 
           API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || API_URL="")
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
 
           # Wait for ALB to be fully ready
           echo "Waiting 30 seconds for ALB initialization..."
@@ -1469,39 +1465,6 @@ MESSAGE:.status.conditions[0].message
           kubectl get pods -n ${{ inputs.environment }} -o wide >> $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Display Access URLs
-        run: |
-          echo ""
-          echo "=============================================="
-          echo "         APPLICATION ACCESS URLS              "
-          echo "=============================================="
-          echo ""
-
-          # Get Frontend URL
-          FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || FRONTEND_URL=""
-          if [ ! -z "$FRONTEND_URL" ]; then
-            echo "Frontend URL: http://${FRONTEND_URL}"
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
-            echo "- **Frontend:** http://${FRONTEND_URL}" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Frontend: Ingress not ready yet"
-          fi
-
-          # Get API Gateway URL
-          API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || API_URL=""
-          if [ ! -z "$API_URL" ]; then
-            echo "API Gateway URL: http://${API_URL}"
-            echo "- **API Gateway:** http://${API_URL}" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "API Gateway: Ingress not ready yet"
-          fi
-
-          echo ""
-          echo "Note: ALB provisioning may take 2-5 minutes."
-          echo "If URLs are empty, run: kubectl get ingress -n ${{ inputs.environment }}"
-          echo ""
-
       - name: Get ArgoCD Access Info
         if: inputs.deployment_method == 'argocd'
         run: |
@@ -1509,10 +1472,10 @@ MESSAGE:.status.conditions[0].message
           echo "#### ArgoCD Access" >> $GITHUB_STEP_SUMMARY
 
           # Get ArgoCD password
-          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d) || ARGOCD_PASSWORD="<not available>"
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "<not available>")
 
           # Get ArgoCD URL
-          ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || ARGOCD_URL="<pending>"
+          ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "<pending>")
 
           echo "- **ArgoCD URL:** https://${ARGOCD_URL}" >> $GITHUB_STEP_SUMMARY
           echo "- **Username:** admin" >> $GITHUB_STEP_SUMMARY
@@ -1596,7 +1559,7 @@ MESSAGE:.status.conditions[0].message
           kubectl get ingress -n ${{ inputs.environment }} -o wide
 
           # Frontend
-          FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || true
+          FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           if [ ! -z "$FRONTEND_URL" ]; then
             echo ""
             echo "Frontend URL: http://${FRONTEND_URL}"
@@ -1604,7 +1567,7 @@ MESSAGE:.status.conditions[0].message
           fi
 
           # API Gateway
-          API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || true
+          API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           if [ ! -z "$API_URL" ]; then
             echo "API Gateway URL: http://${API_URL}"
             echo "- **API Gateway:** http://${API_URL}" >> $GITHUB_STEP_SUMMARY
@@ -1615,7 +1578,7 @@ MESSAGE:.status.conditions[0].message
           echo "### Health Check Results" >> $GITHUB_STEP_SUMMARY
 
           # Get Frontend URL and test
-          FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || true
+          FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           if [ ! -z "$FRONTEND_URL" ]; then
             echo "Testing Frontend at http://${FRONTEND_URL}..."
             if curl -sf --max-time 10 "http://${FRONTEND_URL}" > /dev/null; then
@@ -1626,7 +1589,7 @@ MESSAGE:.status.conditions[0].message
           fi
 
           # Get API Gateway URL and test
-          API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null) || true
+          API_URL=$(kubectl get ingress api-gateway -n ${{ inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           if [ ! -z "$API_URL" ]; then
             echo "Testing API Gateway at http://${API_URL}/health..."
             if curl -sf --max-time 10 "http://${API_URL}/health"; then
