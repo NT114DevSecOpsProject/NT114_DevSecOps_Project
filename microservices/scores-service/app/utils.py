@@ -49,7 +49,7 @@ def authenticate(f):
 def verify_token_with_user_service(token):
     """Gọi user-service xác thực token, chỉ trả về dict user_data hợp lệ; sai cấu trúc -> None."""
     try:
-        url = f"{USER_MANAGEMENT_SERVICE_URL}/verify"
+        url = f"{USER_MANAGEMENT_SERVICE_URL}/auth/status"
         headers = {"Authorization": f"Bearer {token}"}
         resp = requests.get(url, headers=headers, timeout=3)
         if resp.status_code != 200:
