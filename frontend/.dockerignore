@@ -60,4 +60,4 @@ docs/
 # Docker files (not needed in image)
 Dockerfile
 docker-compose.yml
-.dockerignore
+.dockerignore# Frontend rebuild 20251206141109
