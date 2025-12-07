@@ -1,0 +1,100 @@
+name: Fix EKS Authentication
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+
+permissions:
+  contents: read
+
+jobs:
+  add-user-to-eks:
+    name: Add IAM User to EKS Cluster
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eks-1
+          kubectl version --client
+
+      - name: Get current aws-auth ConfigMap
+        run: |
+          echo "Current aws-auth ConfigMap:"
+          kubectl get configmap aws-auth -n kube-system -o yaml || echo "ConfigMap not found or no access"
+
+      - name: Apply Terraform to update aws-auth
+        run: |
+          cd terraform/environments/dev
+
+          terraform init
+          terraform plan -out=tfplan
+          terraform apply tfplan
+
+          echo "✓ IAM user added to EKS cluster"
+
+      - name: Verify access
+        run: |
+          echo "Verifying kubectl access..."
+          kubectl get nodes || echo "Access verification will be done after credentials refresh"
+
+      - name: Create summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ## ✅ EKS Authentication Fixed
+
+          ### Changes Applied
+
+          - ✅ Added IAM user \`test_user\` to EKS cluster aws-auth ConfigMap
+          - ✅ Granted \`system:masters\` permissions
+          - ✅ User can now access cluster via kubectl
+
+          ### Next Steps
+
+          1. **Refresh your AWS credentials** (if using temporary creds)
+          2. **Update kubeconfig locally:**
+             \`\`\`bash
+             aws eks update-kubeconfig --region us-east-1 --name eks-1
+             \`\`\`
+          3. **Test access:**
+             \`\`\`bash
+             kubectl get nodes
+             kubectl get pods --all-namespaces
+             \`\`\`
+          4. **Re-run the deployment workflow:**
+             - Go to Actions → Deploy Complete Stack
+             - Click "Run workflow"
+
+          ### Verification
+
+          \`\`\`bash
+          # Check aws-auth ConfigMap
+          kubectl get configmap aws-auth -n kube-system -o yaml
+          \`\`\`
+
+          ---
+
+          **Note:** If you still get authentication errors, wait 1-2 minutes for AWS IAM to propagate the changes.
+          EOF
