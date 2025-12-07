@@ -1,0 +1,241 @@
+name: Deploy Complete Stack (App + ArgoCD)
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: eks-1
+  NAMESPACE: dev
+  AWS_ACCOUNT_ID: "039612870452"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Application and ArgoCD
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.13.0'
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+          kubectl version --client
+          kubectl get nodes || echo "Nodes will be checked later"
+
+      - name: Create namespace
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+          echo "✓ Namespace created"
+
+      - name: Get RDS endpoint from Terraform
+        id: rds
+        run: |
+          cd terraform/environments/dev
+          terraform init || true
+          RDS_ENDPOINT=$(terraform output -raw database_endpoint 2>/dev/null || echo "nt114-postgres-dev.c8il5atuhyie.us-east-1.rds.amazonaws.com")
+          echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "RDS Endpoint: $RDS_ENDPOINT"
+
+      - name: Create Kubernetes secrets
+        run: |
+          # ECR pull secret
+          ECR_PASSWORD=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
+          kubectl delete secret ecr-secret -n ${{ env.NAMESPACE }} 2>/dev/null || true
+          kubectl create secret docker-registry ecr-secret \
+            --docker-server=${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com \
+            --docker-username=AWS \
+            --docker-password=$ECR_PASSWORD \
+            -n ${{ env.NAMESPACE }}
+
+          # Database secret
+          kubectl delete secret user-management-db-secret -n ${{ env.NAMESPACE }} 2>/dev/null || true
+          kubectl create secret generic user-management-db-secret \
+            --from-literal=DB_HOST='${{ steps.rds.outputs.rds_endpoint }}' \
+            --from-literal=DB_PORT='5432' \
+            --from-literal=DB_NAME='auth_db' \
+            --from-literal=DB_USER='postgres' \
+            --from-literal=DB_PASSWORD='postgres123' \
+            -n ${{ env.NAMESPACE }}
+
+          echo "✓ Secrets created"
+
+      - name: Deploy services with Helm
+        run: |
+          cd helm
+
+          echo "📦 Deploying API Gateway..."
+          helm upgrade --install api-gateway ./api-gateway \
+            -f ./api-gateway/values-eks.yaml \
+            -n ${{ env.NAMESPACE }} \
+            --wait --timeout 5m
+
+          echo "📦 Deploying User Management Service..."
+          helm upgrade --install user-management-service ./user-management-service \
+            -f ./user-management-service/values-eks.yaml \
+            -n ${{ env.NAMESPACE }} \
+            --wait --timeout 5m
+
+          echo "📦 Deploying Exercises Service..."
+          helm upgrade --install exercises-service ./exercises-service \
+            -f ./exercises-service/values-eks.yaml \
+            -n ${{ env.NAMESPACE }} \
+            --wait --timeout 5m
+
+          echo "📦 Deploying Scores Service..."
+          helm upgrade --install scores-service ./scores-service \
+            -f ./scores-service/values-eks.yaml \
+            -n ${{ env.NAMESPACE }} \
+            --wait --timeout 5m
+
+          echo "📦 Deploying Frontend..."
+          helm upgrade --install frontend ./frontend \
+            -f ./frontend/values-eks.yaml \
+            -n ${{ env.NAMESPACE }} \
+            --wait --timeout 5m
+
+          echo "✓ All services deployed"
+
+      - name: Wait for pods to be ready
+        run: |
+          echo "Waiting for pods..."
+          kubectl wait --for=condition=Ready pods --all -n ${{ env.NAMESPACE }} --timeout=300s || true
+          kubectl get pods -n ${{ env.NAMESPACE }}
+
+      - name: Install ArgoCD
+        run: |
+          echo "📦 Installing ArgoCD..."
+          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+          echo "Waiting for ArgoCD pods..."
+          sleep 30
+          kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+
+          echo "Exposing ArgoCD UI via LoadBalancer..."
+          kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
+
+          echo "✓ ArgoCD installed"
+
+      - name: Get access information
+        id: access
+        run: |
+          echo "Waiting for LoadBalancers..."
+          sleep 60
+
+          # ArgoCD credentials
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+          ARGOCD_HOST=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          if [ -z "$ARGOCD_HOST" ]; then
+            ARGOCD_HOST=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "Pending")
+          fi
+
+          # Application URLs from Ingress
+          FRONTEND_HOST=$(kubectl get ingress -n ${{ env.NAMESPACE }} -o jsonpath='{.items[?(@.metadata.name=="frontend")].status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          if [ -z "$FRONTEND_HOST" ]; then
+            FRONTEND_HOST="Pending - Check: kubectl get ingress -n ${{ env.NAMESPACE }}"
+          fi
+
+          API_HOST=$(kubectl get ingress -n ${{ env.NAMESPACE }} -o jsonpath='{.items[?(@.metadata.name=="api-gateway")].status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          if [ -z "$API_HOST" ]; then
+            API_HOST="Pending - Check: kubectl get ingress -n ${{ env.NAMESPACE }}"
+          fi
+
+          echo "argocd_password=$ARGOCD_PASSWORD" >> $GITHUB_OUTPUT
+          echo "argocd_url=$ARGOCD_HOST" >> $GITHUB_OUTPUT
+          echo "frontend_url=$FRONTEND_HOST" >> $GITHUB_OUTPUT
+          echo "api_url=$API_HOST" >> $GITHUB_OUTPUT
+
+      - name: Create deployment summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ## 🚀 Deployment Complete!
+
+          ### 📱 Application Access
+
+          **Frontend:**
+          - URL: http://${{ steps.access.outputs.frontend_url }}
+
+          **API Gateway:**
+          - URL: http://${{ steps.access.outputs.api_url }}
+
+          ### 🔧 ArgoCD Access
+
+          **ArgoCD UI:**
+          - URL: http://${{ steps.access.outputs.argocd_url }}
+          - Username: \`admin\`
+          - Password: \`${{ steps.access.outputs.argocd_password }}\`
+
+          ### 📊 Deployed Services
+
+          - ✅ API Gateway (2 replicas)
+          - ✅ User Management Service (2 replicas)
+          - ✅ Exercises Service (2 replicas)
+          - ✅ Scores Service (2 replicas)
+          - ✅ Frontend (2 replicas)
+          - ✅ ArgoCD
+
+          ### 🔍 Verification Commands
+
+          \`\`\`bash
+          # Check pods
+          kubectl get pods -n ${{ env.NAMESPACE }}
+
+          # Check ingress
+          kubectl get ingress -n ${{ env.NAMESPACE }}
+
+          # Check ArgoCD
+          kubectl get pods -n argocd
+          \`\`\`
+
+          ### ⚠️ Note
+
+          - LoadBalancers may take 5-10 minutes to become fully available
+          - If URLs show "Pending", wait a few minutes and check ingress status
+          - ArgoCD initial password is auto-generated and shown above
+
+          ---
+
+          **Next Steps:**
+          1. Access ArgoCD UI and login with credentials above
+          2. Access Frontend URL to test application
+          3. Configure ArgoCD Applications for GitOps (if needed)
+          EOF
+
+      - name: Display access information in logs
+        run: |
+          echo "=========================================="
+          echo "✓ DEPLOYMENT COMPLETE!"
+          echo "=========================================="
+          echo ""
+          echo "📱 APPLICATION ACCESS:"
+          echo "  Frontend:    http://${{ steps.access.outputs.frontend_url }}"
+          echo "  API Gateway: http://${{ steps.access.outputs.api_url }}"
+          echo ""
+          echo "🔧 ARGOCD ACCESS:"
+          echo "  URL:      http://${{ steps.access.outputs.argocd_url }}"
+          echo "  Username: admin"
+          echo "  Password: ${{ steps.access.outputs.argocd_password }}"
+          echo ""
+          echo "=========================================="
