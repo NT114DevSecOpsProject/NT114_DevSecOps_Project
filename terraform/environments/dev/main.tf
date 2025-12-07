@@ -152,11 +152,11 @@ module "rds_postgresql" {
   private_subnet_ids     = module.vpc.private_subnets
   eks_security_group_ids = [module.eks_cluster.cluster_security_group_id]
 
-  backup_retention_period = 0 # No backups for demo
+  backup_retention_period = 1 # Enable backups for destroy-restore workflow
   backup_window           = "03:00-04:00"
   maintenance_window      = "sun:04:00-sun:05:00"
 
-  skip_final_snapshot       = true # Skip snapshot for demo
+  skip_final_snapshot       = false # Create final snapshot before destroy
   final_snapshot_identifier = var.rds_final_snapshot_identifier
   deletion_protection       = false # No deletion protection for demo
 

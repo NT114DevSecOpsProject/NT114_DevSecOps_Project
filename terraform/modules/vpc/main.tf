@@ -16,6 +16,9 @@ module "vpc" {
   enable_dns_hostnames = true
   enable_dns_support   = true
 
+  # Enable S3 VPC Gateway Endpoint (FREE) to reduce NAT Gateway costs
+  enable_s3_endpoint = true
+
   public_subnet_tags = {
     "kubernetes.io/role/elb" = 1
   }

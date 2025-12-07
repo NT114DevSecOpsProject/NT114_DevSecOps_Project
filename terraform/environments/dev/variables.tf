@@ -140,7 +140,7 @@ variable "node_group_name" {
 variable "node_instance_types" {
   description = "List of instance types for the node group"
   type        = list(string)
-  default     = ["t3.large"]
+  default     = ["t3.medium"]  # Changed from t3.large to save 50% on node costs
 }
 
 variable "node_capacity_type" {
