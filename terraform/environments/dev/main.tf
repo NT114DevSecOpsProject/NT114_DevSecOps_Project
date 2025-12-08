@@ -203,34 +203,19 @@ resource "aws_s3_bucket_public_access_block" "migration" {
   restrict_public_buckets = true
 }
 
-# Data source to get EKS node security group
-data "aws_security_groups" "eks_nodes" {
-  filter {
-    name   = "tag:aws:eks:cluster-name"
-    values = [module.eks_cluster.cluster_name]
-  }
-
-  filter {
-    name   = "tag:Name"
-    values = ["*node*"]
-  }
-
-  depends_on = [module.eks_nodegroup]
-}
-
-# Allow EKS nodes to access RDS
-resource "aws_security_group_rule" "rds_from_eks_nodes" {
+# Allow EKS cluster to access RDS (includes both control plane and worker nodes)
+resource "aws_security_group_rule" "rds_from_eks_cluster" {
   type                     = "ingress"
   from_port                = var.rds_port
   to_port                  = var.rds_port
   protocol                 = "tcp"
-  source_security_group_id = data.aws_security_groups.eks_nodes.ids[0]
+  source_security_group_id = module.eks_cluster.cluster_security_group_id
   security_group_id        = module.rds_postgresql.security_group_id
-  description              = "PostgreSQL from EKS Worker Nodes"
+  description              = "PostgreSQL from EKS Cluster"
 
   depends_on = [
     module.rds_postgresql,
-    module.eks_nodegroup
+    module.eks_cluster
   ]
 }
 
