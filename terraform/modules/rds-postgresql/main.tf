@@ -97,15 +97,6 @@ resource "aws_security_group" "rds" {
     security_groups = var.eks_security_group_ids
   }
 
-  # PostgreSQL access from Bastion Host
-  ingress {
-    description     = "PostgreSQL from Bastion Host"
-    from_port       = var.port
-    to_port         = var.port
-    protocol        = "tcp"
-    security_groups = var.bastion_security_group_ids
-  }
-
   egress {
     from_port   = 0
     to_port     = 0

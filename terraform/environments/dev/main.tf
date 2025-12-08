@@ -203,6 +203,22 @@ resource "aws_s3_bucket_public_access_block" "migration" {
   restrict_public_buckets = true
 }
 
+# Allow bastion host to access RDS (separate rule to avoid circular dependency)
+resource "aws_security_group_rule" "rds_from_bastion" {
+  type                     = "ingress"
+  from_port                = var.rds_port
+  to_port                  = var.rds_port
+  protocol                 = "tcp"
+  source_security_group_id = module.bastion_host.security_group_id
+  security_group_id        = module.rds_postgresql.security_group_id
+  description              = "PostgreSQL from Bastion Host"
+
+  depends_on = [
+    module.rds_postgresql,
+    module.bastion_host
+  ]
+}
+
 # Bastion Host Module - Simplified for demo
 module "bastion_host" {
   source = "../../modules/bastion-host"
