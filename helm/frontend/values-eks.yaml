@@ -88,5 +88,10 @@ readinessProbe:
 env:
   - name: NODE_ENV
     value: "production"
+  # API_GATEWAY_URL is used by nginx to proxy requests to backend
+  # Update this with your actual API Gateway LoadBalancer URL
+  # Get URL with: kubectl get svc api-gateway -n dev -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  - name: API_GATEWAY_URL
+    value: "http://aafb5d739a4bf435eb9e836f1391d91b-1580858419.us-east-1.elb.amazonaws.com:8080"
   - name: VITE_API_URL
-    value: "http://aee8a3890198c453b9bdcca0794caf6c-2083561066.us-east-1.elb.amazonaws.com:8080"
+    value: ""
