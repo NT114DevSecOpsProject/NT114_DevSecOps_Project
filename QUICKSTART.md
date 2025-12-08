@@ -564,15 +564,280 @@ nc -zv <RDS_ENDPOINT> 5432
 
 ---
 
+## 🔄 Bước 10: Setup GitOps với ArgoCD (Recommended)
+
+ArgoCD giúp tự động deploy applications từ Git repository, giúp quản lý deployments dễ dàng hơn và đảm bảo Git là single source of truth.
+
+### 10.1 - Install ArgoCD
+
+```bash
+# Create argocd namespace
+kubectl create namespace argocd
+
+# Install ArgoCD
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+```
+
+⏱️ **Thời gian:** ~2-3 phút
+
+### 10.2 - Expose ArgoCD Server
+
+```bash
+# Patch argocd-server service to LoadBalancer
+kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
+
+# Wait for LoadBalancer to be ready
+kubectl get svc argocd-server -n argocd -w
+```
+
+Đợi cho đến khi thấy EXTERNAL-IP (Ctrl+C để thoát watch):
+
+```
+NAME            TYPE           CLUSTER-IP      EXTERNAL-IP                                            PORT(S)
+argocd-server   LoadBalancer   10.100.x.x      axxxxx.us-east-1.elb.amazonaws.com                    80:xxxxx/TCP,443:xxxxx/TCP
+```
+
+### 10.3 - Get ArgoCD Admin Password
+
+```bash
+# Get initial admin password
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo
+```
+
+**Lưu lại password này!**
+
+### 10.4 - Access ArgoCD UI
+
+```bash
+# Get ArgoCD URL
+ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "ArgoCD URL: http://$ARGOCD_URL"
+```
+
+Mở browser và đăng nhập:
+- **URL**: `http://<ARGOCD_URL>`
+- **Username**: `admin`
+- **Password**: `<password từ bước 10.3>`
+
+### 10.5 - Deploy Applications với ArgoCD
+
+#### Option A: Deploy tất cả applications cùng lúc
+
+```bash
+# Apply all ArgoCD application manifests
+kubectl apply -f argocd/applications/
+```
+
+#### Option B: Deploy từng application riêng
+
+```bash
+# Deploy API Gateway
+kubectl apply -f argocd/applications/api-gateway.yaml
+
+# Deploy User Management Service
+kubectl apply -f argocd/applications/user-management-service.yaml
+
+# Deploy Exercises Service
+kubectl apply -f argocd/applications/exercises-service.yaml
+
+# Deploy Scores Service
+kubectl apply -f argocd/applications/scores-service.yaml
+
+# Deploy Frontend
+kubectl apply -f argocd/applications/frontend.yaml
+```
+
+### 10.6 - Verify ArgoCD Applications
+
+```bash
+# Check applications status
+kubectl get applications -n argocd
+```
+
+**Output mong đợi:**
+```
+NAME                      SYNC STATUS   HEALTH STATUS
+api-gateway               Synced        Healthy
+exercises-service         Synced        Healthy
+frontend                  Synced        Healthy
+scores-service            Synced        Healthy
+user-management-service   Synced        Healthy
+```
+
+### 10.7 - Monitor Sync Progress
+
+**Via CLI:**
+```bash
+# Watch all applications
+kubectl get applications -n argocd -w
+
+# Get detailed status of specific app
+kubectl describe application api-gateway -n argocd
+```
+
+**Via ArgoCD UI:**
+1. Mở ArgoCD UI trong browser
+2. Bạn sẽ thấy tất cả 5 applications
+3. Click vào bất kỳ application để xem resource tree
+4. Màu xanh = Healthy & Synced
+
+### 10.8 - Verify Auto-Sync
+
+ArgoCD đã được configure với auto-sync enabled. Test bằng cách:
+
+```bash
+# Edit một Helm value (ví dụ: change replica count)
+cd helm/api-gateway
+# Edit values-eks.yaml, change replicaCount từ 2 thành 3
+
+# Commit và push
+git add values-eks.yaml
+git commit -m "test: increase api-gateway replicas to 3"
+git push origin main
+
+# ArgoCD sẽ tự động detect và sync trong vòng ~3 phút
+# Watch trong ArgoCD UI hoặc CLI
+kubectl get applications -n argocd -w
+```
+
+✅ **Checkpoint:** ArgoCD đang quản lý tất cả applications
+
+---
+
+## 🎯 GitOps Workflow với ArgoCD
+
+Sau khi setup ArgoCD, workflow của bạn sẽ đơn giản hơn:
+
+### Update Application
+
+**Before (Manual Helm):**
+```bash
+# Edit Helm values
+vim helm/api-gateway/values-eks.yaml
+
+# Apply manually
+helm upgrade api-gateway ./helm/api-gateway -f ./helm/api-gateway/values-eks.yaml -n dev
+```
+
+**After (GitOps with ArgoCD):**
+```bash
+# Edit Helm values
+vim helm/api-gateway/values-eks.yaml
+
+# Commit and push
+git add helm/api-gateway/values-eks.yaml
+git commit -m "feat: update api-gateway configuration"
+git push origin main
+
+# ArgoCD tự động deploy! Không cần chạy helm upgrade
+```
+
+### Rollback Application
+
+**Via ArgoCD UI:**
+1. Vào application page
+2. Click **History and Rollback**
+3. Chọn revision cũ hơn
+4. Click **Rollback**
+
+**Via CLI:**
+```bash
+# View history
+kubectl get applications api-gateway -n argocd -o yaml | grep -A 10 status:
+
+# ArgoCD tự động rollback nếu Git được revert
+git revert <commit-hash>
+git push origin main
+```
+
+### Add New Service
+
+1. Tạo Helm chart mới trong `helm/<new-service>/`
+2. Tạo ArgoCD Application manifest:
+
+```yaml
+# argocd/applications/new-service.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: new-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/NT114DevSecOpsProject/NT114_DevSecOps_Project.git
+    targetRevision: main
+    path: helm/new-service
+    helm:
+      valueFiles:
+        - values-eks.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+3. Apply manifest:
+```bash
+kubectl apply -f argocd/applications/new-service.yaml
+```
+
+✅ ArgoCD sẽ tự động deploy service mới!
+
+---
+
+## 📊 ArgoCD Best Practices
+
+### 1. Git là Source of Truth
+- ❌ KHÔNG bao giờ edit resources trực tiếp trên cluster (`kubectl edit`)
+- ✅ LUÔN edit trong Git repository và push
+
+### 2. Use Separate Branches
+```bash
+# Create feature branch
+git checkout -b feature/update-api
+
+# Make changes
+vim helm/api-gateway/values-eks.yaml
+
+# Test on feature branch first
+# Update ArgoCD app to point to feature branch temporarily
+kubectl patch app api-gateway -n argocd --type merge -p '{"spec":{"source":{"targetRevision":"feature/update-api"}}}'
+
+# If OK, merge to main
+git checkout main
+git merge feature/update-api
+git push origin main
+
+# ArgoCD auto-syncs from main branch
+```
+
+### 3. Monitor Sync Status
+```bash
+# Setup alerts for sync failures (example)
+kubectl get applications -n argocd -o json | jq '.items[] | select(.status.health.status != "Healthy")'
+```
+
+### 4. Documentation
+Đọc thêm ArgoCD documentation tại: `argocd/README.md`
+
+---
+
 ## 📚 Next Steps
 
 1. **Custom Domain**: Setup Route53 for custom domain
 2. **HTTPS**: Add SSL certificate via ACM
 3. **Monitoring**: Install Prometheus & Grafana
 4. **Logging**: Setup CloudWatch Logs or ELK stack
-5. **CI/CD**: Automate deployments via GitHub Actions
+5. **CI/CD**: Fully automate with GitHub Actions + ArgoCD
 6. **Backup**: Setup database backups
 7. **Security**: Implement WAF, security groups hardening
+8. **Multi-Environment**: Create staging/production with ArgoCD ApplicationSets
 
 ---
 
@@ -580,6 +845,8 @@ nc -zv <RDS_ENDPOINT> 5432
 
 Nếu gặp vấn đề:
 1. Check [DEPLOYMENT.md](DEPLOYMENT.md) cho chi tiết hơn
-2. Check logs: `kubectl logs <pod-name> -n dev`
-3. Check events: `kubectl get events -n dev --sort-by='.lastTimestamp'`
-4. Verify all prerequisites được cài đúng version
+2. Check [argocd/README.md](argocd/README.md) cho ArgoCD troubleshooting
+3. Check logs: `kubectl logs <pod-name> -n dev`
+4. Check events: `kubectl get events -n dev --sort-by='.lastTimestamp'`
+5. Check ArgoCD app status: `kubectl get applications -n argocd`
+6. Verify all prerequisites được cài đúng version
