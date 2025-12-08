@@ -140,3 +140,35 @@ resource "aws_eks_access_policy_association" "github_actions_user_policy" {
     ignore_changes = [access_scope]
   }
 }
+
+# EKS Access Entry for Test User
+# This allows test_user to authenticate with the EKS cluster via kubectl
+resource "aws_eks_access_entry" "test_user_access" {
+  count         = var.create_test_user_access_entry ? 1 : 0
+  cluster_name  = var.cluster_name
+  principal_arn = var.test_user_arn
+  type          = "STANDARD"
+
+  tags = var.tags
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
+}
+
+# EKS Access Policy Association for Test User
+resource "aws_eks_access_policy_association" "test_user_policy" {
+  count         = var.create_test_user_access_entry && var.create_test_user_access_policy ? 1 : 0
+  cluster_name  = var.cluster_name
+  policy_arn    = var.test_user_access_policy_arn
+  principal_arn = var.test_user_arn
+
+  access_scope {
+    type       = var.test_user_access_scope_type
+    namespaces = var.test_user_access_scope_namespaces
+  }
+
+  lifecycle {
+    ignore_changes = [access_scope]
+  }
+}

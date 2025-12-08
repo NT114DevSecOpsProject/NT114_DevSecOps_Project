@@ -1,0 +1,1523 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+dev/.deployment
+dev/.terraform.lock.hcl
+dev/api-gateway-fix-plan
+dev/docs/code-standards.md
+dev/docs/design-guidelines.md
+dev/docs/project-roadmap.md
+dev/helm-providers.tf.disabled
+dev/main.tf
+dev/outputs.tf
+dev/providers-alternative.tf.example
+dev/providers.tf
+dev/README.md
+dev/terraform.tfvars.example
+dev/tfplan
+dev/tfplan-alb-fix
+dev/variables.tf
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="dev/.deployment">
+# Deployment Trigger
+# This file is used to trigger infrastructure deployment
+# Last deployment: 2025-11-07
+
+Infrastructure will be created with lifecycle rules to reuse existing resources.
+</file>
+
+<file path="dev/.terraform.lock.hcl">
+# This file is maintained automatically by "terraform init".
+# Manual edits may be lost in future updates.
+
+provider "registry.terraform.io/hashicorp/aws" {
+  version     = "5.100.0"
+  constraints = ">= 4.33.0, >= 5.0.0, >= 5.79.0, >= 5.95.0, < 6.0.0"
+  hashes = [
+    "h1:H3mU/7URhP0uCRGK8jeQRKxx2XFzEqLiOq/L2Bbiaxs=",
+    "h1:edXOJWE4ORX8Fm+dpVpICzMZJat4AX0VRCAy/xkcOc0=",
+    "zh:054b8dd49f0549c9a7cc27d159e45327b7b65cf404da5e5a20da154b90b8a644",
+    "zh:0b97bf8d5e03d15d83cc40b0530a1f84b459354939ba6f135a0086c20ebbe6b2",
+    "zh:1589a2266af699cbd5d80737a0fe02e54ec9cf2ca54e7e00ac51c7359056f274",
+    "zh:6330766f1d85f01ae6ea90d1b214b8b74cc8c1badc4696b165b36ddd4cc15f7b",
+    "zh:7c8c2e30d8e55291b86fcb64bdf6c25489d538688545eb48fd74ad622e5d3862",
+    "zh:99b1003bd9bd32ee323544da897148f46a527f622dc3971af63ea3e251596342",
+    "zh:9b12af85486a96aedd8d7984b0ff811a4b42e3d88dad1a3fb4c0b580d04fa425",
+    "zh:9f8b909d3ec50ade83c8062290378b1ec553edef6a447c56dadc01a99f4eaa93",
+    "zh:aaef921ff9aabaf8b1869a86d692ebd24fbd4e12c21205034bb679b9caf883a2",
+    "zh:ac882313207aba00dd5a76dbd572a0ddc818bb9cbf5c9d61b28fe30efaec951e",
+    "zh:bb64e8aff37becab373a1a0cc1080990785304141af42ed6aa3dd4913b000421",
+    "zh:dfe495f6621df5540d9c92ad40b8067376350b005c637ea6efac5dc15028add4",
+    "zh:f0ddf0eaf052766cfe09dea8200a946519f653c384ab4336e2a4a64fdd6310e9",
+    "zh:f1b7e684f4c7ae1eed272b6de7d2049bb87a0275cb04dbb7cda6636f600699c9",
+    "zh:ff461571e3f233699bf690db319dfe46aec75e58726636a0d97dd9ac6e32fb70",
+  ]
+}
+
+provider "registry.terraform.io/hashicorp/cloudinit" {
+  version     = "2.3.7"
+  constraints = ">= 2.0.0"
+  hashes = [
+    "h1:h1Pr6uNwq+iDEGrnQJEHzOTz+yVTW0AJgZrGXuoO4Qs=",
+    "h1:iZ27qylcH/2bs685LJTKOKcQ+g7cF3VwN3kHMrzm4Ow=",
+    "zh:06f1c54e919425c3139f8aeb8fcf9bceca7e560d48c9f0c1e3bb0a8ad9d9da1e",
+    "zh:0e1e4cf6fd98b019e764c28586a386dc136129fef50af8c7165a067e7e4a31d5",
+    "zh:1871f4337c7c57287d4d67396f633d224b8938708b772abfc664d1f80bd67edd",
+    "zh:2b9269d91b742a71b2248439d5e9824f0447e6d261bfb86a8a88528609b136d1",
+    "zh:3d8ae039af21426072c66d6a59a467d51f2d9189b8198616888c1b7fc42addc7",
+    "zh:3ef4e2db5bcf3e2d915921adced43929214e0946a6fb11793085d9a48995ae01",
+    "zh:42ae54381147437c83cbb8790cc68935d71b6357728a154109d3220b1beb4dc9",
+    "zh:4496b362605ae4cbc9ef7995d102351e2fe311897586ffc7a4a262ccca0c782a",
+    "zh:652a2401257a12706d32842f66dac05a735693abcb3e6517d6b5e2573729ba13",
+    "zh:7406c30806f5979eaed5f50c548eced2ea18ea121e01801d2f0d4d87a04f6a14",
+    "zh:7848429fd5a5bcf35f6fee8487df0fb64b09ec071330f3ff240c0343fe2a5224",
+    "zh:78d5eefdd9e494defcb3c68d282b8f96630502cac21d1ea161f53cfe9bb483b3",
+  ]
+}
+
+provider "registry.terraform.io/hashicorp/helm" {
+  version     = "2.17.0"
+  constraints = "~> 2.14"
+  hashes = [
+    "h1:K5FEjxvDnxb1JF1kG1xr8J3pNGxoaR3Z0IBG9Csm/Is=",
+    "h1:rsqAO9oKyDMLiysQqrWEzf9CNtU9NJtwEGk7bSItC9g=",
+    "zh:06fb4e9932f0afc1904d2279e6e99353c2ddac0d765305ce90519af410706bd4",
+    "zh:104eccfc781fc868da3c7fec4385ad14ed183eb985c96331a1a937ac79c2d1a7",
+    "zh:129345c82359837bb3f0070ce4891ec232697052f7d5ccf61d43d818912cf5f3",
+    "zh:3956187ec239f4045975b35e8c30741f701aa494c386aaa04ebabffe7749f81c",
+    "zh:66a9686d92a6b3ec43de3ca3fde60ef3d89fb76259ed3313ca4eb9bb8c13b7dd",
+    "zh:88644260090aa621e7e8083585c468c8dd5e09a3c01a432fb05da5c4623af940",
+    "zh:a248f650d174a883b32c5b94f9e725f4057e623b00f171936dcdcc840fad0b3e",
+    "zh:aa498c1f1ab93be5c8fbf6d48af51dc6ef0f10b2ea88d67bcb9f02d1d80d3930",
+    "zh:bf01e0f2ec2468c53596e027d376532a2d30feb72b0b5b810334d043109ae32f",
+    "zh:c46fa84cc8388e5ca87eb575a534ebcf68819c5a5724142998b487cb11246654",
+    "zh:d0c0f15ffc115c0965cbfe5c81f18c2e114113e7a1e6829f6bfd879ce5744fbb",
+    "zh:f569b65999264a9416862bca5cd2a6177d94ccb0424f3a4ef424428912b9cb3c",
+  ]
+}
+
+provider "registry.terraform.io/hashicorp/kubernetes" {
+  version     = "2.38.0"
+  constraints = "~> 2.30"
+  hashes = [
+    "h1:1OF0rDUteVdoX04BrtmTc0T4NOo6+D0utmK6hM0EzZw=",
+    "h1:5CkveFo5ynsLdzKk+Kv+r7+U9rMrNjfZPT3a0N/fhgE=",
+    "zh:0af928d776eb269b192dc0ea0f8a3f0f5ec117224cd644bdacdc682300f84ba0",
+    "zh:1be998e67206f7cfc4ffe77c01a09ac91ce725de0abaec9030b22c0a832af44f",
+    "zh:326803fe5946023687d603f6f1bab24de7af3d426b01d20e51d4e6fbe4e7ec1b",
+    "zh:4a99ec8d91193af961de1abb1f824be73df07489301d62e6141a656b3ebfff12",
+    "zh:5136e51765d6a0b9e4dbcc3b38821e9736bd2136cf15e9aac11668f22db117d2",
+    "zh:63fab47349852d7802fb032e4f2b6a101ee1ce34b62557a9ad0f0f0f5b6ecfdc",
+    "zh:924fb0257e2d03e03e2bfe9c7b99aa73c195b1f19412ca09960001bee3c50d15",
+    "zh:b63a0be5e233f8f6727c56bed3b61eb9456ca7a8bb29539fba0837f1badf1396",
+    "zh:d39861aa21077f1bc899bc53e7233262e530ba8a3a2d737449b100daeb303e4d",
+    "zh:de0805e10ebe4c83ce3b728a67f6b0f9d18be32b25146aa89116634df5145ad4",
+    "zh:f569b65999264a9416862bca5cd2a6177d94ccb0424f3a4ef424428912b9cb3c",
+    "zh:faf23e45f0090eef8ba28a8aac7ec5d4fdf11a36c40a8d286304567d71c1e7db",
+  ]
+}
+
+provider "registry.terraform.io/hashicorp/null" {
+  version     = "3.2.4"
+  constraints = ">= 3.0.0"
+  hashes = [
+    "h1:+Ag4hSb4qQjNtAS6gj2+gsGl7v0iB/Bif6zZZU8lXsw=",
+    "h1:hkf5w5B6q8e2A42ND2CjAvgvSN3puAosDmOJb3zCVQM=",
+    "zh:59f6b52ab4ff35739647f9509ee6d93d7c032985d9f8c6237d1f8a59471bbbe2",
+    "zh:78d5eefdd9e494defcb3c68d282b8f96630502cac21d1ea161f53cfe9bb483b3",
+    "zh:795c897119ff082133150121d39ff26cb5f89a730a2c8c26f3a9c1abf81a9c43",
+    "zh:7b9c7b16f118fbc2b05a983817b8ce2f86df125857966ad356353baf4bff5c0a",
+    "zh:85e33ab43e0e1726e5f97a874b8e24820b6565ff8076523cc2922ba671492991",
+    "zh:9d32ac3619cfc93eb3c4f423492a8e0f79db05fec58e449dee9b2d5873d5f69f",
+    "zh:9e15c3c9dd8e0d1e3731841d44c34571b6c97f5b95e8296a45318b94e5287a6e",
+    "zh:b4c2ab35d1b7696c30b64bf2c0f3a62329107bd1a9121ce70683dec58af19615",
+    "zh:c43723e8cc65bcdf5e0c92581dcbbdcbdcf18b8d2037406a5f2033b1e22de442",
+    "zh:ceb5495d9c31bfb299d246ab333f08c7fb0d67a4f82681fbf47f2a21c3e11ab5",
+    "zh:e171026b3659305c558d9804062762d168f50ba02b88b231d20ec99578a6233f",
+    "zh:ed0fe2acdb61330b01841fa790be00ec6beaac91d41f311fb8254f74eb6a711f",
+  ]
+}
+
+provider "registry.terraform.io/hashicorp/random" {
+  version     = "3.7.2"
+  constraints = "~> 3.5"
+  hashes = [
+    "h1:0hcNr59VEJbhZYwuDE/ysmyTS0evkfcLarlni+zATPM=",
+    "h1:356j/3XnXEKr9nyicLUufzoF4Yr6hRy481KIxRVpK0c=",
+    "zh:14829603a32e4bc4d05062f059e545a91e27ff033756b48afbae6b3c835f508f",
+    "zh:1527fb07d9fea400d70e9e6eb4a2b918d5060d604749b6f1c361518e7da546dc",
+    "zh:1e86bcd7ebec85ba336b423ba1db046aeaa3c0e5f921039b3f1a6fc2f978feab",
+    "zh:24536dec8bde66753f4b4030b8f3ef43c196d69cccbea1c382d01b222478c7a3",
+    "zh:29f1786486759fad9b0ce4fdfbbfece9343ad47cd50119045075e05afe49d212",
+    "zh:4d701e978c2dd8604ba1ce962b047607701e65c078cb22e97171513e9e57491f",
+    "zh:78d5eefdd9e494defcb3c68d282b8f96630502cac21d1ea161f53cfe9bb483b3",
+    "zh:7b8434212eef0f8c83f5a90c6d76feaf850f6502b61b53c329e85b3b281cba34",
+    "zh:ac8a23c212258b7976e1621275e3af7099e7e4a3d4478cf8d5d2a27f3bc3e967",
+    "zh:b516ca74431f3df4c6cf90ddcdb4042c626e026317a33c53f0b445a3d93b720d",
+    "zh:dc76e4326aec2490c1600d6871a95e78f9050f9ce427c71707ea412a2f2f1a62",
+    "zh:eac7b63e86c749c7d48f527671c7aee5b4e26c10be6ad7232d6860167f99dbb0",
+  ]
+}
+
+provider "registry.terraform.io/hashicorp/time" {
+  version     = "0.13.1"
+  constraints = ">= 0.9.0"
+  hashes = [
+    "h1:+W+DMrVoVnoXo3f3M4W+OpZbkCrUn6PnqDF33D2Cuf0=",
+    "h1:5l8PAnxPdoUPqNPuv1dAr3efcCCtSCnY+Vj2nSGkQmw=",
+    "zh:02cb9aab1002f0f2a94a4f85acec8893297dc75915f7404c165983f720a54b74",
+    "zh:04429b2b31a492d19e5ecf999b116d396dac0b24bba0d0fb19ecaefe193fdb8f",
+    "zh:26f8e51bb7c275c404ba6028c1b530312066009194db721a8427a7bc5cdbc83a",
+    "zh:772ff8dbdbef968651ab3ae76d04afd355c32f8a868d03244db3f8496e462690",
+    "zh:78d5eefdd9e494defcb3c68d282b8f96630502cac21d1ea161f53cfe9bb483b3",
+    "zh:898db5d2b6bd6ca5457dccb52eedbc7c5b1a71e4a4658381bcbb38cedbbda328",
+    "zh:8de913bf09a3fa7bedc29fec18c47c571d0c7a3d0644322c46f3aa648cf30cd8",
+    "zh:9402102c86a87bdfe7e501ffbb9c685c32bbcefcfcf897fd7d53df414c36877b",
+    "zh:b18b9bb1726bb8cfbefc0a29cf3657c82578001f514bcf4c079839b6776c47f0",
+    "zh:b9d31fdc4faecb909d7c5ce41d2479dd0536862a963df434be4b16e8e4edc94d",
+    "zh:c951e9f39cca3446c060bd63933ebb89cedde9523904813973fbc3d11863ba75",
+    "zh:e5b773c0d07e962291be0e9b413c7a22c044b8c7b58c76e8aa91d1659990dfb5",
+  ]
+}
+
+provider "registry.terraform.io/hashicorp/tls" {
+  version     = "4.1.0"
+  constraints = ">= 3.0.0, ~> 4.1"
+  hashes = [
+    "h1:Ka8mEwRFXBabR33iN/WTIEW6RP0z13vFsDlwn11Pf2I=",
+    "h1:y9cHrgcuaZt592In6xQzz1lx7k/B9EeWrAb8K7QqOgU=",
+    "zh:14c35d89307988c835a7f8e26f1b83ce771e5f9b41e407f86a644c0152089ac2",
+    "zh:2fb9fe7a8b5afdbd3e903acb6776ef1be3f2e587fb236a8c60f11a9fa165faa8",
+    "zh:35808142ef850c0c60dd93dc06b95c747720ed2c40c89031781165f0c2baa2fc",
+    "zh:35b5dc95bc75f0b3b9c5ce54d4d7600c1ebc96fbb8dfca174536e8bf103c8cdc",
+    "zh:38aa27c6a6c98f1712aa5cc30011884dc4b128b4073a4a27883374bfa3ec9fac",
+    "zh:51fb247e3a2e88f0047cb97bb9df7c228254a3b3021c5534e4563b4007e6f882",
+    "zh:62b981ce491e38d892ba6364d1d0cdaadcee37cc218590e07b310b1dfa34be2d",
+    "zh:bc8e47efc611924a79f947ce072a9ad698f311d4a60d0b4dfff6758c912b7298",
+    "zh:c149508bd131765d1bc085c75a870abb314ff5a6d7f5ac1035a8892d686b6297",
+    "zh:d38d40783503d278b63858978d40e07ac48123a2925e1a6b47e62179c046f87a",
+    "zh:f569b65999264a9416862bca5cd2a6177d94ccb0424f3a4ef424428912b9cb3c",
+    "zh:fb07f708e3316615f6d218cec198504984c0ce7000b9f1eebff7516e384f4b54",
+  ]
+}
+</file>
+
+<file path="dev/helm-providers.tf.disabled">
+# This file configures Helm and Kubernetes providers
+# NOTE: These providers are declared after EKS cluster creation to use module outputs
+
+data "aws_eks_cluster" "cluster" {
+  name = var.cluster_name
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name = var.cluster_name
+}
+
+provider "kubernetes" {
+  host                   = data.aws_eks_cluster.cluster.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.cluster.token
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = data.aws_eks_cluster.cluster.endpoint
+    cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
+    token                  = data.aws_eks_cluster_auth.cluster.token
+  }
+}
+</file>
+
+<file path="dev/main.tf">
+# VPC Module
+# Trigger EKS cluster deployment - 2025-01-07
+module "vpc" {
+  source = "../../modules/vpc"
+
+  vpc_name           = var.vpc_name
+  vpc_cidr           = var.vpc_cidr
+  availability_zones = var.availability_zones
+  private_subnets    = var.private_subnets
+  public_subnets     = var.public_subnets
+
+  enable_nat_gateway     = var.enable_nat_gateway
+  single_nat_gateway     = var.single_nat_gateway
+  one_nat_gateway_per_az = var.one_nat_gateway_per_az
+
+  cluster_name = var.cluster_name
+
+  tags = merge(
+    var.tags,
+    {
+      Module = "vpc"
+    }
+  )
+}
+
+# EKS Cluster Module (initial creation without EBS CSI addon)
+module "eks_cluster" {
+  source = "../../modules/eks-cluster"
+
+  cluster_name    = var.cluster_name
+  cluster_version = var.cluster_version
+
+  bootstrap_self_managed_addons   = var.bootstrap_self_managed_addons
+  cluster_support_type            = var.cluster_support_type
+  cluster_addons                  = var.cluster_addons
+  cluster_endpoint_public_access  = var.cluster_endpoint_public_access
+  cluster_endpoint_private_access = var.cluster_endpoint_private_access
+  enable_irsa                     = var.enable_irsa
+
+  vpc_id                   = module.vpc.vpc_id
+  subnet_ids               = module.vpc.private_subnets
+  control_plane_subnet_ids = module.vpc.private_subnets
+
+  tags = merge(
+    var.tags,
+    {
+      Module = "eks-cluster"
+    }
+  )
+
+  depends_on = [module.vpc]
+}
+
+# Kubernetes and Helm providers will be configured after EKS cluster creation
+# Comment out ALB controller module for initial deployment
+
+# EKS Node Group Module
+module "eks_nodegroup" {
+  source = "../../modules/eks-nodegroup"
+
+  node_group_name      = var.node_group_name
+  cluster_name         = module.eks_cluster.cluster_name
+  cluster_version      = var.cluster_version
+  cluster_service_cidr = "172.20.0.0/16"
+  subnet_ids           = module.vpc.private_subnets
+
+  min_size     = var.node_min_size
+  max_size     = var.node_max_size
+  desired_size = var.node_desired_size
+
+  instance_types = var.node_instance_types
+  capacity_type  = var.node_capacity_type
+
+  labels = var.node_labels
+
+  enable_coredns_addon        = var.enable_coredns_addon
+  coredns_version             = var.coredns_version
+  resolve_conflicts_on_create = var.resolve_conflicts_on_create
+  resolve_conflicts_on_update = var.resolve_conflicts_on_update
+
+  tags = merge(
+    var.tags,
+    {
+      Module = "eks-nodegroup"
+    }
+  )
+
+  depends_on = [module.eks_cluster]
+}
+
+# ALB Controller Module - Comment out for initial deployment
+# Uncomment after EKS cluster is created and Helm providers are configured
+# module "alb_controller" {
+#   source = "../../modules/alb-controller"
+#
+#   cluster_name      = module.eks_cluster.cluster_name
+#   aws_region        = var.aws_region
+#   vpc_id            = module.vpc.vpc_id
+#   oidc_provider     = module.eks_cluster.oidc_provider
+#   oidc_provider_arn = module.eks_cluster.oidc_provider_arn
+#   node_group_id     = module.eks_nodegroup.node_group_id
+#
+#   enable_alb_controller     = var.enable_alb_controller
+#   enable_ebs_csi_controller = var.enable_ebs_csi_controller
+#
+#   helm_release_name      = var.helm_release_name
+#   helm_namespace         = var.helm_namespace
+#   helm_chart_name        = var.helm_chart_name
+#   helm_chart_repository  = var.helm_chart_repository
+#   helm_chart_version     = var.helm_chart_version
+#   service_account_name   = var.service_account_name
+#   additional_helm_values = var.additional_helm_values
+# }
+
+# EBS CSI Driver Addon - Comment out for initial deployment (depends on ALB controller)
+# Uncomment after ALB controller module is uncommented
+# resource "aws_eks_addon" "ebs_csi_driver" {
+#   count = var.enable_ebs_csi_controller ? 1 : 0
+#
+#   cluster_name             = module.eks_cluster.cluster_name
+#   addon_name               = "aws-ebs-csi-driver"
+#   addon_version            = var.ebs_csi_addon_version
+#   service_account_role_arn = module.alb_controller.ebs_csi_controller_role_arn
+#
+#   resolve_conflicts_on_create = "OVERWRITE"
+#   resolve_conflicts_on_update = "OVERWRITE"
+#
+#   depends_on = [
+#     module.eks_nodegroup,
+#     module.alb_controller
+#   ]
+# }
+
+# RDS PostgreSQL Module
+module "rds_postgresql" {
+  source = "../../modules/rds-postgresql"
+
+  db_identifier  = var.rds_instance_identifier
+  engine_version = var.rds_engine_version
+  instance_class = var.rds_instance_class
+
+  allocated_storage     = var.rds_allocated_storage
+  max_allocated_storage = var.rds_max_allocated_storage
+  storage_encrypted     = false # Disabled for demo
+
+  db_name  = var.rds_initial_database
+  username = var.rds_username
+  password = var.rds_password
+  port     = var.rds_port
+
+  vpc_id                 = module.vpc.vpc_id
+  private_subnet_ids     = module.vpc.private_subnets
+  eks_security_group_ids = [module.eks_cluster.cluster_security_group_id]
+
+  backup_retention_period = 0 # No backups for demo
+  backup_window           = "03:00-04:00"
+  maintenance_window      = "sun:04:00-sun:05:00"
+
+  skip_final_snapshot       = true # Skip snapshot for demo
+  final_snapshot_identifier = var.rds_final_snapshot_identifier
+  deletion_protection       = false # No deletion protection for demo
+
+  monitoring_interval             = 0
+  enabled_cloudwatch_logs_exports = []
+  log_retention_days              = 1
+
+  tags = merge(var.tags, {
+    Name = var.rds_instance_identifier
+  })
+
+  depends_on = [
+    module.vpc
+  ]
+}
+
+# S3 Bucket for Migration Files - Simplified for demo
+resource "aws_s3_bucket" "migration" {
+  bucket = "${var.migration_bucket_name}-${random_id.bucket_suffix.hex}"
+
+  tags = merge(var.tags, {
+    Name = var.migration_bucket_name
+  })
+}
+
+resource "random_id" "bucket_suffix" {
+  byte_length = 4
+}
+
+# Minimal S3 configuration for demo
+resource "aws_s3_bucket_versioning" "migration" {
+  bucket = aws_s3_bucket.migration.id
+  versioning_configuration {
+    status = "Disabled" # Disabled for demo
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "migration" {
+  bucket = aws_s3_bucket.migration.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Bastion Host Module - Simplified for demo
+module "bastion_host" {
+  source = "../../modules/bastion-host"
+
+  instance_name = var.bastion_instance_name
+  environment   = var.environment
+
+  instance_type = var.bastion_instance_type
+  ami_id        = var.bastion_ami_id
+
+  key_name   = var.bastion_key_name
+  public_key = var.bastion_public_key
+
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_id  = module.vpc.public_subnets[0] # Use first public subnet
+  allowed_ssh_cidrs = var.bastion_allowed_ssh_cidrs
+
+  rds_security_group_ids = [module.rds_postgresql.security_group_id]
+
+  db_host     = module.rds_postgresql.db_instance_endpoint
+  db_port     = module.rds_postgresql.db_instance_port
+  db_username = module.rds_postgresql.db_instance_username
+  db_password = var.rds_password # Use variable directly
+
+  s3_bucket_name = aws_s3_bucket.migration.bucket
+
+  root_volume_size = 8 # Smaller for demo
+  allocate_eip     = true
+
+  tags = merge(var.tags, {
+    Name = var.bastion_instance_name
+  })
+
+  depends_on = [
+    module.rds_postgresql,
+    aws_s3_bucket.migration
+  ]
+}
+
+# IAM Access Control Module - ENABLED for EKS v20.0 API_AND_CONFIG_MAP authentication mode
+module "iam_access" {
+  source = "../../modules/iam-access"
+
+  cluster_name = module.eks_cluster.cluster_name
+
+  create_admin_group        = var.create_admin_group
+  admin_group_name          = var.admin_group_name
+  create_admin_role         = var.create_admin_role
+  admin_role_name           = var.admin_role_name
+  attach_admin_policy       = var.attach_admin_policy
+  create_assume_role_policy = var.create_assume_role_policy
+  assume_role_policy_name   = var.assume_role_policy_name
+
+  create_eks_access_entry  = var.create_eks_access_entry
+  access_entry_type        = var.access_entry_type
+  create_eks_access_policy = var.create_eks_access_policy
+  eks_access_policy_arn    = var.eks_access_policy_arn
+  access_scope_type        = var.access_scope_type
+  access_scope_namespaces  = var.access_scope_namespaces
+
+  # GitHub Actions EKS Access Configuration
+  create_github_actions_access_entry     = true
+  github_actions_user_arn                = "arn:aws:iam::039612870452:user/nt114-devsecops-github-actions-user"
+  create_github_actions_access_policy    = true
+  github_actions_access_policy_arn       = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  github_actions_access_scope_type       = "cluster"
+  github_actions_access_scope_namespaces = []
+
+  tags = merge(
+    var.tags,
+    {
+      Module = "iam-access"
+    }
+  )
+
+  depends_on = [module.eks_cluster]
+}
+
+# ECR Module
+module "ecr" {
+  source = "../../modules/ecr"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  repository_names = [
+    "api-gateway",
+    "exercises-service",
+    "scores-service",
+    "user-management-service",
+    "frontend"
+  ]
+
+  image_tag_mutability = "MUTABLE"
+  scan_on_push         = true
+  encryption_type      = "AES256"
+
+  image_count_to_keep = 10
+  untagged_image_days = 7
+
+  create_github_actions_policy = true
+  create_github_actions_user   = true
+
+  tags = merge(
+    var.tags,
+    {
+      Module = "ecr"
+    }
+  )
+}
+</file>
+
+<file path="dev/outputs.tf">
+# VPC Outputs
+output "vpc_id" {
+  description = "The ID of the VPC"
+  value       = module.vpc.vpc_id
+}
+
+output "vpc_cidr" {
+  description = "The CIDR block of the VPC"
+  value       = module.vpc.vpc_cidr
+}
+
+output "private_subnets" {
+  description = "List of IDs of private subnets"
+  value       = module.vpc.private_subnets
+}
+
+output "public_subnets" {
+  description = "List of IDs of public subnets"
+  value       = module.vpc.public_subnets
+}
+
+# EKS Cluster Outputs
+output "cluster_id" {
+  description = "The ID of the EKS cluster"
+  value       = module.eks_cluster.cluster_id
+}
+
+output "cluster_name" {
+  description = "The name of the EKS cluster"
+  value       = module.eks_cluster.cluster_name
+}
+
+output "cluster_arn" {
+  description = "The ARN of the EKS cluster"
+  value       = module.eks_cluster.cluster_arn
+}
+
+output "cluster_endpoint" {
+  description = "Endpoint for the EKS cluster API server"
+  value       = module.eks_cluster.cluster_endpoint
+}
+
+output "cluster_security_group_id" {
+  description = "Security group ID attached to the EKS cluster"
+  value       = module.eks_cluster.cluster_security_group_id
+}
+
+output "cluster_oidc_issuer_url" {
+  description = "The URL on the EKS cluster OIDC Issuer"
+  value       = module.eks_cluster.cluster_oidc_issuer_url
+}
+
+output "oidc_provider" {
+  description = "The OpenID Connect identity provider (without https://)"
+  value       = module.eks_cluster.oidc_provider
+}
+
+output "oidc_provider_arn" {
+  description = "ARN of the OIDC Provider for EKS"
+  value       = module.eks_cluster.oidc_provider_arn
+}
+
+output "cluster_status" {
+  description = "The status of the EKS cluster"
+  value       = module.eks_cluster.cluster_status
+}
+
+# Node Group Outputs
+output "node_group_id" {
+  description = "EKS managed node group ID"
+  value       = module.eks_nodegroup.node_group_id
+}
+
+output "node_group_arn" {
+  description = "Amazon Resource Name (ARN) of the EKS Node Group"
+  value       = module.eks_nodegroup.node_group_arn
+}
+
+output "node_group_status" {
+  description = "Status of the EKS Node Group"
+  value       = module.eks_nodegroup.node_group_status
+}
+
+# ALB Controller Outputs
+# ALB Controller outputs - Comment out for initial deployment
+# Uncomment after ALB controller module is uncommented
+# output "alb_controller_helm_release_name" {
+#   description = "Name of the ALB controller Helm release"
+#   value       = module.alb_controller.helm_release_name
+# }
+#
+# output "alb_controller_helm_release_status" {
+#   description = "Status of the ALB controller Helm release"
+#   value       = module.alb_controller.helm_release_status
+# }
+
+# IAM Access Outputs - ENABLED for EKS v20.0 compatibility
+output "admin_group_name" {
+  description = "Name of the admin IAM group"
+  value       = module.iam_access.admin_group_name
+}
+
+output "admin_role_name" {
+  description = "Name of the admin IAM role"
+  value       = module.iam_access.admin_role_name
+}
+
+output "admin_role_arn" {
+  description = "ARN of the admin IAM role"
+  value       = module.iam_access.admin_role_arn
+}
+
+# kubectl Configuration
+output "configure_kubectl" {
+  description = "Command to configure kubectl"
+  value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks_cluster.cluster_name}"
+}
+
+# ECR Outputs
+output "ecr_repository_urls" {
+  description = "Map of ECR repository URLs"
+  value       = module.ecr.repository_urls
+}
+
+output "ecr_repository_arns" {
+  description = "Map of ECR repository ARNs"
+  value       = module.ecr.repository_arns
+}
+
+output "ecr_registry_id" {
+  description = "ECR Registry ID"
+  value       = module.ecr.registry_id
+}
+
+output "ecr_login_command" {
+  description = "Command to login to ECR"
+  value       = module.ecr.ecr_login_command
+}
+
+output "github_actions_user_name" {
+  description = "IAM user name for GitHub Actions"
+  value       = module.ecr.github_actions_user_name
+}
+
+output "github_actions_access_key_id" {
+  description = "Access key ID for GitHub Actions (sensitive)"
+  value       = module.ecr.github_actions_access_key_id
+  sensitive   = true
+}
+
+output "github_actions_secret_access_key" {
+  description = "Secret access key for GitHub Actions (sensitive)"
+  value       = module.ecr.github_actions_secret_access_key
+  sensitive   = true
+}
+
+# RDS PostgreSQL Outputs
+output "rds_instance_endpoint" {
+  description = "RDS PostgreSQL endpoint"
+  value       = module.rds_postgresql.db_instance_endpoint
+}
+
+output "rds_instance_port" {
+  description = "RDS PostgreSQL port"
+  value       = module.rds_postgresql.db_instance_port
+}
+
+output "rds_instance_database_name" {
+  description = "RDS PostgreSQL database name"
+  value       = module.rds_postgresql.db_instance_database_name
+}
+
+output "rds_instance_username" {
+  description = "RDS PostgreSQL username"
+  value       = module.rds_postgresql.db_instance_username
+  sensitive   = true
+}
+
+output "rds_instance_password" {
+  description = "RDS PostgreSQL password"
+  value       = module.rds_postgresql.db_instance_password
+  sensitive   = true
+}
+
+output "rds_instance_id" {
+  description = "RDS instance ID"
+  value       = module.rds_postgresql.db_instance_id
+}
+
+output "rds_security_group_id" {
+  description = "RDS security group ID"
+  value       = module.rds_postgresql.security_group_id
+}
+
+# S3 Migration Bucket Outputs
+output "migration_bucket_name" {
+  description = "S3 bucket name for migration files"
+  value       = aws_s3_bucket.migration.bucket
+}
+
+output "migration_bucket_arn" {
+  description = "S3 bucket ARN for migration files"
+  value       = aws_s3_bucket.migration.arn
+}
+
+# Bastion Host Outputs
+output "bastion_public_ip" {
+  description = "Bastion host public IP address"
+  value       = module.bastion_host.instance_public_ip
+}
+
+output "bastion_public_dns" {
+  description = "Bastion host public DNS"
+  value       = module.bastion_host.instance_public_dns
+}
+
+output "bastion_instance_id" {
+  description = "Bastion host instance ID"
+  value       = module.bastion_host.instance_id
+}
+
+output "bastion_key_name" {
+  description = "Bastion host SSH key name"
+  value       = module.bastion_host.key_name
+}
+
+output "bastion_security_group_id" {
+  description = "Bastion host security group ID"
+  value       = module.bastion_host.security_group_id
+}
+</file>
+
+<file path="dev/providers-alternative.tf.example">
+# Alternative Provider Configuration (Recommended)
+#
+# This approach separates infrastructure deployment into two stages:
+# Stage 1: Deploy VPC and EKS cluster
+# Stage 2: Deploy node groups and Helm releases
+#
+# To use this approach:
+# 1. Rename this file to providers.tf
+# 2. Comment out alb-controller and eks-nodegroup modules in main.tf
+# 3. Run: terraform apply (creates VPC and EKS)
+# 4. Uncomment alb-controller and eks-nodegroup modules
+# 5. Run: terraform apply (deploys everything else)
+
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = ">= 2.29"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = ">= 2.11.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+# Use environment variables or AWS CLI for kubectl configuration
+# Run this after EKS cluster is created:
+# aws eks update-kubeconfig --region us-east-1 --name eks-1
+
+provider "kubernetes" {
+  host                   = module.eks_cluster.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks_cluster.cluster_certificate_authority_data)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    # This requires the awscli to be installed locally
+    args = ["eks", "get-token", "--cluster-name", module.eks_cluster.cluster_name]
+  }
+}
+
+provider "helm" {
+  kubernetes {
+    host                   = module.eks_cluster.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.eks_cluster.cluster_certificate_authority_data)
+
+    exec {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.eks_cluster.cluster_name]
+    }
+  }
+}
+</file>
+
+<file path="dev/providers.tf">
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.14"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.30"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.5"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.1"
+    }
+  }
+
+  # Remove backend configuration to allow fresh state per workflow run
+  # backend "s3" {
+  #   bucket = "my-terraform-state-bucket"
+  #   key    = "terraform.tfstate"
+  #   region = "us-east-1"
+  # }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+provider "random" {}
+
+provider "tls" {}
+</file>
+
+<file path="dev/README.md">
+# Infrastructure deployment Fri, Nov  7, 2025  8:54:49 PM
+# Trigger EKS deployment - Fri, Nov  7, 2025  9:58:28 PM
+</file>
+
+<file path="dev/terraform.tfvars.example">
+# Project Configuration
+project_name = "nt114-devsecops"
+environment  = "dev"
+aws_region   = "us-east-1"
+
+# VPC Configuration
+vpc_name = "eks-vpc1"
+vpc_cidr = "11.0.0.0/16"
+
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+private_subnets    = ["11.0.1.0/24", "11.0.2.0/24", "11.0.3.0/24"]
+public_subnets     = ["11.0.101.0/24", "11.0.102.0/24", "11.0.103.0/24"]
+
+# EKS Cluster Configuration
+cluster_name    = "eks-1"
+cluster_version = "1.33"
+
+node_group_name     = "eks-node"
+node_instance_types = ["t3.large"]
+node_capacity_type  = "SPOT"
+node_min_size       = 1
+node_desired_size   = 1
+node_max_size       = 2
+
+# RDS Configuration
+rds_instance_identifier   = "nt114-postgres-dev"
+rds_engine_version        = "14"
+rds_instance_class        = "db.t3.micro"
+rds_allocated_storage     = 20
+rds_max_allocated_storage = 100
+rds_initial_database      = "postgres"
+rds_username              = "postgres"
+rds_password              = "your-secure-password-here"  # Replace with actual password
+
+# Bastion Host Configuration
+bastion_instance_name = "nt114-bastion-dev"
+bastion_instance_type = "t3.small"
+bastion_key_name      = "nt114-bastion-key"
+bastion_public_key    = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7...your-public-key-here"  # Replace with actual public key
+
+# S3 Configuration
+migration_bucket_name = "nt114-migration-bucket-dev"
+
+# Feature Toggles
+enable_alb_controller     = true
+enable_ebs_csi_controller = true
+
+# Cost Optimization
+enable_nat_gateway = true
+single_nat_gateway = true
+</file>
+
+<file path="dev/variables.tf">
+# General Variables
+variable "project_name" {
+  description = "Name of the project"
+  type        = string
+  default     = "nt114-devsecops"
+}
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+  default     = "dev"
+}
+
+variable "aws_region" {
+  description = "AWS region where resources will be created"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "tags" {
+  description = "Common tags to apply to all resources"
+  type        = map(string)
+  default = {
+    Environment = "dev"
+    Terraform   = "true"
+    Project     = "NT114_DevSecOps"
+  }
+}
+
+# VPC Variables
+variable "vpc_name" {
+  description = "Name of the VPC"
+  type        = string
+  default     = "eks-vpc1"
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC"
+  type        = string
+  default     = "11.0.0.0/16"
+}
+
+variable "availability_zones" {
+  description = "List of availability zones"
+  type        = list(string)
+  default     = ["us-east-1a", "us-east-1b", "us-east-1c"]
+}
+
+variable "private_subnets" {
+  description = "List of private subnet CIDR blocks"
+  type        = list(string)
+  default     = ["11.0.1.0/24", "11.0.2.0/24", "11.0.3.0/24"]
+}
+
+variable "public_subnets" {
+  description = "List of public subnet CIDR blocks"
+  type        = list(string)
+  default     = ["11.0.101.0/24", "11.0.102.0/24", "11.0.103.0/24"]
+}
+
+variable "enable_nat_gateway" {
+  description = "Enable NAT Gateway for private subnets"
+  type        = bool
+  default     = true
+}
+
+variable "single_nat_gateway" {
+  description = "Use a single NAT Gateway for all private subnets"
+  type        = bool
+  default     = true
+}
+
+variable "one_nat_gateway_per_az" {
+  description = "Create one NAT Gateway per availability zone"
+  type        = bool
+  default     = false
+}
+
+# EKS Cluster Variables
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
+  type        = string
+  default     = "eks-1"
+}
+
+variable "cluster_version" {
+  description = "Kubernetes version for the EKS cluster"
+  type        = string
+  default     = "1.33"
+}
+
+variable "bootstrap_self_managed_addons" {
+  description = "Bootstrap self-managed addons"
+  type        = bool
+  default     = true
+}
+
+variable "cluster_support_type" {
+  description = "Cluster support type (STANDARD or EXTENDED)"
+  type        = string
+  default     = "STANDARD"
+}
+
+variable "cluster_addons" {
+  description = "Map of cluster addon configurations"
+  type        = any
+  default = {
+    eks-pod-identity-agent = {}
+    kube-proxy             = {}
+    vpc-cni                = {}
+  }
+}
+
+variable "cluster_endpoint_public_access" {
+  description = "Enable public access to cluster endpoint"
+  type        = bool
+  default     = true
+}
+
+variable "cluster_endpoint_private_access" {
+  description = "Enable private access to cluster endpoint"
+  type        = bool
+  default     = true
+}
+
+
+variable "enable_irsa" {
+  description = "Enable IAM Roles for Service Accounts"
+  type        = bool
+  default     = true
+}
+
+# Node Group Variables
+variable "node_group_name" {
+  description = "Name of the EKS managed node group"
+  type        = string
+  default     = "eks-node"
+}
+
+variable "node_instance_types" {
+  description = "List of instance types for the node group"
+  type        = list(string)
+  default     = ["t3.large"]
+}
+
+variable "node_capacity_type" {
+  description = "Capacity type for node group (ON_DEMAND or SPOT)"
+  type        = string
+  default     = "SPOT"
+}
+
+variable "node_min_size" {
+  description = "Minimum number of nodes"
+  type        = number
+  default     = 1
+}
+
+variable "node_max_size" {
+  description = "Maximum number of nodes"
+  type        = number
+  default     = 2
+}
+
+variable "node_desired_size" {
+  description = "Desired number of nodes"
+  type        = number
+  default     = 1
+}
+
+variable "node_labels" {
+  description = "Key-value map of Kubernetes labels for nodes"
+  type        = map(string)
+  default = {
+    Environment = "dev"
+    GithubRepo  = "terraform-aws-eks"
+    GithubOrg   = "terraform-aws-modules"
+  }
+}
+
+variable "enable_coredns_addon" {
+  description = "Enable CoreDNS addon"
+  type        = bool
+  default     = true
+}
+
+variable "coredns_version" {
+  description = "Version of CoreDNS addon (leave null for latest)"
+  type        = string
+  default     = null
+}
+
+variable "resolve_conflicts_on_create" {
+  description = "How to resolve conflicts on create"
+  type        = string
+  default     = "OVERWRITE"
+}
+
+variable "resolve_conflicts_on_update" {
+  description = "How to resolve conflicts on update"
+  type        = string
+  default     = "OVERWRITE"
+}
+
+# ALB Controller Variables
+variable "enable_alb_controller" {
+  description = "Enable AWS Load Balancer Controller (set to false for first apply, then true)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_ebs_csi_controller" {
+  description = "Enable EBS CSI Controller IAM role"
+  type        = bool
+  default     = true
+}
+
+variable "ebs_csi_addon_version" {
+  description = "Version of the EBS CSI driver addon (leave null for latest)"
+  type        = string
+  default     = "v1.36.0-eksbuild.1"
+}
+
+variable "helm_release_name" {
+  description = "Name of the Helm release"
+  type        = string
+  default     = "aws-load-balancer-controller"
+}
+
+variable "helm_namespace" {
+  description = "Kubernetes namespace for the Helm release"
+  type        = string
+  default     = "kube-system"
+}
+
+variable "helm_chart_name" {
+  description = "Name of the Helm chart"
+  type        = string
+  default     = "aws-load-balancer-controller"
+}
+
+variable "helm_chart_repository" {
+  description = "Helm chart repository URL"
+  type        = string
+  default     = "https://aws.github.io/eks-charts"
+}
+
+variable "helm_chart_version" {
+  description = "Version of the Helm chart (leave null for latest)"
+  type        = string
+  default     = null
+}
+
+variable "service_account_name" {
+  description = "Name of the Kubernetes service account"
+  type        = string
+  default     = "aws-load-balancer-controller"
+}
+
+variable "additional_helm_values" {
+  description = "Additional Helm values to set"
+  type        = map(string)
+  default     = {}
+}
+
+# IAM Access Control Variables
+variable "create_admin_group" {
+  description = "Whether to create the admin IAM group"
+  type        = bool
+  default     = true
+}
+
+variable "admin_group_name" {
+  description = "Name of the admin IAM group"
+  type        = string
+  default     = "eks-admin-group"
+}
+
+variable "create_admin_role" {
+  description = "Whether to create the admin IAM role"
+  type        = bool
+  default     = true
+}
+
+variable "admin_role_name" {
+  description = "Name of the admin IAM role"
+  type        = string
+  default     = "eks-admin-role"
+}
+
+variable "attach_admin_policy" {
+  description = "Whether to attach the AdministratorAccess policy to the admin role"
+  type        = bool
+  default     = true
+}
+
+variable "create_assume_role_policy" {
+  description = "Whether to create the assume role policy"
+  type        = bool
+  default     = true
+}
+
+variable "assume_role_policy_name" {
+  description = "Name of the assume role policy"
+  type        = string
+  default     = "eks-assume-role-policy"
+}
+
+variable "create_eks_access_entry" {
+  description = "Whether to create the EKS access entry"
+  type        = bool
+  default     = true
+}
+
+variable "access_entry_type" {
+  description = "Type of access entry"
+  type        = string
+  default     = "STANDARD"
+}
+
+variable "create_eks_access_policy" {
+  description = "Whether to create the EKS access policy association"
+  type        = bool
+  default     = true
+}
+
+variable "eks_access_policy_arn" {
+  description = "ARN of the EKS access policy"
+  type        = string
+  default     = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+}
+
+variable "access_scope_type" {
+  description = "Type of access scope (cluster or namespace)"
+  type        = string
+  default     = "cluster"
+}
+
+variable "access_scope_namespaces" {
+  description = "List of namespaces for access scope (only if type is namespace)"
+  type        = list(string)
+  default     = []
+}
+
+# RDS PostgreSQL Variables
+variable "rds_instance_identifier" {
+  description = "RDS PostgreSQL instance identifier"
+  type        = string
+  default     = "nt114-postgres-dev"
+}
+
+variable "rds_engine_version" {
+  description = "The engine version of the RDS instance"
+  type        = string
+  default     = "14"
+}
+
+variable "rds_instance_class" {
+  description = "RDS instance class"
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "rds_allocated_storage" {
+  description = "RDS allocated storage in GB"
+  type        = number
+  default     = 20
+}
+
+variable "rds_max_allocated_storage" {
+  description = "RDS maximum allocated storage in GB"
+  type        = number
+  default     = 100
+}
+
+variable "rds_storage_encrypted" {
+  description = "RDS storage encryption"
+  type        = bool
+  default     = true
+}
+
+variable "rds_initial_database" {
+  description = "Initial database name"
+  type        = string
+  default     = "postgres"
+}
+
+variable "rds_username" {
+  description = "RDS master username"
+  type        = string
+  default     = "postgres"
+}
+
+variable "rds_port" {
+  description = "RDS port"
+  type        = number
+  default     = 5432
+}
+
+variable "rds_backup_retention_period" {
+  description = "RDS backup retention period in days"
+  type        = number
+  default     = 7
+}
+
+variable "rds_backup_window" {
+  description = "RDS backup window"
+  type        = string
+  default     = "03:00-04:00"
+}
+
+variable "rds_maintenance_window" {
+  description = "RDS maintenance window"
+  type        = string
+  default     = "sun:04:00-sun:05:00"
+}
+
+variable "rds_skip_final_snapshot" {
+  description = "Skip RDS final snapshot"
+  type        = bool
+  default     = false
+}
+
+variable "rds_final_snapshot_identifier" {
+  description = "RDS final snapshot identifier"
+  type        = string
+  default     = "nt114-postgres-dev-final-snapshot"
+}
+
+variable "rds_deletion_protection" {
+  description = "RDS deletion protection"
+  type        = bool
+  default     = false
+}
+
+variable "rds_monitoring_interval" {
+  description = "RDS enhanced monitoring interval"
+  type        = number
+  default     = 0
+}
+
+variable "rds_enabled_cloudwatch_logs_exports" {
+  description = "RDS CloudWatch logs exports"
+  type        = list(string)
+  default     = ["postgresql"]
+}
+
+variable "rds_log_retention_days" {
+  description = "RDS log retention days"
+  type        = number
+  default     = 7
+}
+
+# S3 Migration Variables
+variable "migration_bucket_name" {
+  description = "S3 bucket name for migration files"
+  type        = string
+  default     = "nt114-migration-bucket-dev"
+}
+
+# Bastion Host Variables
+variable "bastion_instance_name" {
+  description = "Bastion host instance name"
+  type        = string
+  default     = "nt114-bastion-dev"
+}
+
+variable "bastion_instance_type" {
+  description = "Bastion host instance type"
+  type        = string
+  default     = "t3.small"
+}
+
+variable "bastion_ami_id" {
+  description = "Bastion host AMI ID"
+  type        = string
+  default     = "ami-0c02fb55956c7d316"
+}
+
+variable "bastion_key_name" {
+  description = "Bastion host SSH key name"
+  type        = string
+  default     = "nt114-bastion-key"
+}
+
+variable "bastion_public_key" {
+  description = "Bastion host public key"
+  type        = string
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition     = var.bastion_public_key == null || can(regex("^ssh-(rsa|ed25519|ecdsa)", var.bastion_public_key))
+    error_message = "The bastion_public_key must be a valid OpenSSH public key starting with ssh-rsa, ssh-ed25519, or ssh-ecdsa."
+  }
+}
+
+variable "rds_password" {
+  description = "RDS PostgreSQL master password (if null, generates random password)"
+  type        = string
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition     = var.rds_password == null || (can(length(var.rds_password)) && length(var.rds_password) >= 8 && length(var.rds_password) <= 128)
+    error_message = "The RDS password must be between 8 and 128 characters."
+  }
+}
+
+variable "bastion_allowed_ssh_cidrs" {
+  description = "Bastion host allowed SSH CIDRs"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "bastion_root_volume_size" {
+  description = "Bastion host root volume size in GB"
+  type        = number
+  default     = 20
+}
+
+variable "bastion_allocate_eip" {
+  description = "Allocate EIP for bastion host"
+  type        = bool
+  default     = true
+}
+</file>
+
+</files>

@@ -203,6 +203,37 @@ resource "aws_s3_bucket_public_access_block" "migration" {
   restrict_public_buckets = true
 }
 
+# Data source to get EKS node security group
+data "aws_security_groups" "eks_nodes" {
+  filter {
+    name   = "tag:aws:eks:cluster-name"
+    values = [module.eks_cluster.cluster_name]
+  }
+
+  filter {
+    name   = "tag:Name"
+    values = ["*node*"]
+  }
+
+  depends_on = [module.eks_nodegroup]
+}
+
+# Allow EKS nodes to access RDS
+resource "aws_security_group_rule" "rds_from_eks_nodes" {
+  type                     = "ingress"
+  from_port                = var.rds_port
+  to_port                  = var.rds_port
+  protocol                 = "tcp"
+  source_security_group_id = data.aws_security_groups.eks_nodes.ids[0]
+  security_group_id        = module.rds_postgresql.security_group_id
+  description              = "PostgreSQL from EKS Worker Nodes"
+
+  depends_on = [
+    module.rds_postgresql,
+    module.eks_nodegroup
+  ]
+}
+
 # Allow bastion host to access RDS (separate rule to avoid circular dependency)
 resource "aws_security_group_rule" "rds_from_bastion" {
   type                     = "ingress"
@@ -286,6 +317,14 @@ module "iam_access" {
   github_actions_access_policy_arn       = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   github_actions_access_scope_type       = "cluster"
   github_actions_access_scope_namespaces = []
+
+  # Test User EKS Access Configuration
+  create_test_user_access_entry     = true
+  test_user_arn                     = "arn:aws:iam::039612870452:user/test_user"
+  create_test_user_access_policy    = true
+  test_user_access_policy_arn       = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  test_user_access_scope_type       = "cluster"
+  test_user_access_scope_namespaces = []
 
   tags = merge(
     var.tags,

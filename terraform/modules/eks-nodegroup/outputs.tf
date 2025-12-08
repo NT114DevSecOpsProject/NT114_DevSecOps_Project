@@ -37,3 +37,8 @@ output "coredns_addon_version" {
   description = "Version of the CoreDNS addon"
   value       = var.enable_coredns_addon ? aws_eks_addon.coredns[0].addon_version : null
 }
+
+output "node_security_group_id" {
+  description = "Security group ID attached to the worker nodes"
+  value       = try(module.eks_managed_node_group.node_group_resources[0].remote_access_security_group_id, null)
+}

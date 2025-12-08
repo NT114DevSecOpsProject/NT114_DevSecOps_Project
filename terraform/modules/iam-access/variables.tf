@@ -123,3 +123,40 @@ variable "github_actions_access_scope_namespaces" {
   type        = list(string)
   default     = []
 }
+
+# Test User EKS Access Variables
+variable "create_test_user_access_entry" {
+  description = "Whether to create EKS access entry for test_user"
+  type        = bool
+  default     = false
+}
+
+variable "test_user_arn" {
+  description = "ARN of test_user IAM user"
+  type        = string
+  default     = ""
+}
+
+variable "create_test_user_access_policy" {
+  description = "Whether to create EKS access policy association for test_user"
+  type        = bool
+  default     = false
+}
+
+variable "test_user_access_policy_arn" {
+  description = "ARN of EKS access policy for test_user"
+  type        = string
+  default     = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+}
+
+variable "test_user_access_scope_type" {
+  description = "Type of access scope for test_user (cluster or namespace)"
+  type        = string
+  default     = "cluster"
+}
+
+variable "test_user_access_scope_namespaces" {
+  description = "List of namespaces for test_user access scope"
+  type        = list(string)
+  default     = []
+}
