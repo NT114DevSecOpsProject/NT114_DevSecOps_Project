@@ -6,8 +6,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: nt114-devsecops
-
+  project: default
   source:
     repoURL: https://github.com/NT114DevSecOpsProject/NT114_DevSecOps_Project.git
     targetRevision: main
@@ -15,11 +14,9 @@ spec:
     helm:
       valueFiles:
         - values-eks.yaml
-
   destination:
     server: https://kubernetes.default.svc
     namespace: dev
-
   syncPolicy:
     automated:
       prune: true
@@ -27,12 +24,9 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
-      - PrunePropagationPolicy=foreground
     retry:
       limit: 5
       backoff:
         duration: 5s
         factor: 2
         maxDuration: 3m
-
-  revisionHistoryLimit: 10
