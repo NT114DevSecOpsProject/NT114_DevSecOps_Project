@@ -1,0 +1,56 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-database
+  namespace: dev
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      containers:
+      - name: psql
+        image: postgres:16-alpine
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Drop existing tables
+          PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d auth_db <<'EOF'
+          DROP TABLE IF EXISTS scores CASCADE;
+          DROP TABLE IF EXISTS exercises CASCADE;
+          DROP TABLE IF EXISTS user_progress CASCADE;
+
+          -- Create exercises table with correct schema
+          CREATE TABLE exercises (
+              id SERIAL PRIMARY KEY,
+              title VARCHAR(255) NOT NULL,
+              body TEXT NOT NULL,
+              difficulty INTEGER NOT NULL,
+              test_cases JSONB NOT NULL,
+              solutions JSONB NOT NULL,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+          -- Create scores table with correct schema
+          CREATE TABLE scores (
+              id SERIAL PRIMARY KEY,
+              user_id INTEGER NOT NULL,
+              exercise_id INTEGER NOT NULL,
+              answer TEXT,
+              results JSONB,
+              user_results JSONB,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (exercise_id) REFERENCES exercises(id)
+          );
+          EOF
+        env:
+        - name: DB_HOST
+          value: "nt114-postgres-dev.cy7o684ygirj.us-east-1.rds.amazonaws.com"
+        - name: DB_USER
+          value: "postgres"
+        - name: DB_PASSWORD
+          value: "AcgN2udlMatLllZooXyNKSojlEXR1E2t"
+      restartPolicy: Never
+  backoffLimit: 3
