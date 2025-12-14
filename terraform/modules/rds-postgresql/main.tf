@@ -88,14 +88,8 @@ resource "aws_security_group" "rds" {
   description = "Security group for RDS PostgreSQL"
   vpc_id      = var.vpc_id
 
-  # PostgreSQL access from EKS
-  ingress {
-    description     = "PostgreSQL from EKS"
-    from_port       = var.port
-    to_port         = var.port
-    protocol        = "tcp"
-    security_groups = var.eks_security_group_ids
-  }
+  # Note: Ingress rules are managed separately via aws_security_group_rule resources
+  # in the environment's main.tf to avoid conflicts and provide explicit control
 
   egress {
     from_port   = 0
