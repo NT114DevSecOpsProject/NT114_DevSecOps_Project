@@ -35,8 +35,9 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy nginx configuration template
 COPY default.conf.template /etc/nginx/templates/default.conf.template
 
-# Create nginx cache directories and set permissions
-RUN mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp \
+# Remove default nginx config and create nginx cache directories
+RUN rm -f /etc/nginx/conf.d/default.conf && \
+    mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp \
     /var/cache/nginx/fastcgi_temp /var/cache/nginx/uwsgi_temp \
     /var/cache/nginx/scgi_temp && \
     chmod -R 777 /var/cache/nginx && \
