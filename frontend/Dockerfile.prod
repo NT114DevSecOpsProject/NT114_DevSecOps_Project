@@ -32,12 +32,8 @@ FROM nginx:alpine
 # Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Copy custom entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/custom-entrypoint.sh
-RUN chmod +x /usr/local/bin/custom-entrypoint.sh
+# Copy nginx configuration template
+COPY default.conf.template /etc/nginx/templates/default.conf.template
 
 # Create nginx cache directories and set permissions
 RUN mkdir -p /var/cache/nginx/client_temp /var/cache/nginx/proxy_temp \
@@ -57,8 +53,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Set environment variable with default value
 ENV API_GATEWAY_URL=http://api-gateway:8080
 
-# Use custom entrypoint
-ENTRYPOINT ["/usr/local/bin/custom-entrypoint.sh"]
-
-# Start nginx
+# Start nginx (default entrypoint handles envsubst automatically)
 CMD ["nginx", "-g", "daemon off;"]

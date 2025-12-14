@@ -92,6 +92,6 @@ env:
   # Update this with your actual API Gateway LoadBalancer URL
   # Get URL with: kubectl get svc api-gateway -n dev -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
   - name: API_GATEWAY_URL
-    value: "http://aafb5d739a4bf435eb9e836f1391d91b-1580858419.us-east-1.elb.amazonaws.com:8080"
+    value: "http://a18e7d2bebd654513b654c708224ed16-1287602521.us-east-1.elb.amazonaws.com:8080"
   - name: VITE_API_URL
     value: ""
