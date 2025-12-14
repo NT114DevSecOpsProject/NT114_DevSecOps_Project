@@ -2,7 +2,7 @@
 replicaCount: 2
 
 image:
-  repository: 590184114911.dkr.ecr.us-east-1.amazonaws.com/api-gateway
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/api-gateway
   pullPolicy: Always
   tag: "latest"
 

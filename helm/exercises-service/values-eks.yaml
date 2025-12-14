@@ -2,7 +2,7 @@
 replicaCount: 2
 
 image:
-  repository: 590184114911.dkr.ecr.us-east-1.amazonaws.com/exercises-service
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/exercises-service
   pullPolicy: Always
   tag: "latest"
 
