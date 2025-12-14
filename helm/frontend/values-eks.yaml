@@ -23,7 +23,7 @@ securityContext: {}
   # The Dockerfile.prod sets proper permissions for nginx to run
 
 service:
-  type: ClusterIP
+  type: LoadBalancer
   port: 80
   targetPort: 80
 
