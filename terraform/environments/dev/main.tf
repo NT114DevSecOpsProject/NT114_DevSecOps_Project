@@ -202,8 +202,23 @@ resource "aws_s3_bucket_public_access_block" "migration" {
   restrict_public_buckets = true
 }
 
-# Note: EKS to RDS access is already configured in the RDS module
-# Allow bastion host to access RDS
+# Allow EKS cluster to access RDS (includes both control plane and worker nodes)
+resource "aws_security_group_rule" "rds_from_eks_cluster" {
+  type                     = "ingress"
+  from_port                = var.rds_port
+  to_port                  = var.rds_port
+  protocol                 = "tcp"
+  source_security_group_id = module.eks_cluster.cluster_security_group_id
+  security_group_id        = module.rds_postgresql.security_group_id
+  description              = "PostgreSQL from EKS Cluster"
+
+  depends_on = [
+    module.rds_postgresql,
+    module.eks_cluster
+  ]
+}
+
+# Allow bastion host to access RDS (separate rule to avoid circular dependency)
 resource "aws_security_group_rule" "rds_from_bastion" {
   type                     = "ingress"
   from_port                = var.rds_port
