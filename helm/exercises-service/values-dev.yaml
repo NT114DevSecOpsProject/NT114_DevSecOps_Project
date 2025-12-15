@@ -1,0 +1,110 @@
+# Development Environment Values for Exercises Service
+# Optimized for rapid iteration and cost efficiency
+
+replicaCount: 2
+
+image:
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/exercises-service
+  pullPolicy: Always
+  # tag: "" # Will be set dynamically by CI/CD pipeline
+
+imagePullSecrets:
+  - name: ecr-secret
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "5002"
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: false
+  # Allow temporary root access for log directory creation
+
+service:
+  type: ClusterIP
+  port: 8082
+  targetPort: 5002
+
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 5002
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 5002
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+env:
+  - name: NODE_ENV
+    value: "production"
+  - name: PORT
+    value: "5002"
+  - name: DB_HOST
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_HOST
+  - name: DB_PORT
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_PORT
+  - name: DB_NAME
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_NAME
+  - name: DB_USER
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_USER
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_PASSWORD

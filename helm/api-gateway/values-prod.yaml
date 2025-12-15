@@ -1,10 +1,12 @@
-# EKS Production Values for API Gateway
-replicaCount: 2
+# Production Environment Values for API Gateway
+# Overrides base values.yaml with production-specific configurations
+
+replicaCount: 3
 
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/api-gateway
-  pullPolicy: Always
-  tag: "latest"
+  pullPolicy: IfNotPresent
+  # tag: "" # Will be set dynamically by CI/CD pipeline
 
 imagePullSecrets:
   - name: ecr-secret
@@ -52,18 +54,20 @@ ingress:
           pathType: Prefix
   tls: []
 
+# Production-grade resource allocation
 resources:
   limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
     cpu: 500m
     memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
 
+# Production autoscaling with higher thresholds
 autoscaling:
   enabled: true
-  minReplicas: 2
-  maxReplicas: 5
+  minReplicas: 3
+  maxReplicas: 10
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
@@ -71,8 +75,21 @@ nodeSelector: {}
 
 tolerations: []
 
-affinity: {}
+affinity:
+  # Spread pods across different nodes for high availability
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - api-gateway
+          topologyKey: kubernetes.io/hostname
 
+# Production health checks with tighter intervals
 livenessProbe:
   httpGet:
     path: /health
@@ -80,7 +97,7 @@ livenessProbe:
   initialDelaySeconds: 30
   periodSeconds: 10
   timeoutSeconds: 5
-  failureThreshold: 6
+  failureThreshold: 3
 
 readinessProbe:
   httpGet:

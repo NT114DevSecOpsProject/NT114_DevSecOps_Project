@@ -1,10 +1,12 @@
-# EKS Production Values for Exercises Service
-replicaCount: 2
+# Production Environment Values for User Management Service
+# Overrides base values.yaml with production-specific configurations
+
+replicaCount: 3
 
 image:
-  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/exercises-service
-  pullPolicy: Always
-  tag: "latest"
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/user-management-service
+  pullPolicy: IfNotPresent
+  # tag: "" # Will be set dynamically by CI/CD pipeline
 
 imagePullSecrets:
   - name: ecr-secret
@@ -16,7 +18,7 @@ serviceAccount:
 
 podAnnotations:
   prometheus.io/scrape: "true"
-  prometheus.io/port: "5002"
+  prometheus.io/port: "5001"
 
 podSecurityContext:
   fsGroup: 2000
@@ -27,28 +29,29 @@ securityContext:
     - ALL
   readOnlyRootFilesystem: false
   runAsNonRoot: false
-  # Allow temporary root access for log directory creation
 
 service:
   type: ClusterIP
-  port: 8082
-  targetPort: 5002
+  port: 8081
+  targetPort: 5001
 
 ingress:
   enabled: false
 
+# Production-grade resource allocation
 resources:
   limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
     cpu: 500m
     memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
 
+# Production autoscaling with higher capacity
 autoscaling:
   enabled: true
-  minReplicas: 2
-  maxReplicas: 5
+  minReplicas: 3
+  maxReplicas: 10
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
@@ -56,21 +59,34 @@ nodeSelector: {}
 
 tolerations: []
 
-affinity: {}
+affinity:
+  # Spread pods across different nodes for high availability
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - user-management-service
+          topologyKey: kubernetes.io/hostname
 
+# Production health checks with tighter intervals
 livenessProbe:
   httpGet:
     path: /health
-    port: 5002
+    port: 5001
   initialDelaySeconds: 30
   periodSeconds: 10
   timeoutSeconds: 5
-  failureThreshold: 6
+  failureThreshold: 3
 
 readinessProbe:
   httpGet:
     path: /health
-    port: 5002
+    port: 5001
   initialDelaySeconds: 10
   periodSeconds: 5
   timeoutSeconds: 3
@@ -79,8 +95,10 @@ readinessProbe:
 env:
   - name: NODE_ENV
     value: "production"
+  - name: FLASK_ENV
+    value: "production"
   - name: PORT
-    value: "5002"
+    value: "5001"
   - name: DB_HOST
     valueFrom:
       secretKeyRef:

@@ -1,0 +1,126 @@
+# Production Environment Values for Scores Service
+# Overrides base values.yaml with production-specific configurations
+
+replicaCount: 3
+
+image:
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/scores-service
+  pullPolicy: IfNotPresent
+  # tag: "" # Will be set dynamically by CI/CD pipeline
+
+imagePullSecrets:
+  - name: ecr-secret
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "5003"
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: false
+
+service:
+  type: ClusterIP
+  port: 8083
+  targetPort: 5003
+
+ingress:
+  enabled: false
+
+# Production-grade resource allocation
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Production autoscaling with higher capacity
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  # Spread pods across different nodes for high availability
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - scores-service
+          topologyKey: kubernetes.io/hostname
+
+# Production health checks with tighter intervals
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 5003
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 5003
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+env:
+  - name: NODE_ENV
+    value: "production"
+  - name: PORT
+    value: "5003"
+  - name: USER_MANAGEMENT_SERVICE_URL
+    value: "http://user-management-service:8081/api"
+  - name: DB_HOST
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_HOST
+  - name: DB_PORT
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_PORT
+  - name: DB_NAME
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_NAME
+  - name: DB_USER
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_USER
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: user-management-db-secret
+        key: DB_PASSWORD

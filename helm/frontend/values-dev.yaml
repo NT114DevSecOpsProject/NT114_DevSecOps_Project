@@ -1,10 +1,12 @@
-# EKS Production Values for Frontend
+# Development Environment Values for Frontend
+# Optimized for rapid iteration and cost efficiency
+
 replicaCount: 2
 
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/frontend
   pullPolicy: Always
-  tag: "latest"
+  # tag: "" # Will be set dynamically by CI/CD pipeline
 
 imagePullSecrets:
   - name: ecr-secret
