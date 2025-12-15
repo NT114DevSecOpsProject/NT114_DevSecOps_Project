@@ -1,23 +1,29 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: user-management-service
+  name: exercises-service-prod
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
     repoURL: https://github.com/NT114DevSecOpsProject/NT114_DevSecOps_Project.git
     targetRevision: main
-    path: helm/user-management-service
+    path: helm/exercises-service
     helm:
       valueFiles:
-        - values-dev.yaml
+        - values-prod.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: dev
+    namespace: prod
+  # Production: Manual sync only (no automated sync)
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

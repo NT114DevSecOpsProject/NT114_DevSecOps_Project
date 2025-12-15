@@ -11,7 +11,7 @@ spec:
     path: helm/frontend
     helm:
       valueFiles:
-        - values-eks.yaml
+        - values-dev.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: dev
