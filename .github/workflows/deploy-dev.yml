@@ -1,0 +1,215 @@
+name: Deploy to Development
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'microservices/**'
+      - 'frontend/**'
+      - '.github/workflows/deploy-dev.yml'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY_ALIAS: nt114-devsecops
+  ENVIRONMENT: dev
+
+permissions:
+  contents: write  # Required to push tag updates back to Git
+
+jobs:
+  # Detect which services changed
+  detect-changes:
+    name: Detect Changed Services
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      api-gateway: ${{ steps.filter.outputs.api-gateway }}
+      exercises: ${{ steps.filter.outputs.exercises }}
+      scores: ${{ steps.filter.outputs.scores }}
+      user-management: ${{ steps.filter.outputs.user-management }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'microservices/**'
+            frontend:
+              - 'frontend/**'
+            api-gateway:
+              - 'microservices/api-gateway/**'
+            exercises:
+              - 'microservices/exercises-service/**'
+            scores:
+              - 'microservices/scores-service/**'
+            user-management:
+              - 'microservices/user-management-service/**'
+
+  # Build and push backend services
+  build-backend:
+    name: Build Backend Service
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: api-gateway
+            path: microservices/api-gateway
+            enabled: ${{ needs.detect-changes.outputs.api-gateway == 'true' }}
+          - name: exercises-service
+            path: microservices/exercises-service
+            enabled: ${{ needs.detect-changes.outputs.exercises == 'true' }}
+          - name: scores-service
+            path: microservices/scores-service
+            enabled: ${{ needs.detect-changes.outputs.scores == 'true' }}
+          - name: user-management-service
+            path: microservices/user-management-service
+            enabled: ${{ needs.detect-changes.outputs.user-management == 'true' }}
+    steps:
+      - name: Skip if service unchanged
+        if: matrix.service.enabled == 'false'
+        run: echo "Skipping ${{ matrix.service.name }} - no changes detected"
+
+      - name: Checkout code
+        if: matrix.service.enabled == 'true'
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: matrix.service.enabled == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: matrix.service.enabled == 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        if: matrix.service.enabled == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        if: matrix.service.enabled == 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd ${{ matrix.service.path }}
+
+          docker buildx build --platform linux/amd64 \
+            -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:$IMAGE_TAG \
+            -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:latest \
+            --push .
+
+          echo "IMAGE_FULL_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Helm values with new image tag
+        if: matrix.service.enabled == 'true'
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+
+          # Update image tag in dev values file
+          sed -i 's|tag: ""|tag: "'$IMAGE_TAG'"|g' helm/${{ matrix.service.name }}/values-dev.yaml
+
+          echo "✅ Updated helm/${{ matrix.service.name }}/values-dev.yaml with tag: $IMAGE_TAG"
+
+      - name: Commit and push tag update
+        if: matrix.service.enabled == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add helm/${{ matrix.service.name }}/values-dev.yaml
+          git commit -m "chore(dev): update ${{ matrix.service.name }} image tag to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
+          git pull --rebase origin main
+          git push origin main
+
+  # Build and push frontend
+  build-frontend:
+    name: Build Frontend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Frontend
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd frontend
+
+          docker buildx build --platform linux/amd64 \
+            -f Dockerfile.prod \
+            --build-arg VITE_API_URL= \
+            --build-arg VITE_APP_TITLE="CodeLearn" \
+            --build-arg VITE_APP_ENV=development \
+            -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/frontend:$IMAGE_TAG \
+            -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/frontend:latest \
+            --push .
+
+      - name: Update Helm values with new image tag
+        run: |
+          IMAGE_TAG="${{ github.sha }}"
+
+          # Update image tag in dev values file
+          sed -i 's|tag: ""|tag: "'$IMAGE_TAG'"|g' helm/frontend/values-dev.yaml
+
+          echo "✅ Updated helm/frontend/values-dev.yaml with tag: $IMAGE_TAG"
+
+      - name: Commit and push tag update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add helm/frontend/values-dev.yaml
+          git commit -m "chore(dev): update frontend image tag to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
+          git pull --rebase origin main
+          git push origin main
+
+  # ArgoCD will auto-sync and deploy the new images
+  verify-deployment:
+    name: Verify Deployment
+    needs: [build-backend, build-frontend]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "### 🚀 Development Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Development" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit SHA:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD will auto-sync within 3 minutes" >> $GITHUB_STEP_SUMMARY
+          echo "- Check ArgoCD dashboard for deployment status" >> $GITHUB_STEP_SUMMARY
+          echo "- Verify pods are running: \`kubectl get pods -n dev\`" >> $GITHUB_STEP_SUMMARY
