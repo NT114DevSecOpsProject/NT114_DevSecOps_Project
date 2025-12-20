@@ -14,9 +14,9 @@ permissions:
   security-events: write
 
 jobs:
-  # ============================================
+  # =============================================
   # Stage 1: Code Quality & Security Analysis
-  # ============================================
+  # =============================================
   code-analysis:
     name: SonarQube & Security Analysis
     runs-on:
