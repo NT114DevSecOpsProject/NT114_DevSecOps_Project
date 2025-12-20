@@ -91,19 +91,19 @@ variable "tags" {
 variable "create_github_actions_access_entry" {
   description = "Whether to create EKS access entry for GitHub Actions"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "github_actions_user_arn" {
   description = "ARN of GitHub Actions IAM user/role"
   type        = string
-  default     = "arn:aws:iam::039612870452:user/NT114_DevSecOps_Project-github-actions-user"
+  default     = ""
 }
 
 variable "create_github_actions_access_policy" {
   description = "Whether to create EKS access policy association for GitHub Actions"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "github_actions_access_policy_arn" {
