@@ -85,6 +85,10 @@ resource "aws_eks_access_entry" "current_user_access" {
       Name = "current-user-access"
     }
   )
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 }
 
 resource "aws_eks_access_policy_association" "current_user_admin_policy" {

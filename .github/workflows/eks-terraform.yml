@@ -85,6 +85,39 @@ jobs:
         id: init
         run: terraform init -upgrade
 
+      - name: Import Existing EKS Access Entries
+        if: github.event.inputs.action == 'apply'
+        continue-on-error: true
+        run: |
+          echo "🔄 Checking for existing EKS access entries to import..."
+
+          # Get current IAM user/role ARN
+          CURRENT_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          echo "Current IAM Principal: $CURRENT_ARN"
+
+          # List existing access entries
+          CLUSTER_NAME="eks-1"
+          echo "Checking access entries for cluster: $CLUSTER_NAME"
+
+          # Check if access entry exists
+          if aws eks describe-access-entry \
+            --cluster-name "$CLUSTER_NAME" \
+            --principal-arn "$CURRENT_ARN" \
+            --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "📥 Access entry already exists - importing into Terraform state..."
+
+            # Import the access entry into Terraform state
+            terraform import \
+              'module.iam_access.aws_eks_access_entry.current_user_access' \
+              "${CLUSTER_NAME}:${CURRENT_ARN}" 2>&1 | grep -v "Refreshing state" || true
+
+            echo "✅ Import completed (or already in state)"
+          else
+            echo "ℹ️ No existing access entry found - Terraform will create it"
+          fi
+
+          echo "🎯 Access entry check completed"
+
       - name: Terraform Plan
         id: plan
         if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
