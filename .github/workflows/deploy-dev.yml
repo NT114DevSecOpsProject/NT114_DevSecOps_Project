@@ -26,12 +26,12 @@ jobs:
     name: Detect Changed Services
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      api-gateway: ${{ steps.filter.outputs.api-gateway }}
-      exercises: ${{ steps.filter.outputs.exercises }}
-      scores: ${{ steps.filter.outputs.scores }}
-      user-management: ${{ steps.filter.outputs.user-management }}
+      backend: ${{ steps.set-outputs.outputs.backend }}
+      frontend: ${{ steps.set-outputs.outputs.frontend }}
+      api-gateway: ${{ steps.set-outputs.outputs.api-gateway }}
+      exercises: ${{ steps.set-outputs.outputs.exercises }}
+      scores: ${{ steps.set-outputs.outputs.scores }}
+      user-management: ${{ steps.set-outputs.outputs.user-management }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +39,7 @@ jobs:
 
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name == 'push'
         with:
           filters: |
             backend:
@@ -53,6 +54,27 @@ jobs:
               - 'microservices/scores-service/**'
             user-management:
               - 'microservices/user-management-service/**'
+
+      - name: Set outputs (force all services on manual dispatch)
+        id: set-outputs
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "Manual dispatch detected - building all services"
+            echo "backend=true" >> $GITHUB_OUTPUT
+            echo "frontend=true" >> $GITHUB_OUTPUT
+            echo "api-gateway=true" >> $GITHUB_OUTPUT
+            echo "exercises=true" >> $GITHUB_OUTPUT
+            echo "scores=true" >> $GITHUB_OUTPUT
+            echo "user-management=true" >> $GITHUB_OUTPUT
+          else
+            echo "Push event detected - using path filter results"
+            echo "backend=${{ steps.filter.outputs.backend }}" >> $GITHUB_OUTPUT
+            echo "frontend=${{ steps.filter.outputs.frontend }}" >> $GITHUB_OUTPUT
+            echo "api-gateway=${{ steps.filter.outputs.api-gateway }}" >> $GITHUB_OUTPUT
+            echo "exercises=${{ steps.filter.outputs.exercises }}" >> $GITHUB_OUTPUT
+            echo "scores=${{ steps.filter.outputs.scores }}" >> $GITHUB_OUTPUT
+            echo "user-management=${{ steps.filter.outputs.user-management }}" >> $GITHUB_OUTPUT
+          fi
 
   # Build and push backend services to ECR
   build-backend:
