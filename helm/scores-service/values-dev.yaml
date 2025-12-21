@@ -84,7 +84,7 @@ env:
   - name: PORT
     value: "5003"
   - name: USER_MANAGEMENT_SERVICE_URL
-    value: "http://user-management-service:8081/api"
+    value: "http://user-management-dev-user-management-service:8081/api"
   - name: DB_HOST
     valueFrom:
       secretKeyRef:
