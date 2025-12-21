@@ -210,7 +210,7 @@ jobs:
             echo " Building Frontend Docker image..."
             docker buildx build --platform linux/amd64 \
               -f Dockerfile.prod \
-              --build-arg VITE_API_URL=http://api-gateway.dev.svc.cluster.local:8080 \
+              --build-arg VITE_API_URL="" \
               --build-arg VITE_APP_TITLE="CodeLearn" \
               --build-arg VITE_APP_ENV=development \
               -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:${{ github.sha }} \
