@@ -81,6 +81,9 @@ jobs:
     name: Setup Database Secrets
     needs: detect-changes
     runs-on: ubuntu-latest
+    outputs:
+      rds_endpoint: ${{ steps.rds-info.outputs.endpoint }}
+      rds_password: ${{ steps.rds-info.outputs.password }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -92,12 +95,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get RDS endpoint
+      - name: Get RDS endpoint and password
         id: rds-info
         run: |
+          # Get RDS endpoint
           RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier nt114-postgres-dev --region ${{ env.AWS_REGION }} --query 'DBInstances[0].Endpoint.Address' --output text)
           echo "endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
-          echo "RDS Endpoint: $RDS_ENDPOINT"
+          echo "✅ RDS Endpoint: $RDS_ENDPOINT"
+
+          # Get RDS password from Terraform
+          cd terraform/environments/dev
+          RDS_PASSWORD=$(terraform output -raw rds_instance_password 2>/dev/null || echo "${{ secrets.RDS_PASSWORD }}")
+          echo "password=$RDS_PASSWORD" >> $GITHUB_OUTPUT
+          echo "✅ RDS Password retrieved from Terraform"
 
       - name: Configure kubectl
         run: |
@@ -111,12 +121,12 @@ jobs:
 
       - name: Create database secrets
         run: |
-          # Replace placeholders in template
+          # Replace placeholders in template with values from Terraform
           sed -e "s/RDS_ENDPOINT_PLACEHOLDER/${{ steps.rds-info.outputs.endpoint }}/g" \
-              -e "s/RDS_PASSWORD_PLACEHOLDER/${{ secrets.RDS_PASSWORD }}/g" \
+              -e "s/RDS_PASSWORD_PLACEHOLDER/${{ steps.rds-info.outputs.password }}/g" \
               k8s/manifests/db-secrets-dev.yaml | kubectl apply -f -
 
-          echo "Database secrets created successfully"
+          echo "✅ Database secrets created successfully with Terraform password"
 
   # Build and push backend services to ECR
   build-backend:
@@ -303,13 +313,15 @@ jobs:
   # Sync ArgoCD and verify deployment
   sync-and-verify:
     name: Sync ArgoCD & Verify Deployment
-    needs: [build-backend, build-frontend, update-helm-values]
+    needs: [build-backend, build-frontend, update-helm-values, setup-secrets]
     if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
     runs-on: ubuntu-latest
     outputs:
       frontend_url: ${{ steps.get-urls.outputs.frontend_url }}
       argocd_url: ${{ steps.get-urls.outputs.argocd_url }}
       argocd_password: ${{ steps.get-urls.outputs.argocd_password }}
+      rds_endpoint: ${{ needs.setup-secrets.outputs.rds_endpoint }}
+      rds_password: ${{ needs.setup-secrets.outputs.rds_password }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -508,6 +520,13 @@ jobs:
           echo "  Username: admin"
           echo "  Password: ${{ needs.sync-and-verify.outputs.argocd_password }}"
           echo ""
+          echo "RDS PostgreSQL Database:"
+          echo "  Host:     ${{ needs.sync-and-verify.outputs.rds_endpoint }}"
+          echo "  Port:     5432"
+          echo "  Database: postgres"
+          echo "  Username: postgres"
+          echo "  Password: ${{ needs.sync-and-verify.outputs.rds_password }}"
+          echo ""
           echo "=========================================="
 
       - name: Deployment summary
@@ -523,6 +542,13 @@ jobs:
           echo "- URL: http://${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
           echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
           echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🗄️ RDS PostgreSQL Database" >> $GITHUB_STEP_SUMMARY
+          echo "- Host: \`${{ needs.sync-and-verify.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Port: \`5432\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Database: \`postgres\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Username: \`postgres\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Password: \`${{ needs.sync-and-verify.outputs.rds_password }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Deployment Details" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** Development" >> $GITHUB_STEP_SUMMARY
