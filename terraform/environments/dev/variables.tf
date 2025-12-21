@@ -497,7 +497,7 @@ variable "bastion_public_key" {
 variable "rds_password" {
   description = "RDS PostgreSQL master password (if null, generates random password)"
   type        = string
-  default     = null
+  default     = "postgres"
   sensitive   = true
 
   validation {
