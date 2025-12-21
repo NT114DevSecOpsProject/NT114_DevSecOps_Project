@@ -6,7 +6,7 @@ replicaCount: 2
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/user-management-service
   pullPolicy: Always
-  tag: "574e960323c47769f6425e95c5b83c13975f0600"
+  tag: "1b02a3d5bc93f5382ab88af1d1c62991d82e1234"
 
 imagePullSecrets:
   - name: ecr-secret
