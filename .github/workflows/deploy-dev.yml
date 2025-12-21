@@ -98,16 +98,14 @@ jobs:
       - name: Get RDS endpoint and password
         id: rds-info
         run: |
-          # Get RDS endpoint
+          # Get RDS endpoint from AWS
           RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier nt114-postgres-dev --region ${{ env.AWS_REGION }} --query 'DBInstances[0].Endpoint.Address' --output text)
           echo "endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
           echo "✅ RDS Endpoint: $RDS_ENDPOINT"
 
-          # Get RDS password from Terraform
-          cd terraform/environments/dev
-          RDS_PASSWORD=$(terraform output -raw rds_instance_password 2>/dev/null || echo "${{ secrets.RDS_PASSWORD }}")
-          echo "password=$RDS_PASSWORD" >> $GITHUB_OUTPUT
-          echo "✅ RDS Password retrieved from Terraform"
+          # Use RDS password from GitHub Secrets (managed manually)
+          echo "password=${{ secrets.RDS_PASSWORD }}" >> $GITHUB_OUTPUT
+          echo "✅ RDS Password retrieved from GitHub Secrets"
 
       - name: Configure kubectl
         run: |
