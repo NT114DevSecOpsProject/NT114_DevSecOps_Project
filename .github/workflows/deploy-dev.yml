@@ -103,6 +103,12 @@ jobs:
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
 
+      - name: Create dev namespace
+        run: |
+          echo "Creating dev namespace..."
+          kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ Namespace dev ready"
+
       - name: Create database secrets
         run: |
           # Replace placeholders in template
