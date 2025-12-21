@@ -31,13 +31,13 @@ variable "tags" {
 variable "vpc_name" {
   description = "Name of the VPC"
   type        = string
-  default     = "eks-vpc1"
+  default     = "eks-vpc-prod"
 }
 
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
   type        = string
-  default     = "11.0.0.0/16"
+  default     = "12.0.0.0/16"
 }
 
 variable "availability_zones" {
@@ -49,13 +49,13 @@ variable "availability_zones" {
 variable "private_subnets" {
   description = "List of private subnet CIDR blocks"
   type        = list(string)
-  default     = ["11.0.1.0/24", "11.0.2.0/24", "11.0.3.0/24"]
+  default     = ["12.0.1.0/24", "12.0.2.0/24", "12.0.3.0/24"]
 }
 
 variable "public_subnets" {
   description = "List of public subnet CIDR blocks"
   type        = list(string)
-  default     = ["11.0.101.0/24", "11.0.102.0/24", "11.0.103.0/24"]
+  default     = ["12.0.101.0/24", "12.0.102.0/24", "12.0.103.0/24"]
 }
 
 variable "enable_nat_gateway" {
@@ -80,7 +80,7 @@ variable "one_nat_gateway_per_az" {
 variable "cluster_name" {
   description = "Name of the EKS cluster"
   type        = string
-  default     = "eks-1"
+  default     = "eks-prod"
 }
 
 variable "cluster_version" {
@@ -134,7 +134,7 @@ variable "enable_irsa" {
 variable "node_group_name" {
   description = "Name of the EKS managed node group"
   type        = string
-  default     = "eks-node"
+  default     = "eks-node-prod"
 }
 
 variable "node_instance_types" {
@@ -171,7 +171,7 @@ variable "node_labels" {
   description = "Key-value map of Kubernetes labels for nodes"
   type        = map(string)
   default = {
-    Environment = "dev"
+    Environment = "prod"
     GithubRepo  = "terraform-aws-eks"
     GithubOrg   = "terraform-aws-modules"
   }
@@ -345,7 +345,7 @@ variable "access_scope_namespaces" {
 variable "rds_instance_identifier" {
   description = "RDS PostgreSQL instance identifier"
   type        = string
-  default     = "nt114-postgres-dev"
+  default     = "nt114-postgres-prod"
 }
 
 variable "rds_engine_version" {
@@ -423,7 +423,7 @@ variable "rds_skip_final_snapshot" {
 variable "rds_final_snapshot_identifier" {
   description = "RDS final snapshot identifier"
   type        = string
-  default     = "nt114-postgres-dev-final-snapshot"
+  default     = "nt114-postgres-prod-final-snapshot"
 }
 
 variable "rds_deletion_protection" {
@@ -454,14 +454,14 @@ variable "rds_log_retention_days" {
 variable "migration_bucket_name" {
   description = "S3 bucket name for migration files"
   type        = string
-  default     = "nt114-migration-bucket-dev"
+  default     = "nt114-migration-bucket-prod"
 }
 
 # Bastion Host Variables
 variable "bastion_instance_name" {
   description = "Bastion host instance name"
   type        = string
-  default     = "nt114-bastion-dev"
+  default     = "nt114-bastion-prod"
 }
 
 variable "bastion_instance_type" {
@@ -479,7 +479,7 @@ variable "bastion_ami_id" {
 variable "bastion_key_name" {
   description = "Bastion host SSH key name"
   type        = string
-  default     = "nt114-bastion-key"
+  default     = "nt114-bastion-key-prod"
 }
 
 variable "bastion_public_key" {
@@ -497,7 +497,7 @@ variable "bastion_public_key" {
 variable "rds_password" {
   description = "RDS PostgreSQL master password (if null, generates random password)"
   type        = string
-  default     = null
+  default     = "postgres"
   sensitive   = true
 
   validation {

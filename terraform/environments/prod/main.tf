@@ -17,7 +17,9 @@ module "vpc" {
   tags = merge(
     var.tags,
     {
-      Module = "vpc"
+      Module      = "vpc"
+      Environment = "production"
+      Name        = "eks-vpc-prod"
     }
   )
 }
@@ -43,7 +45,9 @@ module "eks_cluster" {
   tags = merge(
     var.tags,
     {
-      Module = "eks-cluster"
+      Module      = "eks-cluster"
+      Environment = "production"
+      Name        = "eks-prod"
     }
   )
 
@@ -80,7 +84,9 @@ module "eks_nodegroup" {
   tags = merge(
     var.tags,
     {
-      Module = "eks-nodegroup"
+      Module      = "eks-nodegroup"
+      Environment = "production"
+      Name        = "eks-node-prod"
     }
   )
 
@@ -164,7 +170,8 @@ module "rds_postgresql" {
   log_retention_days              = 1
 
   tags = merge(var.tags, {
-    Name = var.rds_instance_identifier
+    Name        = var.rds_instance_identifier
+    Environment = "production"
   })
 
   depends_on = [
@@ -177,7 +184,8 @@ resource "aws_s3_bucket" "migration" {
   bucket = "${var.migration_bucket_name}-${random_id.bucket_suffix.hex}"
 
   tags = merge(var.tags, {
-    Name = var.migration_bucket_name
+    Name        = var.migration_bucket_name
+    Environment = "production"
   })
 }
 
@@ -264,7 +272,8 @@ module "bastion_host" {
   allocate_eip     = true
 
   tags = merge(var.tags, {
-    Name = var.bastion_instance_name
+    Name        = var.bastion_instance_name
+    Environment = "production"
   })
 
   depends_on = [
@@ -313,7 +322,8 @@ module "iam_access" {
   tags = merge(
     var.tags,
     {
-      Module = "iam-access"
+      Module      = "iam-access"
+      Environment = "production"
     }
   )
 
@@ -348,7 +358,8 @@ module "ecr" {
   tags = merge(
     var.tags,
     {
-      Module = "ecr"
+      Module      = "ecr"
+      Environment = "production"
     }
   )
 }

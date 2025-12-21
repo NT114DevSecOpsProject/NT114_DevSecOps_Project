@@ -68,8 +68,13 @@ jobs:
           sleep 5
 
           # Check if we can describe the cluster
-          if aws eks describe-cluster --name eks-1 --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1; then
-            echo "✅ EKS cluster access verified"
+          CLUSTER_NAME="eks-1"
+          if [ "${{ github.event.inputs.environment }}" == "prod" ]; then
+            CLUSTER_NAME="eks-prod"
+          fi
+
+          if aws eks describe-cluster --name $CLUSTER_NAME --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1; then
+            echo "✅ EKS cluster access verified for $CLUSTER_NAME"
           else
             echo "⚠️ EKS cluster access blocked - checking alternative permissions..."
             aws eks list-clusters --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1 || echo "EKS API access restricted"
@@ -97,6 +102,9 @@ jobs:
 
           # List existing access entries
           CLUSTER_NAME="eks-1"
+          if [ "${{ github.event.inputs.environment }}" == "prod" ]; then
+            CLUSTER_NAME="eks-prod"
+          fi
           echo "Checking access entries for cluster: $CLUSTER_NAME"
 
           # Check if access entry exists

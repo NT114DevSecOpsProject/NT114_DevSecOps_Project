@@ -28,7 +28,7 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY_ALIAS: nt114-devsecops
   ENVIRONMENT: prod
-  EKS_CLUSTER_NAME: eks-1
+  EKS_CLUSTER_NAME: eks-prod
 
 permissions:
   contents: write
@@ -86,6 +86,56 @@ jobs:
           echo "**Services:** ${{ steps.parse-services.outputs.services }}" >> $GITHUB_STEP_SUMMARY
           echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "**Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  # Setup Kubernetes secrets for database connections
+  setup-secrets:
+    name: Setup Database Secrets (Production)
+    needs: validate-deployment
+    runs-on: ubuntu-latest
+    outputs:
+      rds_endpoint: ${{ steps.rds-info.outputs.endpoint }}
+      rds_password: ${{ steps.rds-info.outputs.password }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get RDS endpoint and password
+        id: rds-info
+        run: |
+          # Get RDS endpoint from AWS
+          RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier nt114-postgres-prod --region ${{ env.AWS_REGION }} --query 'DBInstances[0].Endpoint.Address' --output text)
+          echo "endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "✅ RDS Endpoint: $RDS_ENDPOINT"
+
+          # Use RDS password from GitHub Secrets (managed manually)
+          echo "password=${{ secrets.RDS_PASSWORD }}" >> $GITHUB_OUTPUT
+          echo "✅ RDS Password retrieved from GitHub Secrets"
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Create prod namespace
+        run: |
+          echo "Creating prod namespace..."
+          kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ Namespace prod ready"
+
+      - name: Create database secrets
+        run: |
+          # Replace placeholders in template with values from Terraform
+          sed -e "s/RDS_ENDPOINT_PLACEHOLDER/${{ steps.rds-info.outputs.endpoint }}/g" \
+              -e "s/RDS_PASSWORD_PLACEHOLDER/${{ steps.rds-info.outputs.password }}/g" \
+              k8s/manifests/db-secrets-prod.yaml | kubectl apply -f -
+
+          echo "✅ Database secrets created successfully with Terraform password"
 
   # Build and push to production ECR (with GitHub Environment approval)
   build-services:
@@ -331,7 +381,7 @@ jobs:
   # Post-deployment summary
   deployment-complete:
     name: Deployment Complete
-    needs: [validate-deployment, build-services, build-frontend, verify-argocd-readiness]
+    needs: [validate-deployment, build-services, build-frontend, verify-argocd-readiness, setup-secrets]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -340,10 +390,18 @@ jobs:
           echo "###  Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** PRODUCTION" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster:** eks-prod" >> $GITHUB_STEP_SUMMARY
           echo "**Image Tag:** ${{ needs.validate-deployment.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
           echo "**Services:** ${{ needs.validate-deployment.outputs.services_list }}" >> $GITHUB_STEP_SUMMARY
           echo "**Deployed by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
           echo "**Deployment Method:** GitOps with ArgoCD (Manual Sync Required)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🗄️ RDS PostgreSQL Database (Production)" >> $GITHUB_STEP_SUMMARY
+          echo "- Host: \`${{ needs.setup-secrets.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Port: \`5432\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Database: \`postgres\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Username: \`postgres\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Password: **(stored in GitHub Secret: RDS_PASSWORD)**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "** Images built and pushed to production ECR**" >> $GITHUB_STEP_SUMMARY
           echo "** Helm values updated in Git repository**" >> $GITHUB_STEP_SUMMARY
