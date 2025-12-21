@@ -99,8 +99,8 @@ env:
   - name: PORT
     value: "8000"
   - name: USER_SERVICE_URL
-    value: "http://user-management-service:8081"
+    value: "http://user-management-dev-user-management-service:8081"
   - name: EXERCISES_SERVICE_URL
-    value: "http://exercises-service:8082"
+    value: "http://exercises-dev-exercises-service:8082"
   - name: SCORES_SERVICE_URL
-    value: "http://scores-service:8083"
+    value: "http://scores-dev-scores-service:8083"
