@@ -1,4 +1,4 @@
-name: Deploy to Development
+name: Deploy to Development (GitOps)
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
     paths:
       - 'microservices/**'
       - 'frontend/**'
+      - 'helm/**'
       - '.github/workflows/deploy-dev.yml'
   workflow_dispatch:
 
@@ -14,9 +15,10 @@ env:
   AWS_REGION: us-east-1
   ECR_REGISTRY_ALIAS: nt114-devsecops
   ENVIRONMENT: dev
+  EKS_CLUSTER_NAME: eks-1
 
 permissions:
-  contents: write  # Required to push tag updates back to Git
+  contents: write  # Required to push image tag updates to Git
 
 jobs:
   # Detect which services changed
@@ -52,13 +54,14 @@ jobs:
             user-management:
               - 'microservices/user-management-service/**'
 
-  # Build and push backend services
+  # Build and push backend services to ECR
   build-backend:
     name: Build Backend Service
     needs: detect-changes
     if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false  # Continue even if one service fails
       matrix:
         service:
           - name: api-gateway
@@ -73,10 +76,12 @@ jobs:
           - name: user-management-service
             path: microservices/user-management-service
             enabled: ${{ needs.detect-changes.outputs.user-management == 'true' }}
+    outputs:
+      services_built: ${{ steps.set-output.outputs.services }}
     steps:
       - name: Skip if service unchanged
         if: matrix.service.enabled == 'false'
-        run: echo "Skipping ${{ matrix.service.name }} - no changes detected"
+        run: echo "⏭️ Skipping ${{ matrix.service.name }} - no changes detected"
 
       - name: Checkout code
         if: matrix.service.enabled == 'true'
@@ -99,43 +104,32 @@ jobs:
         if: matrix.service.enabled == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (with retry)
         if: matrix.service.enabled == 'true'
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd ${{ matrix.service.path }}
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          retry_on: error
+          command: |
+            cd ${{ matrix.service.path }}
 
-          docker buildx build --platform linux/amd64 \
-            -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:$IMAGE_TAG \
-            -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:latest \
-            --push .
+            echo "🐳 Building Docker image for ${{ matrix.service.name }}..."
+            docker buildx build --platform linux/amd64 \
+              -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:${{ github.sha }} \
+              -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:latest \
+              --push .
 
-          echo "IMAGE_FULL_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
+            echo "✅ Image pushed to ECR:"
+            echo "   - ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:${{ github.sha }}"
+            echo "   - ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:latest"
 
-      - name: Update Helm values with new image tag
+      - name: Mark service as built
         if: matrix.service.enabled == 'true'
-        run: |
-          IMAGE_TAG="${{ github.sha }}"
+        id: set-output
+        run: echo "services=${{ matrix.service.name }}" >> $GITHUB_OUTPUT
 
-          # Update image tag in dev values file
-          sed -i 's|tag: ""|tag: "'$IMAGE_TAG'"|g' helm/${{ matrix.service.name }}/values-dev.yaml
-
-          echo "✅ Updated helm/${{ matrix.service.name }}/values-dev.yaml with tag: $IMAGE_TAG"
-
-      - name: Commit and push tag update
-        if: matrix.service.enabled == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add helm/${{ matrix.service.name }}/values-dev.yaml
-          git commit -m "chore(dev): update ${{ matrix.service.name }} image tag to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
-          git pull --rebase origin main
-          git push origin main
-
-  # Build and push frontend
+  # Build and push frontend to ECR
   build-frontend:
     name: Build Frontend
     needs: detect-changes
@@ -159,48 +153,168 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Frontend
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd frontend
+      - name: Build and push Frontend (with retry)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          retry_on: error
+          command: |
+            cd frontend
 
-          docker buildx build --platform linux/amd64 \
-            -f Dockerfile.prod \
-            --build-arg VITE_API_URL= \
-            --build-arg VITE_APP_TITLE="CodeLearn" \
-            --build-arg VITE_APP_ENV=development \
-            -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/frontend:$IMAGE_TAG \
-            -t $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/frontend:latest \
-            --push .
+            echo "🐳 Building Frontend Docker image..."
+            docker buildx build --platform linux/amd64 \
+              -f Dockerfile.prod \
+              --build-arg VITE_API_URL=http://api-gateway.dev.svc.cluster.local:8080 \
+              --build-arg VITE_APP_TITLE="CodeLearn" \
+              --build-arg VITE_APP_ENV=development \
+              -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/frontend:${{ github.sha }} \
+              -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/frontend:latest \
+              --push .
 
-      - name: Update Helm values with new image tag
+            echo "✅ Frontend image pushed to ECR"
+
+  # Update Helm values in Git (sequential to avoid conflicts)
+  update-helm-values:
+    name: Update Helm Values (GitOps)
+    needs: [detect-changes, build-backend, build-frontend]
+    if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Update all Helm values with new image tags
         run: |
           IMAGE_TAG="${{ github.sha }}"
+          UPDATED_SERVICES=""
 
-          # Update image tag in dev values file
-          sed -i 's|tag: ""|tag: "'$IMAGE_TAG'"|g' helm/frontend/values-dev.yaml
+          # Update backend services
+          if [ "${{ needs.detect-changes.outputs.api-gateway }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/api-gateway/values-dev.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}api-gateway, "
+            echo "✅ Updated helm/api-gateway/values-dev.yaml"
+          fi
 
-          echo "✅ Updated helm/frontend/values-dev.yaml with tag: $IMAGE_TAG"
+          if [ "${{ needs.detect-changes.outputs.exercises }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/exercises-service/values-dev.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}exercises-service, "
+            echo "✅ Updated helm/exercises-service/values-dev.yaml"
+          fi
 
-      - name: Commit and push tag update
+          if [ "${{ needs.detect-changes.outputs.scores }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/scores-service/values-dev.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}scores-service, "
+            echo "✅ Updated helm/scores-service/values-dev.yaml"
+          fi
+
+          if [ "${{ needs.detect-changes.outputs.user-management }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/user-management-service/values-dev.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}user-management-service, "
+            echo "✅ Updated helm/user-management-service/values-dev.yaml"
+          fi
+
+          # Update frontend
+          if [ "${{ needs.detect-changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/frontend/values-dev.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}frontend, "
+            echo "✅ Updated helm/frontend/values-dev.yaml"
+          fi
+
+          # Save updated services list
+          echo "UPDATED_SERVICES=${UPDATED_SERVICES%, }" >> $GITHUB_ENV
+
+      - name: Commit and push all Helm value updates (single atomic commit)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add helm/frontend/values-dev.yaml
-          git commit -m "chore(dev): update frontend image tag to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
-          git pull --rebase origin main
-          git push origin main
+          git add helm/*/values-dev.yaml
 
-  # ArgoCD will auto-sync and deploy the new images
-  verify-deployment:
-    name: Verify Deployment
-    needs: [build-backend, build-frontend]
-    if: always()
+          if git diff --cached --quiet; then
+            echo "⏭️ No Helm value changes to commit"
+          else
+            # Create commit message
+            COMMIT_MSG="chore(dev): update image tags to ${{ github.sha }} [skip ci]
+
+Services updated: ${{ env.UPDATED_SERVICES }}
+Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+            git commit -m "$COMMIT_MSG"
+
+            # Retry push up to 3 times with backoff
+            ATTEMPT=1
+            MAX_ATTEMPTS=3
+            while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+              if git pull --rebase origin main && git push origin main; then
+                break
+              else
+                if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+                  echo "❌ Failed to push after $MAX_ATTEMPTS attempts"
+                  exit 1
+                fi
+                echo "⚠️ Push failed, retrying in 5 seconds (attempt $ATTEMPT/$MAX_ATTEMPTS)..."
+                sleep 5
+                ATTEMPT=$(($ATTEMPT + 1))
+              fi
+            done
+
+            echo "✅ Helm values pushed to Git - ArgoCD will auto-sync"
+            echo "📦 Updated services: ${{ env.UPDATED_SERVICES }}"
+          fi
+
+  # Verify ArgoCD deployment (optional monitoring)
+  verify-argocd-sync:
+    name: Verify ArgoCD Sync
+    needs: [build-backend, build-frontend, update-helm-values]
+    if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
     runs-on: ubuntu-latest
     steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+          kubectl cluster-info || echo "⚠️ Could not connect to cluster"
+
+      - name: Check ArgoCD Application Status
+        continue-on-error: true
+        run: |
+          echo "=== Checking ArgoCD Application Sync Status ==="
+
+          # Wait for ArgoCD to detect changes (typically 3 minutes)
+          echo "⏳ Waiting 30 seconds for ArgoCD to detect Git changes..."
+          sleep 30
+
+          # Check application sync status
+          echo ""
+          echo "📊 ArgoCD Applications Status:"
+          kubectl get applications -n argocd -o custom-columns=\
+NAME:.metadata.name,\
+SYNC:.status.sync.status,\
+HEALTH:.status.health.status,\
+MESSAGE:.status.conditions[0].message 2>/dev/null || echo "ArgoCD not available or applications not found"
+
+          echo ""
+          echo "✅ Deployment pipeline complete!"
+          echo ""
+          echo "📝 Next Steps:"
+          echo "   1. ArgoCD will auto-sync within 3 minutes (default sync interval)"
+          echo "   2. Check ArgoCD UI for sync progress"
+          echo "   3. Monitor pods: kubectl get pods -n dev"
+
       - name: Deployment Summary
         run: |
           echo "### 🚀 Development Deployment Summary" >> $GITHUB_STEP_SUMMARY
@@ -208,8 +322,18 @@ jobs:
           echo "**Environment:** Development" >> $GITHUB_STEP_SUMMARY
           echo "**Commit SHA:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Method:** GitOps with ArgoCD" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**✅ Images built and pushed to ECR**" >> $GITHUB_STEP_SUMMARY
+          echo "**✅ Helm values updated in Git repository**" >> $GITHUB_STEP_SUMMARY
+          echo "**⏳ ArgoCD will auto-sync within 3 minutes**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ArgoCD will auto-sync within 3 minutes" >> $GITHUB_STEP_SUMMARY
-          echo "- Check ArgoCD dashboard for deployment status" >> $GITHUB_STEP_SUMMARY
+          echo "- Monitor ArgoCD dashboard for sync status" >> $GITHUB_STEP_SUMMARY
           echo "- Verify pods are running: \`kubectl get pods -n dev\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Check application health in ArgoCD UI" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**ArgoCD Configuration:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Auto-sync: ✅ Enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- Self-heal: ✅ Enabled" >> $GITHUB_STEP_SUMMARY
+          echo "- Prune: ✅ Enabled" >> $GITHUB_STEP_SUMMARY

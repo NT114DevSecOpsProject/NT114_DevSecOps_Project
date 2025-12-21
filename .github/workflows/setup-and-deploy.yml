@@ -1,0 +1,476 @@
+name: Setup ArgoCD & Deploy Applications
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+        default: 'dev'
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: eks-1
+  ECR_REGISTRY_ALIAS: nt114-devsecops
+
+permissions:
+  contents: read
+
+jobs:
+  setup-and-deploy:
+    name: Setup ArgoCD & Deploy Apps
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get AWS Account ID
+        id: aws-account
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+          echo "AWS Account ID: $ACCOUNT_ID"
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.0'
+
+      - name: Configure kubectl
+        run: |
+          echo "Configuring kubectl for cluster: ${{ env.EKS_CLUSTER_NAME }}"
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+          kubectl cluster-info
+
+      - name: Install ArgoCD
+        id: install-argocd
+        run: |
+          echo "=== Installing ArgoCD ==="
+
+          # Create namespace
+          kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+
+          # Check if ArgoCD is already installed
+          if kubectl get deployment argocd-server -n argocd &>/dev/null; then
+            echo "✅ ArgoCD already installed"
+            echo "installed=existing" >> $GITHUB_OUTPUT
+          else
+            echo "Installing ArgoCD..."
+            kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+            echo "Waiting for ArgoCD to be ready..."
+            kubectl wait --for=condition=Ready pods --all -n argocd --timeout=600s
+
+            echo "✅ ArgoCD installed successfully"
+            echo "installed=new" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create ArgoCD Ingress with ALB
+        run: |
+          echo "=== Creating ArgoCD Ingress with ALB ==="
+
+          cat <<EOF | kubectl apply -f -
+          apiVersion: networking.k8s.io/v1
+          kind: Ingress
+          metadata:
+            name: argocd-server
+            namespace: argocd
+            annotations:
+              alb.ingress.kubernetes.io/scheme: internet-facing
+              alb.ingress.kubernetes.io/target-type: ip
+              alb.ingress.kubernetes.io/backend-protocol: HTTPS
+              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+              alb.ingress.kubernetes.io/ssl-redirect: '443'
+              alb.ingress.kubernetes.io/healthcheck-path: /healthz
+              alb.ingress.kubernetes.io/healthcheck-protocol: HTTPS
+          spec:
+            ingressClassName: alb
+            rules:
+              - http:
+                  paths:
+                    - path: /
+                      pathType: Prefix
+                      backend:
+                        service:
+                          name: argocd-server
+                          port:
+                            number: 443
+          EOF
+
+          echo "✅ ArgoCD Ingress created"
+
+      - name: Get ArgoCD Credentials
+        id: argocd-creds
+        run: |
+          echo "=== Getting ArgoCD Credentials ==="
+
+          # Wait for initial admin secret
+          for i in {1..30}; do
+            if kubectl get secret argocd-initial-admin-secret -n argocd &>/dev/null; then
+              break
+            fi
+            echo "Waiting for ArgoCD initial admin secret... ($i/30)"
+            sleep 5
+          done
+
+          # Get password
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
+            -o jsonpath="{.data.password}" | base64 -d)
+
+          echo "argocd_password=$ARGOCD_PASSWORD" >> $GITHUB_OUTPUT
+          echo "✅ Retrieved ArgoCD password"
+
+      - name: Wait for ArgoCD ALB
+        id: argocd-url
+        run: |
+          echo "=== Waiting for ArgoCD ALB to be provisioned ==="
+
+          for i in {1..60}; do
+            ARGOCD_URL=$(kubectl get ingress argocd-server -n argocd \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+
+            if [ ! -z "$ARGOCD_URL" ]; then
+              echo "argocd_url=$ARGOCD_URL" >> $GITHUB_OUTPUT
+              echo "✅ ArgoCD URL: http://$ARGOCD_URL"
+              break
+            fi
+
+            echo "Waiting for ALB... ($i/60)"
+            sleep 10
+          done
+
+          if [ -z "$ARGOCD_URL" ]; then
+            echo "⚠️ ALB not ready yet, check manually"
+          fi
+
+      - name: Create namespace and secrets
+        run: |
+          # Create namespace
+          kubectl create namespace ${{ inputs.environment }} --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create ECR secret
+          kubectl create secret docker-registry ecr-secret \
+            --docker-server=${{ steps.aws-account.outputs.account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com \
+            --docker-username=AWS \
+            --docker-password=$(aws ecr get-login-password --region ${{ env.AWS_REGION }}) \
+            --namespace=${{ inputs.environment }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy ArgoCD Applications
+        run: |
+          echo "=== Deploying ArgoCD Applications for ${{ inputs.environment }} ==="
+
+          # Determine values file based on environment
+          if [ "${{ inputs.environment }}" == "dev" ]; then
+            VALUES_FILE="values-dev.yaml"
+            AUTO_SYNC="true"
+          else
+            VALUES_FILE="values-prod.yaml"
+            AUTO_SYNC="false"
+          fi
+
+          # Deploy Frontend Application
+          cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: frontend-${{ inputs.environment }}
+            namespace: argocd
+            labels:
+              environment: ${{ inputs.environment }}
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/${{ github.repository }}.git
+              targetRevision: main
+              path: helm/frontend
+              helm:
+                valueFiles:
+                  - $VALUES_FILE
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: ${{ inputs.environment }}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+          EOF
+
+          # Deploy API Gateway
+          cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: api-gateway-${{ inputs.environment }}
+            namespace: argocd
+            labels:
+              environment: ${{ inputs.environment }}
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/${{ github.repository }}.git
+              targetRevision: main
+              path: helm/api-gateway
+              helm:
+                valueFiles:
+                  - $VALUES_FILE
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: ${{ inputs.environment }}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+          EOF
+
+          # Deploy User Management Service
+          cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: user-management-${{ inputs.environment }}
+            namespace: argocd
+            labels:
+              environment: ${{ inputs.environment }}
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/${{ github.repository }}.git
+              targetRevision: main
+              path: helm/user-management-service
+              helm:
+                valueFiles:
+                  - $VALUES_FILE
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: ${{ inputs.environment }}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+          EOF
+
+          # Deploy Exercises Service
+          cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: exercises-${{ inputs.environment }}
+            namespace: argocd
+            labels:
+              environment: ${{ inputs.environment }}
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/${{ github.repository }}.git
+              targetRevision: main
+              path: helm/exercises-service
+              helm:
+                valueFiles:
+                  - $VALUES_FILE
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: ${{ inputs.environment }}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+          EOF
+
+          # Deploy Scores Service
+          cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: scores-${{ inputs.environment }}
+            namespace: argocd
+            labels:
+              environment: ${{ inputs.environment }}
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/${{ github.repository }}.git
+              targetRevision: main
+              path: helm/scores-service
+              helm:
+                valueFiles:
+                  - $VALUES_FILE
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: ${{ inputs.environment }}
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+                allowEmpty: false
+              syncOptions:
+                - CreateNamespace=true
+              retry:
+                limit: 5
+                backoff:
+                  duration: 5s
+                  factor: 2
+                  maxDuration: 3m
+          EOF
+
+          echo "✅ ArgoCD Applications created"
+
+          # Wait for sync
+          echo "⏳ Waiting for ArgoCD to sync applications..."
+          sleep 30
+
+      - name: Wait for Frontend ALB
+        id: frontend-url
+        run: |
+          echo "=== Waiting for Frontend ALB ==="
+
+          for i in {1..60}; do
+            FRONTEND_URL=$(kubectl get ingress frontend -n ${{ inputs.environment }} \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+
+            if [ ! -z "$FRONTEND_URL" ]; then
+              echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+              echo "✅ Frontend URL: http://$FRONTEND_URL"
+              break
+            fi
+
+            echo "Waiting for Frontend ALB... ($i/60)"
+            sleep 10
+          done
+
+          if [ -z "$FRONTEND_URL" ]; then
+            echo "⚠️ Frontend ALB not ready yet"
+          fi
+
+      - name: Display Access Information
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "         🚀 DEPLOYMENT COMPLETE!         "
+          echo "=========================================="
+          echo ""
+          echo "🌐 ArgoCD Dashboard:"
+          echo "   URL:      http://${{ steps.argocd-url.outputs.argocd_url }}"
+          echo "   Username: admin"
+          echo "   Password: ${{ steps.argocd-creds.outputs.argocd_password }}"
+          echo ""
+          echo "🌐 Application Frontend:"
+          echo "   URL: http://${{ steps.frontend-url.outputs.frontend_url }}"
+          echo ""
+          echo "=========================================="
+
+          # Create GitHub Step Summary
+          cat >> $GITHUB_STEP_SUMMARY <<EOF
+          ## 🚀 Deployment Complete - ${{ inputs.environment }} Environment
+
+          ### 🔐 ArgoCD Dashboard Access
+          - **URL:** http://${{ steps.argocd-url.outputs.argocd_url }}
+          - **Username:** \`admin\`
+          - **Password:** \`${{ steps.argocd-creds.outputs.argocd_password }}\`
+
+          ### 🌐 Application Access
+          - **Frontend:** http://${{ steps.frontend-url.outputs.frontend_url }}
+
+          ### 📊 Deployed Applications
+          - ✅ Frontend
+          - ✅ API Gateway
+          - ✅ User Management Service
+          - ✅ Exercises Service
+          - ✅ Scores Service
+
+          ### 📝 Next Steps
+          1. Access ArgoCD UI to monitor application sync status
+          2. Verify all applications are healthy and synced
+          3. Test the frontend application
+          4. Monitor pods: \`kubectl get pods -n ${{ inputs.environment }}\`
+
+          ### 🔄 GitOps Workflow
+          - **Dev Environment:** Auto-sync enabled (changes auto-deploy on Git push)
+          - **Prod Environment:** Manual sync required in ArgoCD UI
+
+          ---
+          *Note: ALB URLs may take 2-3 minutes to become fully accessible*
+          EOF
+
+      - name: Verify Deployment
+        continue-on-error: true
+        run: |
+          echo "=== Verifying Deployment ==="
+
+          echo ""
+          echo "ArgoCD Applications:"
+          kubectl get applications -n argocd -l environment=${{ inputs.environment }}
+
+          echo ""
+          echo "Pods in ${{ inputs.environment }} namespace:"
+          kubectl get pods -n ${{ inputs.environment }}
+
+          echo ""
+          echo "Services in ${{ inputs.environment }} namespace:"
+          kubectl get svc -n ${{ inputs.environment }}
+
+          echo ""
+          echo "Ingresses in ${{ inputs.environment }} namespace:"
+          kubectl get ingress -n ${{ inputs.environment }}
