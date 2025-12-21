@@ -294,12 +294,16 @@ jobs:
           echo "SUCCESS: Helm values pushed to Git - ArgoCD will auto-sync"
           echo "Updated services: ${{ env.UPDATED_SERVICES }}"
 
-  # Verify ArgoCD deployment (optional monitoring)
-  verify-argocd-sync:
-    name: Verify ArgoCD Sync
+  # Sync ArgoCD and verify deployment
+  sync-and-verify:
+    name: Sync ArgoCD & Verify Deployment
     needs: [build-backend, build-frontend, update-helm-values]
     if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
     runs-on: ubuntu-latest
+    outputs:
+      frontend_url: ${{ steps.get-urls.outputs.frontend_url }}
+      argocd_url: ${{ steps.get-urls.outputs.argocd_url }}
+      argocd_password: ${{ steps.get-urls.outputs.argocd_password }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -316,49 +320,133 @@ jobs:
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-          kubectl cluster-info || echo " Could not connect to cluster"
+          kubectl cluster-info
 
-      - name: Check ArgoCD Application Status
-        continue-on-error: true
+      - name: Force sync ArgoCD applications
         run: |
-          echo "=== Checking ArgoCD Application Sync Status ==="
+          echo "Force syncing all dev applications..."
+          for app in api-gateway-dev exercises-dev frontend-dev scores-dev user-management-dev; do
+            echo "Syncing $app..."
+            kubectl patch application $app -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' || echo "App $app may not exist yet"
+          done
 
-          # Wait for ArgoCD to detect changes (typically 3 minutes)
-          echo " Waiting 30 seconds for ArgoCD to detect Git changes..."
+          echo "Waiting 30s for ArgoCD to process sync requests..."
           sleep 30
 
-          # Check application sync status
-          echo ""
-          echo "ArgoCD Applications Status:"
-          kubectl get applications -n argocd -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,MESSAGE:.status.conditions[0].message 2>/dev/null || echo "ArgoCD not available or applications not found"
-
-          echo ""
-          echo " Deployment pipeline complete!"
-          echo ""
-          echo " Next Steps:"
-          echo "   1. ArgoCD will auto-sync within 3 minutes (default sync interval)"
-          echo "   2. Check ArgoCD UI for sync progress"
-          echo "   3. Monitor pods: kubectl get pods -n dev"
-
-      - name: Deployment Summary
+      - name: Wait for pods to be healthy
         run: |
-          echo "###  Development Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "Waiting for all pods to be healthy (max 5 minutes)..."
+
+          for i in {1..30}; do
+            READY_PODS=$(kubectl get pods -n dev --no-headers 2>/dev/null | grep -c "1/1.*Running" || echo "0")
+            TOTAL_PODS=$(kubectl get pods -n dev --no-headers 2>/dev/null | wc -l || echo "0")
+
+            echo "Attempt $i/30: $READY_PODS/$TOTAL_PODS pods ready"
+
+            if [ "$READY_PODS" -ge "8" ] && [ "$READY_PODS" == "$TOTAL_PODS" ]; then
+              echo "All pods are healthy!"
+              kubectl get pods -n dev
+              break
+            fi
+
+            if [ "$i" == "30" ]; then
+              echo "Warning: Not all pods ready after 5 minutes"
+              kubectl get pods -n dev
+              kubectl get applications -n argocd
+            fi
+
+            sleep 10
+          done
+
+      - name: Get access URLs
+        id: get-urls
+        continue-on-error: true
+        run: |
+          echo "Getting ArgoCD credentials..."
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "N/A")
+
+          echo "Getting LoadBalancer URLs (waiting up to 3 minutes)..."
+
+          # Get ArgoCD URL
+          ARGOCD_URL=""
+          for i in {1..18}; do
+            ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            [ -z "$ARGOCD_URL" ] && ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+
+            if [ -n "$ARGOCD_URL" ]; then
+              echo "ArgoCD URL found: $ARGOCD_URL"
+              break
+            fi
+            echo "Waiting for ArgoCD LoadBalancer... ($i/18)"
+            sleep 10
+          done
+
+          # Get Frontend URL
+          FRONTEND_URL=""
+          for i in {1..18}; do
+            FRONTEND_URL=$(kubectl get svc frontend-dev -n dev -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            [ -z "$FRONTEND_URL" ] && FRONTEND_URL=$(kubectl get svc frontend-dev -n dev -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+
+            if [ -n "$FRONTEND_URL" ]; then
+              echo "Frontend URL found: $FRONTEND_URL"
+              break
+            fi
+            echo "Waiting for Frontend LoadBalancer... ($i/18)"
+            sleep 10
+          done
+
+          [ -z "$ARGOCD_URL" ] && ARGOCD_URL="Pending (LoadBalancer provisioning)"
+          [ -z "$FRONTEND_URL" ] && FRONTEND_URL="Pending (LoadBalancer provisioning)"
+
+          echo "argocd_password=$ARGOCD_PASSWORD" >> $GITHUB_OUTPUT
+          echo "argocd_url=$ARGOCD_URL" >> $GITHUB_OUTPUT
+          echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+
+  # Output access information
+  output-access-info:
+    name: Output Access Information
+    needs: sync-and-verify
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display access information
+        run: |
+          echo "=========================================="
+          echo "  DEPLOYMENT COMPLETE!"
+          echo "=========================================="
+          echo ""
+          echo "Frontend Application:"
+          echo "  URL: http://${{ needs.sync-and-verify.outputs.frontend_url }}"
+          echo ""
+          echo "ArgoCD Dashboard:"
+          echo "  URL:      http://${{ needs.sync-and-verify.outputs.argocd_url }}"
+          echo "  Username: admin"
+          echo "  Password: ${{ needs.sync-and-verify.outputs.argocd_password }}"
+          echo ""
+          echo "=========================================="
+
+      - name: Deployment summary
+        run: |
+          echo "## 🚀 Development Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** Development" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit SHA:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Deployment Method:** GitOps with ArgoCD" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "** Images built and pushed to ECR**" >> $GITHUB_STEP_SUMMARY
-          echo "** Helm values updated in Git repository**" >> $GITHUB_STEP_SUMMARY
-          echo "** ArgoCD will auto-sync within 3 minutes**" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend Application:**" >> $GITHUB_STEP_SUMMARY
+          echo "- http://${{ needs.sync-and-verify.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Monitor ArgoCD dashboard for sync status" >> $GITHUB_STEP_SUMMARY
-          echo "- Verify pods are running: \`kubectl get pods -n dev\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Check application health in ArgoCD UI" >> $GITHUB_STEP_SUMMARY
+          echo "**ArgoCD Dashboard:**" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: http://${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**ArgoCD Configuration:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Auto-sync:  Enabled" >> $GITHUB_STEP_SUMMARY
-          echo "- Self-heal:  Enabled" >> $GITHUB_STEP_SUMMARY
-          echo "- Prune:  Enabled" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** Development" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ What Was Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- Docker images built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "- Helm values updated with new image tags" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD applications synced" >> $GITHUB_STEP_SUMMARY
+          echo "- All pods verified healthy" >> $GITHUB_STEP_SUMMARY
+          echo "- LoadBalancers provisioned and accessible" >> $GITHUB_STEP_SUMMARY

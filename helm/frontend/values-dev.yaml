@@ -91,9 +91,8 @@ env:
   - name: NODE_ENV
     value: "production"
   # API_GATEWAY_URL is used by nginx to proxy requests to backend
-  # Update this with your actual API Gateway LoadBalancer URL
-  # Get URL with: kubectl get svc api-gateway -n dev -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+  # Using Kubernetes Service DNS for internal cluster communication
   - name: API_GATEWAY_URL
-    value: "http://a5397b404394f476b957c47744ba7f24-1091928269.us-east-1.elb.amazonaws.com:8080"
+    value: "http://api-gateway-dev.dev.svc.cluster.local:8080"
   - name: VITE_API_URL
     value: ""
