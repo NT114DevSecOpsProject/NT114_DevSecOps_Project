@@ -391,7 +391,7 @@ jobs:
               path: $HELM_PATH
               helm:
                 valueFiles:
-                  - values-eks.yaml
+                  - values-dev.yaml
             destination:
               server: https://kubernetes.default.svc
               namespace: dev
