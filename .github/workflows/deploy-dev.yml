@@ -523,7 +523,7 @@ jobs:
           echo "  Port:     5432"
           echo "  Database: postgres"
           echo "  Username: postgres"
-          echo "  Password: ${{ needs.sync-and-verify.outputs.rds_password }}"
+          echo "  Password: (stored in GitHub Secret: RDS_PASSWORD)"
           echo ""
           echo "=========================================="
 
@@ -546,7 +546,9 @@ jobs:
           echo "- Port: \`5432\`" >> $GITHUB_STEP_SUMMARY
           echo "- Database: \`postgres\`" >> $GITHUB_STEP_SUMMARY
           echo "- Username: \`postgres\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Password: \`${{ needs.sync-and-verify.outputs.rds_password }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Password: **(stored in GitHub Secret: RDS_PASSWORD)**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> 💡 To get password: Go to Settings → Secrets → RDS_PASSWORD" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Deployment Details" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** Development" >> $GITHUB_STEP_SUMMARY
