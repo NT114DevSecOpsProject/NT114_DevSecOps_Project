@@ -328,6 +328,85 @@ jobs:
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
           kubectl cluster-info
 
+      - name: Install ArgoCD if not exists
+        run: |
+          echo "Checking if ArgoCD is installed..."
+          if kubectl get namespace argocd &>/dev/null; then
+            echo "✅ ArgoCD namespace exists"
+          else
+            echo "📦 Installing ArgoCD..."
+            kubectl create namespace argocd
+            kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+            echo "⏳ Waiting for ArgoCD to be ready..."
+            kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s || {
+              echo "⚠️ Some ArgoCD pods may still be starting, continuing..."
+            }
+
+            echo "🌐 Exposing ArgoCD UI via LoadBalancer..."
+            kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
+
+            echo "✅ ArgoCD installed successfully"
+          fi
+
+      - name: Ensure ArgoCD applications exist
+        run: |
+          echo "Checking ArgoCD applications..."
+
+          # Create dev namespace if it doesn't exist
+          kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create ArgoCD applications for each service
+          declare -A services
+          services=(
+            ["api-gateway"]="helm/api-gateway"
+            ["exercises"]="helm/exercises-service"
+            ["scores"]="helm/scores-service"
+            ["user-management"]="helm/user-management-service"
+            ["frontend"]="helm/frontend"
+          )
+
+          for service in "${!services[@]}"; do
+            APP_NAME="${service}-dev"
+            HELM_PATH="${services[$service]}"
+
+            if kubectl get application "$APP_NAME" -n argocd &>/dev/null; then
+              echo "✅ Application $APP_NAME already exists"
+            else
+              echo "📝 Creating ArgoCD application: $APP_NAME (path: $HELM_PATH)"
+
+              cat <<EOF | kubectl apply -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: $APP_NAME
+            namespace: argocd
+            finalizers:
+              - resources-finalizer.argocd.argoproj.io
+          spec:
+            project: default
+            source:
+              repoURL: https://github.com/${{ github.repository }}.git
+              targetRevision: HEAD
+              path: $HELM_PATH
+              helm:
+                valueFiles:
+                  - values-eks.yaml
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: dev
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+          EOF
+            fi
+          done
+
+          echo "✅ All ArgoCD applications verified"
+
       - name: Force sync ArgoCD applications
         run: |
           echo "Force syncing all dev applications..."
