@@ -76,6 +76,42 @@ jobs:
             echo "user-management=${{ steps.filter.outputs.user-management }}" >> $GITHUB_OUTPUT
           fi
 
+  # Setup Kubernetes secrets for database connections
+  setup-secrets:
+    name: Setup Database Secrets
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get RDS endpoint
+        id: rds-info
+        run: |
+          RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier nt114-postgres-dev --region ${{ env.AWS_REGION }} --query 'DBInstances[0].Endpoint.Address' --output text)
+          echo "endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "RDS Endpoint: $RDS_ENDPOINT"
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Create database secrets
+        run: |
+          # Replace placeholders in template
+          sed -e "s/RDS_ENDPOINT_PLACEHOLDER/${{ steps.rds-info.outputs.endpoint }}/g" \
+              -e "s/RDS_PASSWORD_PLACEHOLDER/${{ secrets.RDS_PASSWORD }}/g" \
+              k8s/manifests/db-secrets-dev.yaml | kubectl apply -f -
+
+          echo "Database secrets created successfully"
+
   # Build and push backend services to ECR
   build-backend:
     name: Build Backend Service
