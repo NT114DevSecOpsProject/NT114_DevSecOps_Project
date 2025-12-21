@@ -114,7 +114,7 @@ jobs:
           command: |
             cd ${{ matrix.service.path }}
 
-            echo "🐳 Building Docker image for ${{ matrix.service.name }}..."
+            echo " Building Docker image for ${{ matrix.service.name }}..."
             docker buildx build --platform linux/amd64 \
               -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:${{ github.sha }} \
               -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:latest \
@@ -162,7 +162,7 @@ jobs:
           command: |
             cd frontend
 
-            echo "🐳 Building Frontend Docker image..."
+            echo " Building Frontend Docker image..."
             docker buildx build --platform linux/amd64 \
               -f Dockerfile.prod \
               --build-arg VITE_API_URL=http://api-gateway.dev.svc.cluster.local:8080 \
@@ -279,29 +279,25 @@ jobs:
           echo "=== Checking ArgoCD Application Sync Status ==="
 
           # Wait for ArgoCD to detect changes (typically 3 minutes)
-          echo "⏳ Waiting 30 seconds for ArgoCD to detect Git changes..."
+          echo " Waiting 30 seconds for ArgoCD to detect Git changes..."
           sleep 30
 
           # Check application sync status
           echo ""
-          echo "📊 ArgoCD Applications Status:"
-          kubectl get applications -n argocd -o custom-columns=\
-NAME:.metadata.name,\
-SYNC:.status.sync.status,\
-HEALTH:.status.health.status,\
-MESSAGE:.status.conditions[0].message 2>/dev/null || echo "ArgoCD not available or applications not found"
+          echo "ArgoCD Applications Status:"
+          kubectl get applications -n argocd -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status,MESSAGE:.status.conditions[0].message 2>/dev/null || echo "ArgoCD not available or applications not found"
 
           echo ""
           echo " Deployment pipeline complete!"
           echo ""
-          echo "📝 Next Steps:"
+          echo " Next Steps:"
           echo "   1. ArgoCD will auto-sync within 3 minutes (default sync interval)"
           echo "   2. Check ArgoCD UI for sync progress"
           echo "   3. Monitor pods: kubectl get pods -n dev"
 
       - name: Deployment Summary
         run: |
-          echo "### 🚀 Development Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "###  Development Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** Development" >> $GITHUB_STEP_SUMMARY
           echo "**Commit SHA:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
@@ -310,7 +306,7 @@ MESSAGE:.status.conditions[0].message 2>/dev/null || echo "ArgoCD not available 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "** Images built and pushed to ECR**" >> $GITHUB_STEP_SUMMARY
           echo "** Helm values updated in Git repository**" >> $GITHUB_STEP_SUMMARY
-          echo "**⏳ ArgoCD will auto-sync within 3 minutes**" >> $GITHUB_STEP_SUMMARY
+          echo "** ArgoCD will auto-sync within 3 minutes**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
           echo "- Monitor ArgoCD dashboard for sync status" >> $GITHUB_STEP_SUMMARY
