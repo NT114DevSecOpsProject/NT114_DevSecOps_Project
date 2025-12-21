@@ -80,7 +80,7 @@ jobs:
   build-backend:
     name: Build Backend Service
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true'
+    if: always()
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false  # Continue even if one service fails
@@ -88,52 +88,19 @@ jobs:
         service:
           - name: api-gateway
             path: microservices/api-gateway
-            output: api-gateway
           - name: exercises-service
             path: microservices/exercises-service
-            output: exercises
           - name: scores-service
             path: microservices/scores-service
-            output: scores
           - name: user-management-service
             path: microservices/user-management-service
-            output: user-management
     outputs:
       services_built: ${{ steps.set-output.outputs.services }}
     steps:
-      - name: Check if service should be built
-        id: should-build
-        run: |
-          OUTPUT_NAME="${{ matrix.service.output }}"
-          case "$OUTPUT_NAME" in
-            "api-gateway")
-              ENABLED="${{ needs.detect-changes.outputs.api-gateway }}"
-              ;;
-            "exercises")
-              ENABLED="${{ needs.detect-changes.outputs.exercises }}"
-              ;;
-            "scores")
-              ENABLED="${{ needs.detect-changes.outputs.scores }}"
-              ;;
-            "user-management")
-              ENABLED="${{ needs.detect-changes.outputs.user-management }}"
-              ;;
-          esac
-
-          if [ "$ENABLED" == "true" ]; then
-            echo "enabled=true" >> $GITHUB_OUTPUT
-            echo "Building ${{ matrix.service.name }}"
-          else
-            echo "enabled=false" >> $GITHUB_OUTPUT
-            echo "Skipping ${{ matrix.service.name }} - no changes detected"
-          fi
-
       - name: Checkout code
-        if: steps.should-build.outputs.enabled == 'true'
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        if: steps.should-build.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -141,16 +108,13 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        if: steps.should-build.outputs.enabled == 'true'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
-        if: steps.should-build.outputs.enabled == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push Docker image (with retry)
-        if: steps.should-build.outputs.enabled == 'true'
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
@@ -178,7 +142,7 @@ jobs:
   build-frontend:
     name: Build Frontend
     needs: detect-changes
-    if: needs.detect-changes.outputs.frontend == 'true'
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
