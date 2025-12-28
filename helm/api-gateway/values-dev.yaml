@@ -4,7 +4,7 @@
 replicaCount: 2
 
 image:
-  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/api-gateway
+  repository: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/api-gateway
   pullPolicy: Always
   tag: "5719b3a3e295ca241edf1b5debfb21868c239d6a"
 
