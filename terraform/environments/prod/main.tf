@@ -210,7 +210,22 @@ resource "aws_s3_bucket_public_access_block" "migration" {
   restrict_public_buckets = true
 }
 
-# Allow EKS cluster to access RDS (includes both control plane and worker nodes)
+# Data source to find EKS-managed cluster security group
+data "aws_security_group" "eks_cluster_sg" {
+  filter {
+    name   = "tag:aws:eks:cluster-name"
+    values = [var.cluster_name]
+  }
+
+  filter {
+    name   = "group-name"
+    values = ["eks-cluster-sg-${var.cluster_name}-*"]
+  }
+
+  depends_on = [module.eks_cluster]
+}
+
+# Allow EKS cluster to access RDS (Terraform-managed security group)
 resource "aws_security_group_rule" "rds_from_eks_cluster" {
   type                     = "ingress"
   from_port                = var.rds_port
@@ -218,11 +233,28 @@ resource "aws_security_group_rule" "rds_from_eks_cluster" {
   protocol                 = "tcp"
   source_security_group_id = module.eks_cluster.cluster_security_group_id
   security_group_id        = module.rds_postgresql.security_group_id
-  description              = "PostgreSQL from EKS Cluster"
+  description              = "PostgreSQL from EKS Cluster (Terraform-managed SG)"
 
   depends_on = [
     module.rds_postgresql,
     module.eks_cluster
+  ]
+}
+
+# Allow EKS worker nodes to access RDS (EKS-managed security group)
+resource "aws_security_group_rule" "rds_from_eks_nodes" {
+  type                     = "ingress"
+  from_port                = var.rds_port
+  to_port                  = var.rds_port
+  protocol                 = "tcp"
+  source_security_group_id = data.aws_security_group.eks_cluster_sg.id
+  security_group_id        = module.rds_postgresql.security_group_id
+  description              = "PostgreSQL from EKS Worker Nodes (EKS-managed SG)"
+
+  depends_on = [
+    module.rds_postgresql,
+    module.eks_cluster,
+    data.aws_security_group.eks_cluster_sg
   ]
 }
 
