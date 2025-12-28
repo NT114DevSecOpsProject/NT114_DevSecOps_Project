@@ -1,6 +1,14 @@
 name: Deploy to Production (GitOps)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'microservices/**'
+      - 'frontend/**'
+      - 'helm/**'
+      - '.github/workflows/deploy-prod.yml'
   workflow_dispatch:
 
 env:
