@@ -4,7 +4,7 @@
 replicaCount: 2
 
 image:
-  repository: 491203818814.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/exercises-service
+  repository: 491203818814.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/dev/exercises-service
   pullPolicy: Always
   tag: "058960e87aae08eb39cca961c1ff366cbda51fb5"
 
