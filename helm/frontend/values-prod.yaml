@@ -7,7 +7,7 @@ fullnameOverride: "frontend-prod"
 replicaCount: 3
 
 image:
-  repository: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/frontend
+  repository: 491203818814.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/frontend
   pullPolicy: IfNotPresent
   tag: "a1edc604156b471f5e4043ca4572800d7bdab996"
 
