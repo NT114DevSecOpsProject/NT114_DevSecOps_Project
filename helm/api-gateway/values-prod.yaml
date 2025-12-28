@@ -1,10 +1,13 @@
 # Production Environment Values for API Gateway
 # Overrides base values.yaml with production-specific configurations
 
+# Override Helm fullname to ensure consistent service naming
+fullnameOverride: "api-gateway-prod"
+
 replicaCount: 3
 
 image:
-  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/api-gateway
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/api-gateway
   pullPolicy: IfNotPresent
   tag: "ae35e6dd3eea79e903570c6ca5d713385ddcc767"
 
@@ -114,8 +117,8 @@ env:
   - name: PORT
     value: "8000"
   - name: USER_SERVICE_URL
-    value: "http://user-management-service:8081"
+    value: "http://user-management-prod.prod.svc.cluster.local:8081"
   - name: EXERCISES_SERVICE_URL
-    value: "http://exercises-service:8082"
+    value: "http://exercises-prod.prod.svc.cluster.local:8082"
   - name: SCORES_SERVICE_URL
-    value: "http://scores-service:8083"
+    value: "http://scores-prod.prod.svc.cluster.local:8083"

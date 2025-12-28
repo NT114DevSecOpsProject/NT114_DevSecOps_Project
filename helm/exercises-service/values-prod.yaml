@@ -1,10 +1,13 @@
 # Production Environment Values for Exercises Service
 # Overrides base values.yaml with production-specific configurations
 
+# Override Helm fullname to ensure consistent service naming
+fullnameOverride: "exercises-prod"
+
 replicaCount: 3
 
 image:
-  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/exercises-service
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/exercises-service
   pullPolicy: IfNotPresent
   tag: "ae35e6dd3eea79e903570c6ca5d713385ddcc767"
 

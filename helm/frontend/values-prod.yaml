@@ -1,10 +1,13 @@
 # Production Environment Values for Frontend
 # Overrides base values.yaml with production-specific configurations
 
+# Override Helm fullname to ensure consistent service naming
+fullnameOverride: "frontend-prod"
+
 replicaCount: 3
 
 image:
-  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/frontend
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/frontend
   pullPolicy: IfNotPresent
   tag: "ae35e6dd3eea79e903570c6ca5d713385ddcc767"
 
@@ -104,9 +107,8 @@ readinessProbe:
 env:
   - name: NODE_ENV
     value: "production"
-  # API_GATEWAY_URL will be set to prod API Gateway URL
-  # Update this after deploying prod environment
+  # API_GATEWAY_URL points to production API Gateway service
   - name: API_GATEWAY_URL
-    value: ""  # Will be updated with production API Gateway URL
+    value: "http://api-gateway-prod.prod.svc.cluster.local:8080"
   - name: VITE_API_URL
-    value: ""
+    value: ""  # Frontend uses nginx proxy to API Gateway
