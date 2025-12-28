@@ -6,7 +6,7 @@ replicaCount: 2
 image:
   repository: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/api-gateway
   pullPolicy: Always
-  tag: "5719b3a3e295ca241edf1b5debfb21868c239d6a"
+  tag: "b1e827fb108a7d606c4bafe69d566887bfd0eeaf"
 
 imagePullSecrets:
   - name: ecr-secret
