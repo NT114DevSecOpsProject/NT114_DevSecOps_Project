@@ -6,7 +6,7 @@ replicaCount: 2
 image:
   repository: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/scores-service
   pullPolicy: Always
-  tag: "b1e827fb108a7d606c4bafe69d566887bfd0eeaf"
+  tag: "058960e87aae08eb39cca961c1ff366cbda51fb5"
 
 imagePullSecrets:
   - name: ecr-secret
