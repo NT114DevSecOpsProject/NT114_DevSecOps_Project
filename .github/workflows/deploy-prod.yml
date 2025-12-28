@@ -118,6 +118,27 @@ jobs:
 
           echo "✅ Database secrets created successfully with Terraform password"
 
+      - name: Create ECR secret in prod namespace
+        run: |
+          echo "Creating ECR docker-registry secret for prod namespace..."
+
+          # Get AWS account ID
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+
+          # Create secret
+          kubectl create secret docker-registry ecr-secret \
+            --docker-server=$ECR_REGISTRY \
+            --docker-username=AWS \
+            --docker-password=$(aws ecr get-login-password --region ${{ env.AWS_REGION }}) \
+            --namespace=prod \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "✅ ECR secret created for registry: $ECR_REGISTRY"
+
+          # Verify
+          kubectl get secret ecr-secret -n prod && echo "✅ Secret verified"
+
   # Build and push backend services to ECR
   build-backend:
     name: Build Backend Service
@@ -167,13 +188,13 @@ jobs:
 
             echo "🔨 Building Docker image for ${{ matrix.service.name }}..."
             docker buildx build --platform linux/amd64 \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:${{ github.sha }} \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:prod-latest \
+              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:${{ github.sha }} \
+              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:prod-latest \
               --push .
 
             echo "✅ Image pushed to ECR:"
-            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:${{ github.sha }}"
-            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:prod-latest"
+            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:${{ github.sha }}"
+            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:prod-latest"
 
       - name: Mark service as built
         if: steps.should-build.outputs.enabled == 'true'
@@ -219,8 +240,8 @@ jobs:
               --build-arg VITE_API_URL="" \
               --build-arg VITE_APP_TITLE="CodeLearn" \
               --build-arg VITE_APP_ENV=production \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:${{ github.sha }} \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:prod-latest \
+              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/frontend:${{ github.sha }} \
+              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/frontend:prod-latest \
               --push .
 
             echo "✅ Frontend image pushed to ECR"
