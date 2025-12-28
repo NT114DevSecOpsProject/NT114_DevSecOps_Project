@@ -4,7 +4,7 @@
 # Override Helm fullname to ensure consistent service naming
 fullnameOverride: "api-gateway-prod"
 
-replicaCount: 3
+replicaCount: 2
 
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/api-gateway
@@ -60,16 +60,16 @@ ingress:
 # Production-grade resource allocation
 resources:
   limits:
-    cpu: 1000m
+    cpu: 500m
     memory: 1Gi
   requests:
-    cpu: 500m
+    cpu: 250m
     memory: 512Mi
 
 # Production autoscaling with higher thresholds
 autoscaling:
   enabled: true
-  minReplicas: 3
+  minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80

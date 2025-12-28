@@ -4,7 +4,7 @@
 # Override Helm fullname to ensure consistent service naming
 fullnameOverride: "scores-prod"
 
-replicaCount: 3
+replicaCount: 2
 
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/scores-service
@@ -44,16 +44,16 @@ ingress:
 # Production-grade resource allocation (increased memory to prevent OOMKilled)
 resources:
   limits:
-    cpu: 1000m
+    cpu: 500m
     memory: 2Gi  # Increased from 1Gi to prevent OOMKilled
   requests:
-    cpu: 500m
+    cpu: 250m
     memory: 512Mi
 
 # Production autoscaling with higher capacity
 autoscaling:
   enabled: true
-  minReplicas: 3
+  minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
