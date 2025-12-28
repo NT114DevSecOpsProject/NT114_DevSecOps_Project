@@ -41,11 +41,11 @@ service:
 ingress:
   enabled: false
 
-# Production-grade resource allocation
+# Production-grade resource allocation (increased memory to prevent OOMKilled)
 resources:
   limits:
     cpu: 1000m
-    memory: 1Gi
+    memory: 2Gi  # Increased from 1Gi to prevent OOMKilled
   requests:
     cpu: 500m
     memory: 512Mi

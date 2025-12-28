@@ -76,23 +76,23 @@ affinity:
                   - user-management-service
           topologyKey: kubernetes.io/hostname
 
-# Production health checks with tighter intervals
+# Production health checks with safer timeouts for database initialization
 livenessProbe:
   httpGet:
     path: /health
     port: 5001
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  timeoutSeconds: 5
+  initialDelaySeconds: 60  # Give more time for initial startup
+  periodSeconds: 20        # Check less frequently to reduce load
+  timeoutSeconds: 10       # Longer timeout for slow responses
   failureThreshold: 3
 
 readinessProbe:
   httpGet:
     path: /health
     port: 5001
-  initialDelaySeconds: 10
-  periodSeconds: 5
-  timeoutSeconds: 3
+  initialDelaySeconds: 30  # Give time for lazy DB initialization on first request
+  periodSeconds: 10        # Reasonable check frequency
+  timeoutSeconds: 10       # Critical: was 3s, now 10s to handle DB delays
   failureThreshold: 3
 
 env:

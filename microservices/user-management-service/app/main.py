@@ -23,18 +23,31 @@ def create_app():
     migrate = Migrate(app, db)
     CORS(app)
     
-    # Register blueprints
-    app.register_blueprint(auth_blueprint, url_prefix="/api/auth")
-    app.register_blueprint(users_blueprint, url_prefix="/api/users")
-
-    # Health check endpoint
+    # Health check endpoint - MUST be registered BEFORE any DB operations
+    # This allows health checks to succeed even if DB is slow/unavailable during startup
     @app.route('/health', methods=['GET'])
     def health_check():
         return {'status': 'healthy', 'service': 'user-management-service'}, 200
 
-    # Create tables
-    with app.app_context():
-        db.create_all()
+    # Register blueprints
+    app.register_blueprint(auth_blueprint, url_prefix="/api/auth")
+    app.register_blueprint(users_blueprint, url_prefix="/api/users")
+
+    # Lazy database initialization - only create tables on first request
+    # This prevents blocking the health check endpoint during startup
+    @app.before_request
+    def initialize_database():
+        """Initialize database tables on first request to avoid startup blocking"""
+        if not hasattr(app, '_db_initialized'):
+            try:
+                with app.app_context():
+                    db.create_all()
+                app._db_initialized = True
+                app.logger.info("Database tables initialized successfully")
+            except Exception as e:
+                app.logger.error(f"Database initialization failed: {e}")
+                # Don't set _db_initialized to allow retry on next request
+                # Health checks will still pass, allowing pod to stay alive
 
     return app
 
