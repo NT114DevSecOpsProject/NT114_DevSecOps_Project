@@ -1,8 +1,8 @@
 # NT114 DevSecOps Project - Deployment Guide
 
-**Version:** 3.0
-**Last Updated:** November 30, 2025
-**Deployment Status:** ✅ **Complete GitOps Implementation**
+**Version:** 3.1
+**Last Updated:** December 29, 2025
+**Deployment Status:** ✅ **Complete GitOps Implementation with Multi-Node Group Architecture**
 
 ---
 
@@ -378,6 +378,309 @@ Type: docker-registry
 Scope: Per-namespace
 Usage: Image pull authentication
 ```
+
+---
+
+## Multi-Node Group Architecture Deployment
+
+### Overview
+
+The infrastructure deployment creates three dedicated node groups with workload isolation using Kubernetes taints and tolerations:
+- **Application Node Group**: User-facing services and APIs
+- **ArgoCD Node Group**: GitOps deployment infrastructure
+- **Monitoring Node Group**: Observability stack (Prometheus, Grafana)
+
+### Node Group Configuration
+
+#### Application Node Group
+```yaml
+# Terraform configuration: terraform/environments/dev/variables.tf
+app_node_instance_types = ["t3.small"]
+app_node_capacity_type  = "ON_DEMAND"
+app_node_min_size       = 1
+app_node_max_size       = 3
+app_node_desired_size   = 2
+
+app_node_taints = {
+  workload = {
+    key    = "workload"
+    value  = "application"
+    effect = "NoSchedule"
+  }
+}
+
+app_node_labels = {
+  workload    = "application"
+  component   = "app"
+  environment = "dev"
+}
+```
+
+#### ArgoCD Node Group
+```yaml
+# Terraform configuration: terraform/environments/dev/variables.tf
+argocd_node_instance_types = ["t3.small"]
+argocd_node_capacity_type  = "ON_DEMAND"
+argocd_node_min_size       = 1
+argocd_node_max_size       = 2
+argocd_node_desired_size   = 1
+
+argocd_node_taints = {
+  workload = {
+    key    = "workload"
+    value  = "argocd"
+    effect = "NoSchedule"
+  }
+}
+
+argocd_node_labels = {
+  workload    = "argocd"
+  component   = "gitops"
+  criticality = "high"
+}
+```
+
+#### Monitoring Node Group
+```yaml
+# Terraform configuration: terraform/environments/dev/variables.tf
+monitoring_node_instance_types = ["t3.small"]
+monitoring_node_capacity_type  = "ON_DEMAND"
+monitoring_node_min_size       = 1
+monitoring_node_max_size       = 1
+monitoring_node_desired_size   = 1
+
+monitoring_node_taints = {
+  workload = {
+    key    = "workload"
+    value  = "monitoring"
+    effect = "NoSchedule"
+  }
+}
+
+monitoring_node_labels = {
+  workload    = "monitoring"
+  component   = "observability"
+  criticality = "high"
+}
+```
+
+### Deployment Steps
+
+#### 1. Verify Node Group Configuration
+
+Before deploying, verify the Terraform configuration includes all three node groups:
+
+```bash
+cd terraform/environments/dev
+
+# Review node group configuration
+terraform plan | grep -A 10 "eks_nodegroup"
+
+# Expected output should show three node group modules:
+# - module.eks_nodegroup_app
+# - module.eks_nodegroup_argocd
+# - module.eks_nodegroup_monitoring
+```
+
+#### 2. Deploy Infrastructure
+
+```bash
+# Deploy all three node groups
+terraform apply -auto-approve
+
+# Monitor deployment progress
+terraform output -json | jq '.cluster_name, .cluster_endpoint'
+```
+
+#### 3. Verify Node Group Deployment
+
+```bash
+# Update kubeconfig
+aws eks update-kubeconfig --region us-east-1 --name eks-1
+
+# List all nodes with labels and taints
+kubectl get nodes --show-labels
+kubectl get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints,LABELS:.metadata.labels
+
+# Expected output: 3+ nodes with different workload labels
+```
+
+#### 4. Verify Node Taints
+
+```bash
+# Check each node group has correct taints
+kubectl describe nodes | grep -A 5 "Taints:"
+
+# Expected output for each node:
+# Application nodes: workload=application:NoSchedule
+# ArgoCD nodes: workload=argocd:NoSchedule
+# Monitoring nodes: workload=monitoring:NoSchedule
+```
+
+### Application Deployment with Tolerations
+
+#### Helm Chart Requirements
+
+All Helm charts must be updated to include tolerations and node selectors for proper pod placement.
+
+#### Application Services (User Management, Exercises, Scores, Frontend)
+
+Add the following to `helm/<service>/values-eks.yaml`:
+
+```yaml
+# Application service tolerations
+tolerations:
+- key: "workload"
+  operator: "Equal"
+  value: "application"
+  effect: "NoSchedule"
+
+nodeSelector:
+  workload: "application"
+```
+
+**Example**: Update `helm/user-management-service/values-eks.yaml`
+```yaml
+deployment:
+  # ... existing configuration ...
+
+  tolerations:
+  - key: "workload"
+    operator: "Equal"
+    value: "application"
+    effect: "NoSchedule"
+
+  nodeSelector:
+    workload: "application"
+    environment: "dev"
+```
+
+#### ArgoCD Deployment
+
+Add tolerations to ArgoCD Helm deployment:
+
+```yaml
+# ArgoCD Helm values (applied during installation)
+controller:
+  tolerations:
+  - key: "workload"
+    operator: "Equal"
+    value: "argocd"
+    effect: "NoSchedule"
+  nodeSelector:
+    workload: "argocd"
+
+server:
+  tolerations:
+  - key: "workload"
+    operator: "Equal"
+    value: "argocd"
+    effect: "NoSchedule"
+  nodeSelector:
+    workload: "argocd"
+
+repoServer:
+  tolerations:
+  - key: "workload"
+    operator: "Equal"
+    value: "argocd"
+    effect: "NoSchedule"
+  nodeSelector:
+    workload: "argocd"
+```
+
+#### Monitoring Stack Deployment
+
+Add tolerations to Prometheus/Grafana Helm deployments:
+
+```yaml
+# Prometheus Helm values
+prometheus:
+  prometheusSpec:
+    tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "monitoring"
+      effect: "NoSchedule"
+    nodeSelector:
+      workload: "monitoring"
+
+# Grafana Helm values
+grafana:
+  tolerations:
+  - key: "workload"
+    operator: "Equal"
+    value: "monitoring"
+    effect: "NoSchedule"
+  nodeSelector:
+    workload: "monitoring"
+```
+
+### Verification and Troubleshooting
+
+#### Verify Pod Placement
+
+```bash
+# Check which nodes pods are running on
+kubectl get pods -A -o wide
+
+# Verify pods are on correct node groups
+kubectl get pods -n dev -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.nodeName}{"\n"}{end}'
+
+# Expected: Application pods on app nodes, ArgoCD pods on ArgoCD nodes, etc.
+```
+
+#### Common Issues
+
+**Issue 1: Pods Stuck in Pending State**
+```bash
+# Symptom
+kubectl get pods -n dev
+# NAME                          READY   STATUS    RESTARTS   AGE
+# user-management-xxx           0/1     Pending   0          5m
+
+# Diagnosis
+kubectl describe pod user-management-xxx -n dev
+
+# Error: "0/3 nodes are available: 3 node(s) had taint {workload: application}"
+# Solution: Add toleration to Helm chart values-eks.yaml
+```
+
+**Issue 2: Incorrect Node Placement**
+```bash
+# Check if pods are on wrong nodes
+kubectl get pods -A -o custom-columns=POD:.metadata.name,NODE:.spec.nodeName,NAMESPACE:.metadata.namespace
+
+# Solution: Verify nodeSelector is set in addition to tolerations
+```
+
+**Issue 3: Node Group Not Created**
+```bash
+# Check Terraform state
+terraform state list | grep node_group
+
+# Expected output should show 3 node group resources
+# If missing, review Terraform configuration and re-apply
+```
+
+### Cost Impact and Scaling
+
+#### Minimum Infrastructure Cost
+- **3 nodes** (1 per node group) × $18.25/month = **$54.75/month** (t3.small us-east-1 On-Demand)
+- Includes: 1 app node, 1 ArgoCD node, 1 monitoring node
+
+#### Production Recommended Cost
+- **4-5 nodes** (2 app, 1-2 ArgoCD, 1 monitoring) × $18.25/month = **$73-91/month**
+
+#### Scaling Behavior
+- **Application nodes**: Scale 1-3 based on traffic (auto-scaling enabled)
+- **ArgoCD nodes**: Scale 1-2 for high availability (manual scaling)
+- **Monitoring nodes**: Fixed at 1 (sufficient for dev/small clusters)
+
+#### Cost Optimization Tips
+1. **Non-production environments**: Scale to 0 during off-hours using scheduled Auto Scaling actions
+2. **Development clusters**: Use min=1 for all node groups ($54.75/month)
+3. **Production clusters**: Use min=2 for ArgoCD and app nodes for high availability ($73+/month)
 
 ---
 
@@ -1809,10 +2112,11 @@ For deployment issues or questions:
 
 ---
 
-**Document Version**: 3.0
-**Last Updated**: November 30, 2025
-**Next Review**: December 31, 2025
-**Status**: ✅ Complete Implementation with Documentation
+**Document Version**: 3.1
+**Last Updated**: December 29, 2025
+**Next Review**: January 31, 2026
+**Status**: ✅ Complete Implementation with Multi-Node Group Architecture
+**Recent Changes**: Added multi-node group deployment procedures, taint/toleration configurations, cost analysis
 
 ---
 

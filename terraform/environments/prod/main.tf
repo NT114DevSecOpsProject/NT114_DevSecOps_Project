@@ -57,24 +57,33 @@ module "eks_cluster" {
 # Kubernetes and Helm providers will be configured after EKS cluster creation
 # Comment out ALB controller module for initial deployment
 
-# EKS Node Group Module
-module "eks_nodegroup" {
+# Application Node Group
+module "eks_nodegroup_app" {
   source = "../../modules/eks-nodegroup"
 
-  node_group_name      = var.node_group_name
+  node_group_name      = "${var.cluster_name}-app-nodegroup"
   cluster_name         = module.eks_cluster.cluster_name
   cluster_version      = var.cluster_version
   cluster_service_cidr = "172.20.0.0/16"
   subnet_ids           = module.vpc.private_subnets
 
-  min_size     = var.node_min_size
-  max_size     = var.node_max_size
-  desired_size = var.node_desired_size
+  min_size     = var.app_node_min_size
+  max_size     = var.app_node_max_size
+  desired_size = var.app_node_desired_size
 
-  instance_types = var.node_instance_types
-  capacity_type  = var.node_capacity_type
+  instance_types = var.app_node_instance_types
+  capacity_type  = var.app_node_capacity_type
 
-  labels = var.node_labels
+  labels = merge(
+    var.app_node_labels,
+    {
+      workload    = "application"
+      component   = "app"
+      environment = var.environment
+    }
+  )
+
+  taints = var.app_node_taints
 
   enable_coredns_addon        = var.enable_coredns_addon
   coredns_version             = var.coredns_version
@@ -84,13 +93,101 @@ module "eks_nodegroup" {
   tags = merge(
     var.tags,
     {
-      Module      = "eks-nodegroup"
+      Module      = "eks-nodegroup-app"
       Environment = "production"
-      Name        = "eks-node-prod"
+      NodeType    = "application"
     }
   )
 
   depends_on = [module.eks_cluster]
+}
+
+# ArgoCD Node Group
+module "eks_nodegroup_argocd" {
+  source = "../../modules/eks-nodegroup"
+
+  node_group_name      = "${var.cluster_name}-argocd-nodegroup"
+  cluster_name         = module.eks_cluster.cluster_name
+  cluster_version      = var.cluster_version
+  cluster_service_cidr = "172.20.0.0/16"
+  subnet_ids           = module.vpc.private_subnets
+
+  min_size     = var.argocd_node_min_size
+  max_size     = var.argocd_node_max_size
+  desired_size = var.argocd_node_desired_size
+
+  instance_types = var.argocd_node_instance_types
+  capacity_type  = var.argocd_node_capacity_type
+
+  labels = merge(
+    var.argocd_node_labels,
+    {
+      workload    = "argocd"
+      component   = "gitops"
+      environment = var.environment
+    }
+  )
+
+  taints = var.argocd_node_taints
+
+  enable_coredns_addon        = false
+  resolve_conflicts_on_create = var.resolve_conflicts_on_create
+  resolve_conflicts_on_update = var.resolve_conflicts_on_update
+
+  tags = merge(
+    var.tags,
+    {
+      Module      = "eks-nodegroup-argocd"
+      Environment = "production"
+      NodeType    = "argocd"
+    }
+  )
+
+  depends_on = [module.eks_cluster, module.eks_nodegroup_app]
+}
+
+# Monitoring Node Group
+module "eks_nodegroup_monitoring" {
+  source = "../../modules/eks-nodegroup"
+
+  node_group_name      = "${var.cluster_name}-monitoring-nodegroup"
+  cluster_name         = module.eks_cluster.cluster_name
+  cluster_version      = var.cluster_version
+  cluster_service_cidr = "172.20.0.0/16"
+  subnet_ids           = module.vpc.private_subnets
+
+  min_size     = var.monitoring_node_min_size
+  max_size     = var.monitoring_node_max_size
+  desired_size = var.monitoring_node_desired_size
+
+  instance_types = var.monitoring_node_instance_types
+  capacity_type  = var.monitoring_node_capacity_type
+
+  labels = merge(
+    var.monitoring_node_labels,
+    {
+      workload    = "monitoring"
+      component   = "observability"
+      environment = var.environment
+    }
+  )
+
+  taints = var.monitoring_node_taints
+
+  enable_coredns_addon        = false
+  resolve_conflicts_on_create = var.resolve_conflicts_on_create
+  resolve_conflicts_on_update = var.resolve_conflicts_on_update
+
+  tags = merge(
+    var.tags,
+    {
+      Module      = "eks-nodegroup-monitoring"
+      Environment = "production"
+      NodeType    = "monitoring"
+    }
+  )
+
+  depends_on = [module.eks_cluster, module.eks_nodegroup_app]
 }
 
 # ALB Controller Module - Comment out for initial deployment
@@ -103,7 +200,7 @@ module "eks_nodegroup" {
 #   vpc_id            = module.vpc.vpc_id
 #   oidc_provider     = module.eks_cluster.oidc_provider
 #   oidc_provider_arn = module.eks_cluster.oidc_provider_arn
-#   node_group_id     = module.eks_nodegroup.node_group_id
+#   node_group_id     = module.eks_nodegroup_app.node_group_id
 #
 #   enable_alb_controller     = var.enable_alb_controller
 #   enable_ebs_csi_controller = var.enable_ebs_csi_controller
@@ -131,7 +228,7 @@ module "eks_nodegroup" {
 #   resolve_conflicts_on_update = "OVERWRITE"
 #
 #   depends_on = [
-#     module.eks_nodegroup,
+#     module.eks_nodegroup_app,
 #     module.alb_controller
 #   ]
 # }

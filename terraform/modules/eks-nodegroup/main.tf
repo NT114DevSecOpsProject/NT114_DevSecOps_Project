@@ -16,6 +16,7 @@ module "eks_managed_node_group" {
   capacity_type  = var.capacity_type
 
   labels = var.labels
+  taints = var.taints
 
   # IAM role configuration
   create_iam_role = true

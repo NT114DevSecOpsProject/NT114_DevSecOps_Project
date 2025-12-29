@@ -64,6 +64,19 @@ This roadmap outlines the strategic direction, timeline, and key milestones for 
 - ✅ Comprehensive error handling (20 fail-fast exit points with actionable messages)
 - ✅ Idempotent operations (safe multi-run deployments)
 
+**Multi-Node Group Architecture Implemented** (2025-12-29):
+- ✅ Replaced single node group with 3 dedicated node groups (app, argocd, monitoring)
+- ✅ Implemented workload isolation using Kubernetes taints and tolerations
+- ✅ All node groups use t3.small ON_DEMAND instances
+- ✅ Configuration details:
+  - Application: min=1, desired=2, max=3, taint=workload:application:NoSchedule
+  - ArgoCD: min=1, desired=1, max=2, taint=workload:argocd:NoSchedule
+  - Monitoring: min=1, desired=1, max=1, taint=workload:monitoring:NoSchedule
+- ✅ Identical setup across dev and prod environments
+- ✅ Benefits: Resource isolation, independent scaling, enhanced security
+- ✅ Cost impact: 3-node minimum ($54.75/month vs. previous $18.25/month)
+- ✅ Documentation: Architecture guide, deployment procedures, troubleshooting
+
 **Deliverables**:
 - Fully operational AWS EKS cluster
 - Secure bastion host with automated key rotation

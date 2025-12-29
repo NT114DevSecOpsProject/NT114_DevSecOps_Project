@@ -84,6 +84,16 @@ variable "resolve_conflicts_on_update" {
   default     = "OVERWRITE"
 }
 
+variable "taints" {
+  description = "Taints to apply to nodes in the node group"
+  type = map(object({
+    key    = string
+    value  = string
+    effect = string
+  }))
+  default = {}
+}
+
 variable "tags" {
   description = "Tags to apply to the node group"
   type        = map(string)

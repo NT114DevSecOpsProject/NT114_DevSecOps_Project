@@ -1,0 +1,371 @@
+name: Deploy to Production (GitOps)
+
+on:
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Services to deploy (comma-separated or "all")'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - api-gateway
+          - exercises-service
+          - scores-service
+          - user-management-service
+          - frontend
+      image_tag:
+        description: 'Image tag to deploy (git SHA or leave empty for latest commit)'
+        required: false
+        type: string
+      confirmation:
+        description: 'Type "PRODUCTION" to confirm deployment'
+        required: true
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY_ALIAS: nt114-devsecops
+  ENVIRONMENT: prod
+  EKS_CLUSTER_NAME: eks-1
+
+permissions:
+  contents: write
+
+jobs:
+  # Validation and pre-deployment checks
+  validate-deployment:
+    name: Validate Production Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.set-tag.outputs.tag }}
+      services_list: ${{ steps.parse-services.outputs.services }}
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "PRODUCTION" ]; then
+            echo "❌ Deployment cancelled: Confirmation string must be 'PRODUCTION'"
+            echo "You entered: ${{ github.event.inputs.confirmation }}"
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: set-tag
+        run: |
+          if [ -n "${{ github.event.inputs.image_tag }}" ]; then
+            TAG="${{ github.event.inputs.image_tag }}"
+          else
+            TAG="${{ github.sha }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "📦 Using image tag: $TAG"
+
+      - name: Parse services to deploy
+        id: parse-services
+        run: |
+          INPUT="${{ github.event.inputs.services }}"
+          if [ "$INPUT" == "all" ]; then
+            SERVICES="api-gateway,exercises-service,scores-service,user-management-service,frontend"
+          else
+            SERVICES="$INPUT"
+          fi
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+          echo "🎯 Services to deploy: $SERVICES"
+
+      - name: Pre-deployment summary
+        run: |
+          echo "### 🚨 Production Deployment Request" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** PRODUCTION" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** ${{ steps.set-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Services:** ${{ steps.parse-services.outputs.services }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+
+  # Build and push to production ECR (with GitHub Environment approval)
+  build-services:
+    name: Build Service for Production
+    needs: validate-deployment
+    runs-on: ubuntu-latest
+    # Use GitHub Environment for manual approval
+    environment:
+      name: production
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    strategy:
+      fail-fast: false  # Continue even if one service fails
+      matrix:
+        service:
+          - name: api-gateway
+            path: microservices/api-gateway
+          - name: exercises-service
+            path: microservices/exercises-service
+          - name: scores-service
+            path: microservices/scores-service
+          - name: user-management-service
+            path: microservices/user-management-service
+    steps:
+      - name: Check if service should be deployed
+        id: should-deploy
+        run: |
+          SERVICES="${{ needs.validate-deployment.outputs.services_list }}"
+          SERVICE="${{ matrix.service.name }}"
+
+          if [[ ",$SERVICES," =~ ",$SERVICE," ]]; then
+            echo "deploy=true" >> $GITHUB_OUTPUT
+            echo "✅ $SERVICE will be deployed"
+          else
+            echo "deploy=false" >> $GITHUB_OUTPUT
+            echo "⏭️ Skipping $SERVICE"
+          fi
+
+      - name: Checkout code
+        if: steps.should-deploy.outputs.deploy == 'true'
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: steps.should-deploy.outputs.deploy == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: steps.should-deploy.outputs.deploy == 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        if: steps.should-deploy.outputs.deploy == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push production image (with retry)
+        if: steps.should-deploy.outputs.deploy == 'true'
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          retry_on: error
+          command: |
+            cd ${{ matrix.service.path }}
+
+            echo "🐳 Building production Docker image for ${{ matrix.service.name }}..."
+            docker buildx build --platform linux/amd64 \
+              -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:${{ needs.validate-deployment.outputs.image_tag }} \
+              -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.service.name }}:prod-latest \
+              --push .
+
+            echo "✅ Built and pushed ${{ matrix.service.name }}:${{ needs.validate-deployment.outputs.image_tag }} to production ECR"
+
+  # Build frontend for production
+  build-frontend:
+    name: Build Frontend for Production
+    needs: validate-deployment
+    if: contains(needs.validate-deployment.outputs.services_list, 'frontend')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push production frontend (with retry)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          retry_on: error
+          command: |
+            cd frontend
+
+            echo "🐳 Building production frontend Docker image..."
+            docker buildx build --platform linux/amd64 \
+              -f Dockerfile.prod \
+              --build-arg VITE_API_URL=http://api-gateway.prod.svc.cluster.local:8080 \
+              --build-arg VITE_APP_TITLE="CodeLearn" \
+              --build-arg VITE_APP_ENV=production \
+              -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/frontend:${{ needs.validate-deployment.outputs.image_tag }} \
+              -t ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REGISTRY_ALIAS }}/frontend:prod-latest \
+              --push .
+
+            echo "✅ Built and pushed frontend:${{ needs.validate-deployment.outputs.image_tag }} to production ECR"
+
+  # Update Helm values in Git (sequential to avoid conflicts)
+  update-helm-values:
+    name: Update Helm Values (GitOps)
+    needs: [validate-deployment, build-services, build-frontend]
+    if: always() && (needs.build-services.result == 'success' || needs.build-frontend.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Update all Helm values with new image tags
+        run: |
+          IMAGE_TAG="${{ needs.validate-deployment.outputs.image_tag }}"
+          SERVICES="${{ needs.validate-deployment.outputs.services_list }}"
+          UPDATED_SERVICES=""
+
+          # Update backend services based on services_list
+          if [[ ",$SERVICES," =~ ",api-gateway," ]] && [ "${{ needs.build-services.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/api-gateway/values-prod.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}api-gateway, "
+            echo "✅ Updated helm/api-gateway/values-prod.yaml"
+          fi
+
+          if [[ ",$SERVICES," =~ ",exercises-service," ]] && [ "${{ needs.build-services.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/exercises-service/values-prod.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}exercises-service, "
+            echo "✅ Updated helm/exercises-service/values-prod.yaml"
+          fi
+
+          if [[ ",$SERVICES," =~ ",scores-service," ]] && [ "${{ needs.build-services.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/scores-service/values-prod.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}scores-service, "
+            echo "✅ Updated helm/scores-service/values-prod.yaml"
+          fi
+
+          if [[ ",$SERVICES," =~ ",user-management-service," ]] && [ "${{ needs.build-services.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/user-management-service/values-prod.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}user-management-service, "
+            echo "✅ Updated helm/user-management-service/values-prod.yaml"
+          fi
+
+          # Update frontend
+          if [[ ",$SERVICES," =~ ",frontend," ]] && [ "${{ needs.build-frontend.result }}" == "success" ]; then
+            sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/frontend/values-prod.yaml
+            UPDATED_SERVICES="${UPDATED_SERVICES}frontend, "
+            echo "✅ Updated helm/frontend/values-prod.yaml"
+          fi
+
+          # Save updated services list
+          echo "UPDATED_SERVICES=${UPDATED_SERVICES%, }" >> $GITHUB_ENV
+
+      - name: Commit and push all Helm value updates (single atomic commit)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm/*/values-prod.yaml
+
+          if git diff --cached --quiet; then
+            echo "No Helm value changes to commit"
+            exit 0
+          fi
+
+          # Create and push commit with retry
+          git commit -m "chore(prod): update image tags to ${{ needs.validate-deployment.outputs.image_tag }} [skip ci]" -m "Services: ${{ env.UPDATED_SERVICES }}" -m "By: ${{ github.actor }}" -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Try push with retry (3 attempts)
+          git pull --rebase origin main && git push origin main || \
+          (sleep 5 && git pull --rebase origin main && git push origin main) || \
+          (sleep 5 && git pull --rebase origin main && git push origin main) || \
+          (echo "ERROR: Failed to push after 3 attempts" && exit 1)
+
+          echo "SUCCESS: Helm values pushed to Git - Manual sync required in ArgoCD UI for production"
+          echo "Updated services: ${{ env.UPDATED_SERVICES }}"
+
+  # Verify ArgoCD sync readiness
+  verify-argocd-readiness:
+    name: Verify ArgoCD Readiness
+    needs: [build-services, build-frontend, update-helm-values]
+    if: always() && (needs.build-services.result == 'success' || needs.build-frontend.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+          kubectl cluster-info || echo "⚠️ Could not connect to cluster"
+
+      - name: Check ArgoCD Application Status
+        continue-on-error: true
+        run: |
+          echo "=== Checking ArgoCD Application Status ==="
+
+          # Wait for Git changes to propagate
+          echo "⏳ Waiting 20 seconds for Git changes to propagate..."
+          sleep 20
+
+          # Check application status (production apps should be in OutOfSync state)
+          echo ""
+          echo "📊 ArgoCD Production Applications Status:"
+          kubectl get applications -n argocd -l environment=prod -o custom-columns=\
+NAME:.metadata.name,\
+SYNC:.status.sync.status,\
+HEALTH:.status.health.status,\
+MESSAGE:.status.conditions[0].message 2>/dev/null || echo "ArgoCD not available or production applications not found"
+
+          echo ""
+          echo "⚠️ IMPORTANT: Production deployment requires manual sync in ArgoCD UI"
+          echo "   This is a safety measure to prevent accidental production updates"
+
+  # Post-deployment summary
+  deployment-complete:
+    name: Deployment Complete
+    needs: [validate-deployment, build-services, build-frontend, verify-argocd-readiness]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Production deployment summary
+        run: |
+          echo "### ✅ Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** PRODUCTION" >> $GITHUB_STEP_SUMMARY
+          echo "**Image Tag:** ${{ needs.validate-deployment.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Services:** ${{ needs.validate-deployment.outputs.services_list }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Method:** GitOps with ArgoCD (Manual Sync Required)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**✅ Images built and pushed to production ECR**" >> $GITHUB_STEP_SUMMARY
+          echo "**✅ Helm values updated in Git repository**" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ Manual sync required in ArgoCD UI**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**⚠️ IMPORTANT Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. 🔐 **Go to ArgoCD dashboard** and manually sync production applications" >> $GITHUB_STEP_SUMMARY
+          echo "2. 📊 **Monitor pod rollout**: \`kubectl get pods -n prod -w\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. ✅ **Verify health checks** pass for all services" >> $GITHUB_STEP_SUMMARY
+          echo "4. 🧪 **Test production endpoints** to ensure functionality" >> $GITHUB_STEP_SUMMARY
+          echo "5. 📈 **Monitor metrics** and logs for anomalies" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**🔄 Rollback Options:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Re-run this workflow with previous image tag" >> $GITHUB_STEP_SUMMARY
+          echo "- Revert the Git commit and manually sync ArgoCD" >> $GITHUB_STEP_SUMMARY
+          echo "- Use ArgoCD history to rollback to previous version" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**ArgoCD Configuration for Production:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Auto-sync: ❌ Disabled (Manual approval required)" >> $GITHUB_STEP_SUMMARY
+          echo "- Self-heal: ✅ Enabled (After manual sync)" >> $GITHUB_STEP_SUMMARY
+          echo "- Prune: ✅ Enabled" >> $GITHUB_STEP_SUMMARY
