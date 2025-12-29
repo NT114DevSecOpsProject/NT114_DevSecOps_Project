@@ -20,6 +20,18 @@ spec:
       name: database-schema-setup
     spec:
       restartPolicy: OnFailure
+
+      # Node selection for application workload
+      nodeSelector:
+        workload: application
+
+      # Tolerations to schedule on application nodes
+      tolerations:
+      - key: "workload"
+        operator: "Equal"
+        value: "application"
+        effect: "NoSchedule"
+
       containers:
       - name: schema-setup
         image: python:3.9-slim
