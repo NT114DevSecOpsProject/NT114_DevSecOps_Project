@@ -85,7 +85,7 @@ module "eks_nodegroup_app" {
 
   taints = var.app_node_taints
 
-  enable_coredns_addon        = var.enable_coredns_addon
+  enable_coredns_addon        = false # Managed at cluster level via cluster_addons
   coredns_version             = var.coredns_version
   resolve_conflicts_on_create = var.resolve_conflicts_on_create
   resolve_conflicts_on_update = var.resolve_conflicts_on_update

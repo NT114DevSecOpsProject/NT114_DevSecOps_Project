@@ -105,6 +105,7 @@ variable "cluster_addons" {
   description = "Map of cluster addon configurations"
   type        = any
   default = {
+    coredns                = {}
     eks-pod-identity-agent = {}
     kube-proxy             = {}
     vpc-cni                = {}
