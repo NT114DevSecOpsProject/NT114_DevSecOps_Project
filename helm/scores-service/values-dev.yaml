@@ -54,9 +54,14 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
-nodeSelector: {}
+nodeSelector:
+  workload: application
 
-tolerations: []
+tolerations:
+  - key: workload
+    operator: Equal
+    value: application
+    effect: NoSchedule
 
 affinity: {}
 
