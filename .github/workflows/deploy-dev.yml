@@ -95,6 +95,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Debug - Verify AWS Account
+        run: |
+          echo "🔍 Checking AWS account information..."
+          AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          AWS_USER_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          echo "AWS Account ID: $AWS_ACCOUNT"
+          echo "AWS User ARN: $AWS_USER_ARN"
+          echo ""
+          echo "Expected Account: 039612870452"
+          echo "Expected User: nt114-devsecops-github-actions-user"
+          echo ""
+          if [ "$AWS_ACCOUNT" != "039612870452" ]; then
+            echo "❌ ERROR: GitHub Secrets are using credentials from WRONG AWS account!"
+            echo "Current: $AWS_ACCOUNT"
+            echo "Expected: 039612870452"
+            echo ""
+            echo "FIX: Update GitHub Secrets with credentials for account 039612870452"
+            exit 1
+          fi
+          echo "✅ AWS Account verified"
+          echo ""
+          echo "Listing EKS clusters in this account..."
+          aws eks list-clusters --region ${{ env.AWS_REGION }} || echo "No clusters found or no permission to list"
+
       - name: Validate EKS cluster connectivity
         run: |
           echo "🔍 Validating EKS cluster connectivity..."
