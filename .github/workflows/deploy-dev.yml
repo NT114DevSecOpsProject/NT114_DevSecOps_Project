@@ -604,6 +604,18 @@ jobs:
           echo "✅ Grafana admin credentials created"
           echo "password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
 
+      - name: Create gp3 StorageClass
+        run: |
+          echo "Creating gp3 StorageClass..."
+          kubectl apply -f k8s/storage/gp3-storageclass.yaml
+
+          # Set gp3 as default and remove default from gp2
+          kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}' || true
+          kubectl patch storageclass gp3 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+          echo "✅ gp3 StorageClass created and set as default"
+          kubectl get storageclass
+
       - name: Add Helm repository
         run: |
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -618,7 +630,7 @@ jobs:
             --namespace monitoring \
             --version 80.9.1 \
             -f helm/kube-prometheus-stack/values-dev.yaml \
-            --wait --timeout 10m
+            --wait --timeout 15m
 
           echo "✅ kube-prometheus-stack deployed"
 
