@@ -1,0 +1,166 @@
+# ArgoCD Helm Values for Development Environment
+# Configured to run on dedicated ArgoCD node group
+
+## Global Configuration
+global:
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: argocd
+      effect: NoSchedule
+  nodeSelector:
+    workload: argocd
+
+## Server Configuration
+server:
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: argocd
+      effect: NoSchedule
+  nodeSelector:
+    workload: argocd
+
+  # Service configuration
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+
+  # Resource limits
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+## Repo Server Configuration
+repoServer:
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: argocd
+      effect: NoSchedule
+  nodeSelector:
+    workload: argocd
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+## Application Controller Configuration
+controller:
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: argocd
+      effect: NoSchedule
+  nodeSelector:
+    workload: argocd
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+## Redis Configuration
+redis:
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: argocd
+      effect: NoSchedule
+  nodeSelector:
+    workload: argocd
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+## Dex Server Configuration (for SSO)
+dex:
+  enabled: true
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: argocd
+      effect: NoSchedule
+  nodeSelector:
+    workload: argocd
+
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+## ApplicationSet Controller Configuration
+applicationSet:
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: argocd
+      effect: NoSchedule
+  nodeSelector:
+    workload: argocd
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+## Notifications Controller Configuration
+notifications:
+  enabled: true
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: argocd
+      effect: NoSchedule
+  nodeSelector:
+    workload: argocd
+
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+## Config Management
+configs:
+  params:
+    # Enable insecure mode for development (disable TLS)
+    server.insecure: true
+
+  # Configure repository credentials if needed
+  repositories: {}
+
+  # RBAC configuration
+  rbac:
+    policy.default: role:readonly
+    policy.csv: |
+      p, role:admin, applications, *, */*, allow
+      p, role:admin, clusters, *, *, allow
+      p, role:admin, repositories, *, *, allow
+      g, admin, role:admin
