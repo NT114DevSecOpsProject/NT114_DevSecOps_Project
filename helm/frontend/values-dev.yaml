@@ -6,7 +6,7 @@ replicaCount: 2
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/frontend
   pullPolicy: Always
-  tag: "f6ef785402cc2441619a31fb394c583c39e77834"
+  tag: "f11e620f4b7de640a3c80150ef64448839ec94bf"
 
 imagePullSecrets:
   - name: ecr-secret
