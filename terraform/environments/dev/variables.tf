@@ -105,7 +105,9 @@ variable "cluster_addons" {
   description = "Map of cluster addon configurations"
   type        = any
   default = {
-    coredns                = {}
+    coredns = {
+      configuration_values = "{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}"
+    }
     eks-pod-identity-agent = {}
     kube-proxy             = {}
     vpc-cni                = {}
@@ -179,7 +181,7 @@ variable "app_node_taints" {
     workload = {
       key    = "workload"
       value  = "application"
-      effect = "NoSchedule"
+      effect = "NO_SCHEDULE"
     }
   }
 }
@@ -232,7 +234,7 @@ variable "argocd_node_taints" {
     workload = {
       key    = "workload"
       value  = "argocd"
-      effect = "NoSchedule"
+      effect = "NO_SCHEDULE"
     }
   }
 }
@@ -285,7 +287,7 @@ variable "monitoring_node_taints" {
     workload = {
       key    = "workload"
       value  = "monitoring"
-      effect = "NoSchedule"
+      effect = "NO_SCHEDULE"
     }
   }
 }
