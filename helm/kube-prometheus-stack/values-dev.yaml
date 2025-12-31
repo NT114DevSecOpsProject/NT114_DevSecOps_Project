@@ -10,7 +10,6 @@ prometheus:
     # Node placement
     nodeSelector:
       workload: monitoring
-      topology.kubernetes.io/zone: us-east-1a  # Pin to AZ for EBS
     tolerations:
       - key: workload
         operator: Equal
