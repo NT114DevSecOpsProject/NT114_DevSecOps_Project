@@ -108,6 +108,9 @@ variable "cluster_addons" {
     coredns = {
       configuration_values = "{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}"
     }
+    aws-ebs-csi-driver = {
+      configuration_values = "{\"controller\":{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}}"
+    }
     eks-pod-identity-agent = {}
     kube-proxy             = {}
     vpc-cni                = {}
