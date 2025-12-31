@@ -98,8 +98,15 @@ jobs:
       - name: Validate EKS cluster connectivity
         run: |
           echo "🔍 Validating EKS cluster connectivity..."
+          echo "Target cluster: ${{ env.EKS_CLUSTER_NAME }}"
+          echo "Region: ${{ env.AWS_REGION }}"
+
+          # Clear any existing kubeconfig to avoid cache issues
+          rm -f ~/.kube/config
+          mkdir -p ~/.kube
 
           # Check cluster status
+          echo "Checking cluster status..."
           CLUSTER_STATUS=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query 'cluster.status' --output text)
           echo "Cluster status: $CLUSTER_STATUS"
 
@@ -109,8 +116,12 @@ jobs:
           fi
 
           # Configure kubectl
-          echo "Configuring kubectl..."
+          echo "Configuring kubectl for cluster: ${{ env.EKS_CLUSTER_NAME }}..."
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+          # Verify kubeconfig
+          echo "Current kubeconfig context:"
+          kubectl config current-context
 
           # Test connection
           echo "Testing cluster connection..."
