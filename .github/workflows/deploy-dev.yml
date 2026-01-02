@@ -407,45 +407,125 @@ jobs:
       - name: Checkout code for ArgoCD values
         uses: actions/checkout@v4
 
-      - name: Install ArgoCD if not exists
+      - name: Install or upgrade ArgoCD (Optimized)
         run: |
-          echo "Checking if ArgoCD is installed..."
+          set -e
+
+          # ============================================
+          # Function Definitions
+          # ============================================
+
+          check_argocd_tolerations() {
+            echo "🔍 Checking if ArgoCD tolerations are already configured..."
+
+            if ! kubectl get deployment argocd-server -n argocd &>/dev/null; then
+              echo "❌ ArgoCD not installed"
+              return 1
+            fi
+
+            CURRENT_TOLERATIONS=$(kubectl get deployment argocd-server -n argocd -o jsonpath='{.spec.template.spec.tolerations}' 2>/dev/null)
+
+            if echo "$CURRENT_TOLERATIONS" | grep -q "workload.*argocd"; then
+              echo "✅ ArgoCD already has correct tolerations configured"
+              return 0
+            else
+              echo "⚠️  ArgoCD needs toleration update"
+              return 1
+            fi
+          }
+
+          wait_for_critical_components() {
+            echo "⏳ Waiting for critical ArgoCD components..."
+
+            CRITICAL_DEPLOYMENTS=(
+              "argocd-server"
+              "argocd-application-controller"
+              "argocd-repo-server"
+            )
+
+            for deployment in "${CRITICAL_DEPLOYMENTS[@]}"; do
+              echo "  ├─ Waiting for $deployment..."
+              if kubectl rollout status deployment/$deployment -n argocd --timeout=120s; then
+                echo "  ├─ ✅ $deployment ready"
+              else
+                echo "  ├─ ❌ $deployment failed to become ready"
+                kubectl describe deployment/$deployment -n argocd
+                kubectl logs -n argocd -l app.kubernetes.io/name=$deployment --tail=50 || true
+                return 1
+              fi
+            done
+
+            echo "✅ All critical components ready"
+            return 0
+          }
+
+          show_pod_status() {
+            echo "📊 Current ArgoCD Pod Status:"
+            kubectl get pods -n argocd -o wide
+
+            echo ""
+            echo "📋 Deployment Status:"
+            kubectl get deployments -n argocd
+          }
+
+          # ============================================
+          # Main Logic
+          # ============================================
+
+          echo "🚀 Starting ArgoCD installation/upgrade process..."
+
+          # Check if ArgoCD exists and if upgrade is needed
           if kubectl get deployment argocd-server -n argocd &>/dev/null; then
-            echo "✅ ArgoCD already installed, upgrading with new values..."
+            if check_argocd_tolerations; then
+              echo "✅ ArgoCD already configured correctly, skipping upgrade"
+              show_pod_status
+              exit 0
+            fi
 
-            # Add ArgoCD Helm repo
-            helm repo add argo https://argoproj.github.io/argo-helm
-            helm repo update
+            echo "📦 ArgoCD installed but needs configuration update..."
+            HELM_ACTION="upgrade"
+          else
+            echo "📦 Installing ArgoCD for the first time..."
+            kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+            HELM_ACTION="install"
+          fi
 
-            # Upgrade ArgoCD with tolerations
+          # Add ArgoCD Helm repository
+          echo "📚 Adding ArgoCD Helm repository..."
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update
+
+          # Execute Helm command without --wait (faster)
+          echo "⚙️  Executing Helm $HELM_ACTION..."
+          if [ "$HELM_ACTION" = "upgrade" ]; then
             helm upgrade argocd argo/argo-cd \
               --namespace argocd \
               -f helm/argocd/values-dev.yaml \
-              --wait --timeout 10m
-
-            echo "✅ ArgoCD upgraded with tolerations"
+              --timeout 3m \
+              --atomic \
+              --cleanup-on-fail
           else
-            echo "📦 Installing ArgoCD with Helm..."
-
-            # Create namespace
-            kubectl create namespace argocd
-
-            # Add ArgoCD Helm repo
-            helm repo add argo https://argoproj.github.io/argo-helm
-            helm repo update
-
-            # Install ArgoCD with tolerations
             helm install argocd argo/argo-cd \
               --namespace argocd \
               -f helm/argocd/values-dev.yaml \
-              --wait --timeout 10m
-
-            echo "✅ ArgoCD installed successfully with tolerations"
+              --timeout 3m \
+              --atomic \
+              --cleanup-on-fail
           fi
 
-          # Verify ArgoCD pods are running
-          echo "Verifying ArgoCD pods..."
-          kubectl get pods -n argocd
+          echo "✅ Helm command completed successfully"
+
+          # Wait for critical components only (not all pods)
+          if ! wait_for_critical_components; then
+            echo "❌ ArgoCD deployment verification failed"
+            show_pod_status
+            exit 1
+          fi
+
+          # Final status report
+          echo ""
+          echo "🎉 ArgoCD installation/upgrade completed successfully!"
+          show_pod_status
 
       - name: Ensure ArgoCD applications exist
         run: |
