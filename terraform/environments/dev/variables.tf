@@ -136,6 +136,53 @@ variable "enable_irsa" {
   default     = true
 }
 
+# System Node Group Variables (for CoreDNS, EBS CSI, kube-system pods)
+variable "system_node_instance_types" {
+  description = "List of instance types for system node group (On-Demand for stability)"
+  type        = list(string)
+  default     = ["t3.small"]
+}
+
+variable "system_node_capacity_type" {
+  description = "Capacity type for system node group"
+  type        = string
+  default     = "ON_DEMAND"
+}
+
+variable "system_node_min_size" {
+  description = "Minimum number of system nodes"
+  type        = number
+  default     = 1
+}
+
+variable "system_node_max_size" {
+  description = "Maximum number of system nodes"
+  type        = number
+  default     = 2
+}
+
+variable "system_node_desired_size" {
+  description = "Desired number of system nodes"
+  type        = number
+  default     = 1
+}
+
+variable "system_node_labels" {
+  description = "Labels for system nodes"
+  type        = map(string)
+  default     = {}
+}
+
+variable "system_node_taints" {
+  description = "Taints for system nodes (empty to allow all system pods)"
+  type = map(object({
+    key    = string
+    value  = string
+    effect = string
+  }))
+  default = {}
+}
+
 # Application Node Group Variables
 variable "app_node_instance_types" {
   description = "List of instance types for application node group (Spot Fleet)"

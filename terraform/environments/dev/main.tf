@@ -53,6 +53,50 @@ module "eks_cluster" {
 # Kubernetes and Helm providers will be configured after EKS cluster creation
 # Comment out ALB controller module for initial deployment
 
+# System Node Group (no taints - for CoreDNS, EBS CSI, and other critical system components)
+module "eks_nodegroup_system" {
+  source = "../../modules/eks-nodegroup"
+
+  node_group_name      = "${var.cluster_name}-system-nodegroup"
+  cluster_name         = module.eks_cluster.cluster_name
+  cluster_version      = var.cluster_version
+  cluster_service_cidr = "172.20.0.0/16"
+  subnet_ids           = module.vpc.private_subnets
+
+  min_size     = var.system_node_min_size
+  max_size     = var.system_node_max_size
+  desired_size = var.system_node_desired_size
+
+  instance_types = var.system_node_instance_types
+  capacity_type  = var.system_node_capacity_type
+
+  labels = merge(
+    var.system_node_labels,
+    {
+      workload    = "system"
+      component   = "kube-system"
+      environment = var.environment
+    }
+  )
+
+  taints = var.system_node_taints # Empty by default - no taints
+
+  enable_coredns_addon        = false # Managed at cluster level via cluster_addons
+  coredns_version             = var.coredns_version
+  resolve_conflicts_on_create = var.resolve_conflicts_on_create
+  resolve_conflicts_on_update = var.resolve_conflicts_on_update
+
+  tags = merge(
+    var.tags,
+    {
+      Module   = "eks-nodegroup-system"
+      NodeType = "system"
+    }
+  )
+
+  depends_on = [module.eks_cluster]
+}
+
 # Application Node Group
 module "eks_nodegroup_app" {
   source = "../../modules/eks-nodegroup"
@@ -94,7 +138,7 @@ module "eks_nodegroup_app" {
     }
   )
 
-  depends_on = [module.eks_cluster]
+  depends_on = [module.eks_cluster, module.eks_nodegroup_system]
 }
 
 # ArgoCD Node Group
@@ -137,7 +181,7 @@ module "eks_nodegroup_argocd" {
     }
   )
 
-  depends_on = [module.eks_cluster, module.eks_nodegroup_app]
+  depends_on = [module.eks_cluster, module.eks_nodegroup_system, module.eks_nodegroup_app]
 }
 
 # Monitoring Node Group
@@ -180,7 +224,7 @@ module "eks_nodegroup_monitoring" {
     }
   )
 
-  depends_on = [module.eks_cluster, module.eks_nodegroup_app]
+  depends_on = [module.eks_cluster, module.eks_nodegroup_system, module.eks_nodegroup_app]
 }
 
 # ALB Controller Module - Comment out for initial deployment
