@@ -105,15 +105,17 @@ variable "cluster_addons" {
   description = "Map of cluster addon configurations"
   type        = any
   default = {
-    coredns = {
-      configuration_values = "{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}"
-    }
-    aws-ebs-csi-driver = {
-      configuration_values = "{\"controller\":{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}}"
-    }
-    eks-pod-identity-agent = {}
-    kube-proxy             = {}
-    vpc-cni                = {}
+    # Addons already exist in cluster - don't manage via Terraform to avoid conflicts
+    # They are already configured with proper tolerations
+    # coredns = {
+    #   configuration_values = "{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}"
+    # }
+    # aws-ebs-csi-driver = {
+    #   configuration_values = "{\"controller\":{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}}"
+    # }
+    # eks-pod-identity-agent = {}
+    # kube-proxy             = {}
+    # vpc-cni                = {}
   }
 }
 
