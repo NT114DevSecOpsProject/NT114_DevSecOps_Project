@@ -1,5 +1,5 @@
 # ArgoCD Helm Values for Development Environment
-# Configured to run on dedicated ArgoCD node group
+# Configured to prefer ArgoCD node group but allow overflow to application nodes
 
 ## Global Configuration
 global:
@@ -8,8 +8,8 @@ global:
       operator: Equal
       value: argocd
       effect: NoSchedule
-  nodeSelector:
-    workload: argocd
+  # nodeSelector removed - allows scheduling on application nodes when ArgoCD node is full
+  # Tolerations ensure pods prefer ArgoCD nodes but can overflow to app nodes (no taints)
 
 ## Server Configuration
 server:
@@ -18,8 +18,6 @@ server:
       operator: Equal
       value: argocd
       effect: NoSchedule
-  nodeSelector:
-    workload: argocd
 
   # Service configuration
   service:
@@ -44,8 +42,6 @@ repoServer:
       operator: Equal
       value: argocd
       effect: NoSchedule
-  nodeSelector:
-    workload: argocd
 
   resources:
     limits:
@@ -62,8 +58,6 @@ controller:
       operator: Equal
       value: argocd
       effect: NoSchedule
-  nodeSelector:
-    workload: argocd
 
   resources:
     limits:
@@ -80,8 +74,6 @@ redis:
       operator: Equal
       value: argocd
       effect: NoSchedule
-  nodeSelector:
-    workload: argocd
 
   resources:
     limits:
@@ -99,8 +91,6 @@ dex:
       operator: Equal
       value: argocd
       effect: NoSchedule
-  nodeSelector:
-    workload: argocd
 
   resources:
     limits:
@@ -117,8 +107,6 @@ applicationSet:
       operator: Equal
       value: argocd
       effect: NoSchedule
-  nodeSelector:
-    workload: argocd
 
   resources:
     limits:
@@ -136,8 +124,6 @@ notifications:
       operator: Equal
       value: argocd
       effect: NoSchedule
-  nodeSelector:
-    workload: argocd
 
   resources:
     limits:
