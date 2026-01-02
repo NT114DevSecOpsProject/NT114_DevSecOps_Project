@@ -733,26 +733,29 @@ jobs:
         run: |
           echo "🚀 Deploying kube-prometheus-stack..."
 
-          # Deploy without --wait for faster execution
+          # Deploy with extended timeout, no --atomic on first install
+          # Note: First install may take 10-15min due to PVC provisioning
           helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             --version 80.9.1 \
             -f helm/kube-prometheus-stack/values-dev.yaml \
-            --timeout 5m \
-            --atomic \
-            --cleanup-on-fail
+            --timeout 15m \
+            --create-namespace
 
           echo "✅ Helm command completed"
           echo "⏳ Waiting for critical components..."
 
           # Wait for Prometheus Operator first (manages other components)
-          kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=120s || true
+          kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=180s || echo "⚠️ Operator not ready yet"
 
           # Wait for kube-state-metrics (required for monitoring)
-          kubectl rollout status deployment/kube-prometheus-stack-kube-state-metrics -n monitoring --timeout=120s || true
+          kubectl rollout status deployment/kube-prometheus-stack-kube-state-metrics -n monitoring --timeout=180s || echo "⚠️ Kube-state-metrics not ready yet"
 
-          # Prometheus and Grafana will start when ready (StatefulSets take longer)
-          echo "✅ Critical components deployed, others will start shortly"
+          # Check overall pod status
+          echo "📊 Current monitoring pod status:"
+          kubectl get pods -n monitoring
+
+          echo "✅ Monitoring stack deployment initiated, pods will become ready shortly"
 
       - name: Wait for monitoring pods to be ready
         run: |
