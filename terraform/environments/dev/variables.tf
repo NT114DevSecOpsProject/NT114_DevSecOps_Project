@@ -184,7 +184,7 @@ variable "app_node_taints" {
     workload = {
       key    = "workload"
       value  = "application"
-      effect = "NO_SCHEDULE"
+      effect = "NoSchedule"
     }
   }
 }
@@ -237,7 +237,7 @@ variable "argocd_node_taints" {
     workload = {
       key    = "workload"
       value  = "argocd"
-      effect = "NO_SCHEDULE"
+      effect = "NoSchedule"
     }
   }
 }
@@ -290,7 +290,7 @@ variable "monitoring_node_taints" {
     workload = {
       key    = "workload"
       value  = "monitoring"
-      effect = "NO_SCHEDULE"
+      effect = "NoSchedule"
     }
   }
 }
