@@ -231,7 +231,7 @@ variable "argocd_node_taints" {
     workload = {
       key    = "workload"
       value  = "argocd"
-      effect = "NoSchedule"
+      effect = "NO_SCHEDULE"  # Terraform AWS provider format (not Kubernetes format)
     }
   }
 }
@@ -284,7 +284,7 @@ variable "monitoring_node_taints" {
     workload = {
       key    = "workload"
       value  = "monitoring"
-      effect = "NoSchedule"
+      effect = "NO_SCHEDULE"  # Terraform AWS provider format (not Kubernetes format)
     }
   }
 }
