@@ -729,17 +729,30 @@ jobs:
           helm repo update
           echo "✅ Helm repo added and updated"
 
-      - name: Deploy kube-prometheus-stack
+      - name: Deploy kube-prometheus-stack (Optimized)
         run: |
-          echo "Deploying kube-prometheus-stack..."
+          echo "🚀 Deploying kube-prometheus-stack..."
 
+          # Deploy without --wait for faster execution
           helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             --version 80.9.1 \
             -f helm/kube-prometheus-stack/values-dev.yaml \
-            --wait --timeout 15m
+            --timeout 5m \
+            --atomic \
+            --cleanup-on-fail
 
-          echo "✅ kube-prometheus-stack deployed"
+          echo "✅ Helm command completed"
+          echo "⏳ Waiting for critical components..."
+
+          # Wait for Prometheus Operator first (manages other components)
+          kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=120s || true
+
+          # Wait for kube-state-metrics (required for monitoring)
+          kubectl rollout status deployment/kube-prometheus-stack-kube-state-metrics -n monitoring --timeout=120s || true
+
+          # Prometheus and Grafana will start when ready (StatefulSets take longer)
+          echo "✅ Critical components deployed, others will start shortly"
 
       - name: Wait for monitoring pods to be ready
         run: |

@@ -1,4 +1,4 @@
-# Development environment - optimized for 1x t3.small monitoring node
+# Development environment - allows overflow to application nodes when needed
 
 global:
   rbac:
@@ -7,9 +7,8 @@ global:
 # Prometheus configuration
 prometheus:
   prometheusSpec:
-    # Node placement
-    nodeSelector:
-      workload: monitoring
+    # Node placement - nodeSelector removed to allow overflow
+    # Tolerations prefer monitoring node but allow app nodes when needed
     tolerations:
       - key: workload
         operator: Equal
@@ -68,8 +67,6 @@ prometheus:
 # Alertmanager
 alertmanager:
   alertmanagerSpec:
-    nodeSelector:
-      workload: monitoring
     tolerations:
       - key: workload
         operator: Equal
@@ -96,8 +93,6 @@ alertmanager:
 
 # Grafana
 grafana:
-  nodeSelector:
-    workload: monitoring
   tolerations:
     - key: workload
       operator: Equal
@@ -151,8 +146,6 @@ grafana:
 
 # Prometheus Operator
 prometheusOperator:
-  nodeSelector:
-    workload: monitoring
   tolerations:
     - key: workload
       operator: Equal
@@ -171,8 +164,6 @@ prometheusOperator:
   admissionWebhooks:
     enabled: true
     patch:
-      nodeSelector:
-        workload: monitoring
       tolerations:
         - key: workload
           operator: Equal
@@ -181,8 +172,6 @@ prometheusOperator:
 
 # Kube-state-metrics
 kube-state-metrics:
-  nodeSelector:
-    workload: monitoring
   tolerations:
     - key: workload
       operator: Equal
