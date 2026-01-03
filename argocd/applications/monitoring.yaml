@@ -7,18 +7,152 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  sources:
-    # Helm chart from prometheus-community
-    - repoURL: https://prometheus-community.github.io/helm-charts
-      chart: kube-prometheus-stack
-      targetRevision: 80.9.1
-      helm:
-        valueFiles:
-          - $values/helm/kube-prometheus-stack/values-dev.yaml
-    # Values from git repo
-    - repoURL: https://github.com/NT114DevSecOpsProject/NT114_DevSecOps_Project.git
-      targetRevision: main
-      ref: values
+  source:
+    # Direct Helm chart from prometheus-community repository
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 80.9.1
+    helm:
+      # Inline values (copy from values-dev.yaml)
+      values: |
+        global:
+          rbac:
+            create: true
+
+        prometheus:
+          prometheusSpec:
+            tolerations:
+              - key: workload
+                operator: Equal
+                value: monitoring
+                effect: NoSchedule
+            replicas: 1
+            resources:
+              requests:
+                memory: 512Mi
+                cpu: 250m
+              limits:
+                memory: 1Gi
+                cpu: 500m
+            retention: 7d
+            retentionSize: 18GB
+            walCompression: true
+            persistentVolumeClaimRetentionPolicy:
+              whenDeleted: Retain
+              whenScaled: Retain
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            serviceMonitorNamespaceSelector: {}
+            scrapeInterval: 60s
+            evaluationInterval: 60s
+            queryMaxConcurrency: 10
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              fsGroup: 2000
+            terminationGracePeriodSeconds: 300
+
+        alertmanager:
+          alertmanagerSpec:
+            tolerations:
+              - key: workload
+                operator: Equal
+                value: monitoring
+                effect: NoSchedule
+            replicas: 1
+            resources:
+              requests:
+                memory: 64Mi
+                cpu: 50m
+              limits:
+                memory: 128Mi
+                cpu: 100m
+
+        grafana:
+          tolerations:
+            - key: workload
+              operator: Equal
+              value: monitoring
+              effect: NoSchedule
+          replicas: 1
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+              cpu: 200m
+          admin:
+            existingSecret: grafana-admin-credentials
+            userKey: admin-user
+            passwordKey: admin-password
+          persistence:
+            enabled: false
+          defaultDashboardsEnabled: true
+          defaultDashboardsTimezone: utc
+          defaultDashboardsEditable: true
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              labelValue: "1"
+              searchNamespace: ALL
+          service:
+            type: LoadBalancer
+            port: 80
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 472
+            fsGroup: 472
+
+        prometheusOperator:
+          tolerations:
+            - key: workload
+              operator: Equal
+              value: monitoring
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+              cpu: 200m
+          admissionWebhooks:
+            enabled: true
+            patch:
+              tolerations:
+                - key: workload
+                  operator: Equal
+                  value: monitoring
+                  effect: NoSchedule
+
+        kube-state-metrics:
+          tolerations:
+            - key: workload
+              operator: Equal
+              value: monitoring
+              effect: NoSchedule
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 128Mi
+              cpu: 100m
+
+        prometheus-node-exporter:
+          tolerations:
+            - operator: Exists
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 50m
+            limits:
+              memory: 64Mi
+              cpu: 100m
+          hostNetwork: true
+          hostPID: true
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
