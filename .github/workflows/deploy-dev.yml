@@ -643,6 +643,11 @@ jobs:
         run: |
           echo "⏳ Waiting for Prometheus Operator CRDs to be installed..."
 
+          # Clean up any stuck admission webhook jobs from previous runs
+          echo "🧹 Cleaning up any stuck admission webhook jobs..."
+          kubectl delete job -n monitoring -l app.kubernetes.io/component=admission-webhook --ignore-not-found=true
+          sleep 5
+
           # Wait for ArgoCD monitoring app to be synced and healthy
           echo "Checking monitoring ArgoCD application status..."
           for i in {1..60}; do

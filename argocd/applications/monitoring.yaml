@@ -122,10 +122,7 @@ spec:
             enabled: true
             patch:
               tolerations:
-                - key: workload
-                  operator: Equal
-                  value: monitoring
-                  effect: NoSchedule
+                - operator: Exists  # Allow scheduling on any node (dev environment)
 
         kube-state-metrics:
           tolerations:
