@@ -641,6 +641,49 @@ jobs:
           echo "🔍 Verifying Metrics API..."
           kubectl top nodes || echo "⚠️ Metrics API not ready yet (this is normal, may take 1-2 minutes)"
 
+      - name: Install Cluster Autoscaler
+        run: |
+          echo "[Step 1] Installing Cluster Autoscaler for automatic node scaling..."
+
+          # Check if Cluster Autoscaler already exists
+          if kubectl get deployment cluster-autoscaler -n kube-system &>/dev/null; then
+            echo "INFO: Cluster Autoscaler already installed"
+          else
+            echo "[Step 2] Downloading and applying Cluster Autoscaler manifest..."
+
+            # Download the Cluster Autoscaler manifest for EKS
+            curl -s https://raw.githubusercontent.com/kubernetes/autoscaler/master/cluster-autoscaler/cloudprovider/aws/examples/cluster-autoscaler-autodiscover.yaml | \
+            sed "s/<YOUR CLUSTER NAME>/eks-1/g" | \
+            kubectl apply -f -
+
+            # Add annotation to skip eviction (prevent autoscaler from being evicted)
+            kubectl -n kube-system annotate deployment.apps/cluster-autoscaler \
+              cluster-autoscaler.kubernetes.io/safe-to-evict="false" --overwrite
+
+            # Patch the deployment to use the correct image version for EKS 1.33
+            kubectl -n kube-system set image deployment/cluster-autoscaler \
+              cluster-autoscaler=registry.k8s.io/autoscaling/cluster-autoscaler:v1.33.0
+
+            # Add options for better autoscaling behavior
+            kubectl -n kube-system patch deployment cluster-autoscaler \
+              -p '{"spec":{"template":{"spec":{"containers":[{"name":"cluster-autoscaler","command":["./cluster-autoscaler","--v=4","--stderrthreshold=info","--cloud-provider=aws","--skip-nodes-with-local-storage=false","--expander=least-waste","--node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/eks-1","--balance-similar-node-groups","--skip-nodes-with-system-pods=false"]}]}}}}'
+
+            echo "[Step 3] Waiting for Cluster Autoscaler to be ready..."
+            kubectl wait --for=condition=available \
+              --timeout=180s \
+              deployment/cluster-autoscaler \
+              -n kube-system || {
+                echo "WARNING: Cluster Autoscaler not ready yet"
+                kubectl get pods -n kube-system -l app=cluster-autoscaler
+              }
+
+            echo "SUCCESS: Cluster Autoscaler installed"
+          fi
+
+          echo "[Step 4] Verifying Cluster Autoscaler status..."
+          kubectl get deployment cluster-autoscaler -n kube-system
+          kubectl logs -n kube-system deployment/cluster-autoscaler --tail=10 || echo "INFO: Logs will be available once pod starts"
+
       - name: Wait for pods to be healthy
         run: |
           echo "Waiting for all pods to be healthy (max 5 minutes)..."

@@ -89,8 +89,10 @@ module "eks_nodegroup_app" {
   tags = merge(
     var.tags,
     {
-      Module   = "eks-nodegroup-app"
-      NodeType = "application"
+      Module                                      = "eks-nodegroup-app"
+      NodeType                                    = "application"
+      "k8s.io/cluster-autoscaler/enabled"         = "true"
+      "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
     }
   )
 

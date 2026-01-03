@@ -152,19 +152,19 @@ variable "app_node_capacity_type" {
 }
 
 variable "app_node_min_size" {
-  description = "Minimum number of application nodes"
+  description = "Minimum number of application nodes (for autoscaling)"
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "app_node_max_size" {
-  description = "Maximum number of application nodes"
+  description = "Maximum number of application nodes (for autoscaling)"
   type        = number
-  default     = 3
+  default     = 6
 }
 
 variable "app_node_desired_size" {
-  description = "Desired number of application nodes"
+  description = "Desired number of application nodes (initial count)"
   type        = number
   default     = 2
 }
