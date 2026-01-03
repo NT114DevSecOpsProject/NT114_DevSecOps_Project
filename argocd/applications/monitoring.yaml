@@ -157,10 +157,7 @@ spec:
     server: https://kubernetes.default.svc
     namespace: monitoring
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-      allowEmpty: false
+    # Disable auto-sync, use manual sync from workflow
     syncOptions:
       - CreateNamespace=true
     retry:

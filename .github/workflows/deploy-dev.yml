@@ -659,10 +659,24 @@ jobs:
             # Show sync error if OutOfSync
             if [ "$APP_SYNC" = "OutOfSync" ] && [ "$i" -eq 10 ]; then
               echo "⚠️ Application is OutOfSync, checking for errors..."
-              kubectl get application monitoring -n argocd -o jsonpath='{.status.conditions}' | jq '.' || echo "No error details available"
               echo ""
+              echo "=== Application Status ==="
+              kubectl get application monitoring -n argocd -o jsonpath='{.status.conditions}' || echo "No conditions"
+              echo ""
+              echo "=== Sync Status ==="
               echo "Sync revision: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.sync.revision}')"
-              echo "Source path: $(kubectl get application monitoring -n argocd -o jsonpath='{.spec.source.path}')"
+              echo "Sync status: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.sync.status}')"
+              echo "Operation state: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.operationState.phase}')"
+              echo "Operation message: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.operationState.message}')"
+              echo ""
+              echo "=== Source Config ==="
+              echo "Repo URL: $(kubectl get application monitoring -n argocd -o jsonpath='{.spec.source.repoURL}')"
+              echo "Chart: $(kubectl get application monitoring -n argocd -o jsonpath='{.spec.source.chart}')"
+              echo "Target revision: $(kubectl get application monitoring -n argocd -o jsonpath='{.spec.source.targetRevision}')"
+              echo ""
+              echo "=== Forcing manual sync ==="
+              kubectl patch application monitoring -n argocd --type merge -p '{"operation":{"sync":{"syncStrategy":{"hook":{}}}}}' || echo "Sync trigger failed"
+              sleep 10
             fi
 
             if [ "$i" = "60" ]; then
