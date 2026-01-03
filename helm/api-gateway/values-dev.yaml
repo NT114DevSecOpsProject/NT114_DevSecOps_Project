@@ -36,7 +36,7 @@ securityContext:
   runAsUser: 1000
 
 service:
-  type: LoadBalancer
+  type: ClusterIP  # Dev: Internal only, accessed via Frontend (saves $16/month)
   port: 8080
   targetPort: 8000
 
@@ -73,15 +73,7 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
-nodeSelector:
-  workload: application
-
-tolerations:
-  - key: workload
-    operator: Equal
-    value: application
-    effect: NoSchedule
-
+# ✅ No nodeSelector/tolerations needed - app nodes accept all workloads
 affinity: {}
 
 livenessProbe:

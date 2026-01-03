@@ -116,9 +116,7 @@ spec:
               label: grafana_dashboard
               searchNamespace: ALL
           service:
-            type: LoadBalancer
-            annotations:
-              service.beta.kubernetes.io/aws-load-balancer-type: nlb
+            type: NodePort  # Dev: Use port-forward for access (saves $16/month)
           resources:
             requests:
               memory: 128Mi

@@ -4,27 +4,16 @@
 ## Global Configuration
 global:
   tolerations:
-    - key: workload
-      operator: Equal
-      value: argocd
-      effect: NoSchedule
-  # nodeSelector removed - allows scheduling on application nodes when ArgoCD node is full
-  # Tolerations ensure pods prefer ArgoCD nodes but can overflow to app nodes (no taints)
+    - operator: Exists  # Dev: Run on app nodes (no dedicated ArgoCD nodes)
 
 ## Server Configuration
 server:
   tolerations:
-    - key: workload
-      operator: Equal
-      value: argocd
-      effect: NoSchedule
+    - operator: Exists  # Dev: Run on app nodes
 
   # Service configuration
   service:
-    type: LoadBalancer
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    type: NodePort  # Dev: Use port-forward for access (saves $16/month)
 
   # Resource limits
   resources:
@@ -38,10 +27,7 @@ server:
 ## Repo Server Configuration
 repoServer:
   tolerations:
-    - key: workload
-      operator: Equal
-      value: argocd
-      effect: NoSchedule
+    - operator: Exists  # Dev: Run on app nodes
 
   resources:
     limits:
@@ -54,10 +40,7 @@ repoServer:
 ## Application Controller Configuration
 controller:
   tolerations:
-    - key: workload
-      operator: Equal
-      value: argocd
-      effect: NoSchedule
+    - operator: Exists  # Dev: Run on app nodes
 
   resources:
     limits:
@@ -70,10 +53,7 @@ controller:
 ## Redis Configuration
 redis:
   tolerations:
-    - key: workload
-      operator: Equal
-      value: argocd
-      effect: NoSchedule
+    - operator: Exists  # Dev: Run on app nodes
 
   resources:
     limits:
@@ -87,10 +67,7 @@ redis:
 dex:
   enabled: true
   tolerations:
-    - key: workload
-      operator: Equal
-      value: argocd
-      effect: NoSchedule
+    - operator: Exists  # Dev: Run on app nodes
 
   resources:
     limits:
@@ -103,10 +80,7 @@ dex:
 ## ApplicationSet Controller Configuration
 applicationSet:
   tolerations:
-    - key: workload
-      operator: Equal
-      value: argocd
-      effect: NoSchedule
+    - operator: Exists  # Dev: Run on app nodes
 
   resources:
     limits:
@@ -120,10 +94,7 @@ applicationSet:
 notifications:
   enabled: true
   tolerations:
-    - key: workload
-      operator: Equal
-      value: argocd
-      effect: NoSchedule
+    - operator: Exists  # Dev: Run on app nodes
 
   resources:
     limits:

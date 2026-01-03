@@ -27,7 +27,7 @@ securityContext: {}
   # The Dockerfile.prod sets proper permissions for nginx to run
 
 service:
-  type: LoadBalancer
+  type: LoadBalancer  # ✅ Keep: Main public entry point for users
   port: 80
   targetPort: 80
 
@@ -65,15 +65,7 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
-nodeSelector:
-  workload: application
-
-tolerations:
-  - key: workload
-    operator: Equal
-    value: application
-    effect: NoSchedule
-
+# ✅ No nodeSelector/tolerations needed - app nodes accept all workloads
 affinity: {}
 
 livenessProbe:
