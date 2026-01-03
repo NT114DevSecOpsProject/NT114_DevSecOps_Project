@@ -629,6 +629,50 @@ jobs:
           echo "Waiting 30s for ArgoCD to process sync requests..."
           sleep 30
 
+      - name: Wait for monitoring stack CRDs
+        run: |
+          echo "⏳ Waiting for Prometheus Operator CRDs to be installed..."
+
+          # Wait for ArgoCD monitoring app to be synced and healthy
+          echo "Checking monitoring ArgoCD application status..."
+          for i in {1..60}; do
+            APP_HEALTH=$(kubectl get application monitoring -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+            APP_SYNC=$(kubectl get application monitoring -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
+
+            echo "Attempt $i/60: Health=$APP_HEALTH, Sync=$APP_SYNC"
+
+            if [ "$APP_HEALTH" = "Healthy" ] && [ "$APP_SYNC" = "Synced" ]; then
+              echo "✅ Monitoring application is healthy and synced"
+              break
+            fi
+
+            if [ "$i" = "60" ]; then
+              echo "⚠️ Monitoring app not fully ready after 5 minutes, continuing anyway..."
+            fi
+
+            sleep 5
+          done
+
+          # Wait for ServiceMonitor CRD to exist
+          echo "Waiting for ServiceMonitor CRD..."
+          for i in {1..30}; do
+            if kubectl get crd servicemonitors.monitoring.coreos.com &>/dev/null; then
+              echo "✅ ServiceMonitor CRD is available"
+              break
+            fi
+            echo "Attempt $i/30: CRD not ready yet..."
+            sleep 5
+          done
+
+          # Verify CRD exists
+          if ! kubectl get crd servicemonitors.monitoring.coreos.com &>/dev/null; then
+            echo "❌ ServiceMonitor CRD still not available, checking monitoring pods..."
+            kubectl get pods -n monitoring
+            exit 1
+          fi
+
+          echo "✅ Ready to deploy ServiceMonitors"
+
       - name: Deploy ArgoCD ServiceMonitor
         run: |
           echo "📝 Deploying ArgoCD ServiceMonitor for Prometheus..."
