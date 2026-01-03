@@ -616,6 +616,16 @@ jobs:
           echo "📝 Applying monitoring ArgoCD application..."
           kubectl apply -f argocd/applications/monitoring.yaml
 
+          # Verify application was created
+          if kubectl get application monitoring -n argocd &>/dev/null; then
+            echo "✅ Monitoring application created"
+            kubectl get application monitoring -n argocd -o jsonpath='{.metadata.name}: {.status.sync.status} - {.status.health.status}' || echo "Status not available yet"
+            echo ""
+          else
+            echo "❌ Failed to create monitoring application!"
+            exit 1
+          fi
+
           echo "✅ All ArgoCD applications verified"
 
       - name: Force sync ArgoCD applications
@@ -646,8 +656,23 @@ jobs:
               break
             fi
 
+            # Show sync error if OutOfSync
+            if [ "$APP_SYNC" = "OutOfSync" ] && [ "$i" -eq 10 ]; then
+              echo "⚠️ Application is OutOfSync, checking for errors..."
+              kubectl get application monitoring -n argocd -o jsonpath='{.status.conditions}' | jq '.' || echo "No error details available"
+              echo ""
+              echo "Sync revision: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.sync.revision}')"
+              echo "Source path: $(kubectl get application monitoring -n argocd -o jsonpath='{.spec.source.path}')"
+            fi
+
             if [ "$i" = "60" ]; then
-              echo "⚠️ Monitoring app not fully ready after 5 minutes, continuing anyway..."
+              echo "❌ Monitoring app not ready after 5 minutes!"
+              echo "=== Application Details ==="
+              kubectl get application monitoring -n argocd -o yaml
+              echo ""
+              echo "=== ArgoCD Server Logs ==="
+              kubectl logs -n argocd -l app.kubernetes.io/name=argocd-server --tail=50 || true
+              exit 1
             fi
 
             sleep 5
