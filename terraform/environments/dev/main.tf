@@ -332,6 +332,38 @@ resource "aws_security_group_rule" "rds_from_bastion" {
   ]
 }
 
+# Data source to find EKS-managed cluster security group
+data "aws_security_group" "eks_cluster_sg" {
+  filter {
+    name   = "tag:aws:eks:cluster-name"
+    values = [var.cluster_name]
+  }
+
+  filter {
+    name   = "group-name"
+    values = ["eks-cluster-sg-${var.cluster_name}-*"]
+  }
+
+  depends_on = [module.eks_cluster]
+}
+
+# Allow EKS worker nodes to access RDS (EKS-managed security group)
+resource "aws_security_group_rule" "rds_from_eks_nodes" {
+  type                     = "ingress"
+  from_port                = var.rds_port
+  to_port                  = var.rds_port
+  protocol                 = "tcp"
+  source_security_group_id = data.aws_security_group.eks_cluster_sg.id
+  security_group_id        = module.rds_postgresql.security_group_id
+  description              = "PostgreSQL from EKS Worker Nodes (EKS-managed SG)"
+
+  depends_on = [
+    module.rds_postgresql,
+    module.eks_cluster,
+    data.aws_security_group.eks_cluster_sg
+  ]
+}
+
 # Bastion Host Module - Simplified for demo
 module "bastion_host" {
   source = "../../modules/bastion-host"
