@@ -466,12 +466,13 @@ module "ecr" {
   project_name = var.project_name
   environment  = var.environment
 
+  # Add "prod/" prefix to all repository names for production environment
   repository_names = [
-    "api-gateway",
-    "exercises-service",
-    "scores-service",
-    "user-management-service",
-    "frontend"
+    "prod/api-gateway",
+    "prod/exercises-service",
+    "prod/scores-service",
+    "prod/user-management-service",
+    "prod/frontend"
   ]
 
   image_tag_mutability = "MUTABLE"
