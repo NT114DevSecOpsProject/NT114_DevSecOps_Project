@@ -643,6 +643,24 @@ jobs:
           echo "  kubectl get application monitoring -n argocd"
           echo "  kubectl get pods -n monitoring"
 
+      - name: Check cluster capacity
+        run: |
+          echo "=== Cluster Node Status ==="
+          kubectl get nodes -o wide
+
+          echo ""
+          echo "=== Pods per Node ==="
+          kubectl get pods -A -o wide --no-headers | awk '{print $8}' | sort | uniq -c
+
+          echo ""
+          echo "=== Pending Pods ==="
+          kubectl get pods -A --field-selector status.phase=Pending
+
+          echo ""
+          echo "=== Cluster Autoscaler Status ==="
+          kubectl get deployment cluster-autoscaler -n kube-system || echo "⚠️ Cluster Autoscaler not found!"
+          kubectl logs -n kube-system -l app.kubernetes.io/name=cluster-autoscaler --tail=20 || echo "No logs"
+
       - name: Install Metrics Server for HPA
         run: |
           echo "📊 Installing Metrics Server for HorizontalPodAutoscaler support..."

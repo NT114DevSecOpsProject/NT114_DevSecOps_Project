@@ -166,7 +166,7 @@ variable "app_node_max_size" {
 variable "app_node_desired_size" {
   description = "Desired number of application nodes (initial count)"
   type        = number
-  default     = 2
+  default     = 4  # Increased from 2 to handle current load
 }
 
 variable "app_node_labels" {
