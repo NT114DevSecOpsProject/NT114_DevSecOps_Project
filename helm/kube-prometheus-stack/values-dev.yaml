@@ -25,15 +25,15 @@ prometheus:
         memory: 1Gi
         cpu: 500m
 
-    # Storage
-    storageSpec:
-      volumeClaimTemplate:
-        spec:
-          storageClassName: gp3
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 20Gi
+    # Storage - DISABLED (EBS CSI driver not available)
+    # storageSpec:
+    #   volumeClaimTemplate:
+    #     spec:
+    #       storageClassName: gp3
+    #       accessModes: ["ReadWriteOnce"]
+    #       resources:
+    #         requests:
+    #           storage: 20Gi
 
     # Retention
     retention: 7d
@@ -82,14 +82,15 @@ alertmanager:
         memory: 128Mi
         cpu: 100m
 
-    storage:
-      volumeClaimTemplate:
-        spec:
-          storageClassName: gp3
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 10Gi
+    # Storage - DISABLED (EBS CSI driver not available)
+    # storage:
+    #   volumeClaimTemplate:
+    #     spec:
+    #       storageClassName: gp3
+    #       accessModes: ["ReadWriteOnce"]
+    #       resources:
+    #         requests:
+    #           storage: 10Gi
 
 # Grafana
 grafana:
@@ -114,12 +115,12 @@ grafana:
     userKey: admin-user
     passwordKey: admin-password
 
-  # Persistence
+  # Persistence - DISABLED (EBS CSI driver not available)
   persistence:
-    enabled: true
-    storageClassName: gp3
-    accessModes: ["ReadWriteOnce"]
-    size: 10Gi
+    enabled: false
+    # storageClassName: gp3
+    # accessModes: ["ReadWriteOnce"]
+    # size: 10Gi
 
   # Dashboards
   defaultDashboardsEnabled: true
