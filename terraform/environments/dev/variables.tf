@@ -142,7 +142,7 @@ variable "enable_irsa" {
 variable "app_node_instance_types" {
   description = "List of instance types for application node group (Spot Fleet)"
   type        = list(string)
-  default     = ["t3.small", "t3a.small", "t2.small"]
+  default     = ["t3.medium", "t3a.medium"]  # Upgraded from t3.small (2GB) to t3.medium (4GB)
 }
 
 variable "app_node_capacity_type" {
