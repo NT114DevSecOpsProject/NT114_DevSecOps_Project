@@ -505,12 +505,13 @@ jobs:
               --atomic \
               --cleanup-on-fail
           else
+            # Note: --cleanup-on-fail not supported by helm install
+            # Using --atomic which purges installation on failure
             helm install argocd argo/argo-cd \
               --namespace argocd \
               -f helm/argocd/values-dev.yaml \
               --timeout 3m \
-              --atomic \
-              --cleanup-on-fail
+              --atomic
           fi
 
           echo "✅ Helm command completed successfully"
