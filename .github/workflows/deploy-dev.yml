@@ -598,18 +598,42 @@ jobs:
             fi
           done
 
+          # Create monitoring namespace and Grafana secret
+          echo "📝 Preparing monitoring prerequisites..."
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+          # Generate and create Grafana admin secret
+          GRAFANA_PASSWORD=$(openssl rand -base64 20)
+          kubectl create secret generic grafana-admin-credentials \
+            --from-literal=admin-user=admin \
+            --from-literal=admin-password="$GRAFANA_PASSWORD" \
+            -n monitoring \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "✅ Grafana secret created with password: $GRAFANA_PASSWORD"
+
+          # Apply monitoring ArgoCD application
+          echo "📝 Applying monitoring ArgoCD application..."
+          kubectl apply -f argocd/applications/monitoring.yaml
+
           echo "✅ All ArgoCD applications verified"
 
       - name: Force sync ArgoCD applications
         run: |
-          echo "Force syncing all dev applications..."
-          for app in api-gateway-dev exercises-dev frontend-dev scores-dev user-management-dev; do
+          echo "Force syncing all applications..."
+          for app in api-gateway-dev exercises-dev frontend-dev scores-dev user-management-dev monitoring; do
             echo "Syncing $app..."
             kubectl patch application $app -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' || echo "App $app may not exist yet"
           done
 
           echo "Waiting 30s for ArgoCD to process sync requests..."
           sleep 30
+
+      - name: Deploy ArgoCD ServiceMonitor
+        run: |
+          echo "📝 Deploying ArgoCD ServiceMonitor for Prometheus..."
+          kubectl apply -f k8s/monitoring/servicemonitor-argocd.yaml
+          echo "✅ ArgoCD ServiceMonitor deployed"
 
       - name: Install Metrics Server for HPA
         run: |
@@ -766,18 +790,13 @@ jobs:
           echo "argocd_url=$ARGOCD_URL" >> $GITHUB_OUTPUT
           echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
 
-  # Deploy monitoring stack
-  deploy-monitoring:
-    name: Deploy Monitoring Stack
+  # Output access information
+  output-access-info:
+    name: Output Access Information
     needs: [sync-and-verify]
+    if: always()
     runs-on: ubuntu-latest
-    outputs:
-      grafana_url: ${{ steps.get-grafana-url.outputs.grafana_url }}
-      grafana_password: ${{ steps.get-grafana-password.outputs.password }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -788,267 +807,21 @@ jobs:
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-          kubectl cluster-info
 
-      - name: Verify and install EBS CSI Driver
+      - name: Get monitoring info
+        id: monitoring-info
         run: |
-          echo "🔍 Checking EBS CSI driver status..."
+          # Get Grafana URL
+          GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+          [ -z "$GRAFANA_URL" ] && GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+          [ -z "$GRAFANA_URL" ] && GRAFANA_URL="Deploying via ArgoCD (check ArgoCD dashboard)"
 
-          # Get full addon details (status, health)
-          ADDON_INFO=$(aws eks describe-addon \
-            --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
-            --addon-name aws-ebs-csi-driver \
-            --region ${{ env.AWS_REGION }} \
-            --output json 2>/dev/null || echo '{"addon":{"status":"NOT_INSTALLED"}}')
+          # Get Grafana password
+          GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "managed-by-argocd")
 
-          ADDON_STATUS=$(echo "$ADDON_INFO" | jq -r '.addon.status // "NOT_INSTALLED"')
-          ADDON_HEALTH=$(echo "$ADDON_INFO" | jq -r '.addon.health.issues // []')
-
-          echo "Current addon status: $ADDON_STATUS"
-
-          # Handle different addon states
-          if [ "$ADDON_STATUS" = "NOT_INSTALLED" ]; then
-            echo "📦 EBS CSI driver not installed, installing now..."
-            INSTALL_ADDON=true
-
-          elif [ "$ADDON_STATUS" = "ACTIVE" ]; then
-            echo "✅ EBS CSI driver already active, skipping installation"
-            INSTALL_ADDON=false
-
-          elif [ "$ADDON_STATUS" = "DEGRADED" ] || [ "$ADDON_STATUS" = "CREATE_FAILED" ] || [ "$ADDON_STATUS" = "UPDATE_FAILED" ]; then
-            echo "⚠️ Addon in $ADDON_STATUS state, attempting to fix..."
-            echo "Health issues: $ADDON_HEALTH"
-
-            # Try updating the addon to fix degraded state
-            echo "Updating addon to resolve issues..."
-            aws eks update-addon \
-              --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
-              --addon-name aws-ebs-csi-driver \
-              --addon-version v1.36.0-eksbuild.1 \
-              --service-account-role-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ env.EKS_CLUSTER_NAME }}-ebs-csi-controller \
-              --region ${{ env.AWS_REGION }} \
-              --resolve-conflicts OVERWRITE \
-              --configuration-values '{"controller":{"tolerations":[{"key":"workload","operator":"Exists","effect":"NoSchedule"}]}}' || {
-                echo "⚠️ Update failed, will wait for status change..."
-              }
-            INSTALL_ADDON=false
-
-          else
-            echo "⚠️ Unexpected addon status: $ADDON_STATUS"
-            echo "Attempting to update anyway..."
-            INSTALL_ADDON=false
-          fi
-
-          # Install if needed
-          if [ "$INSTALL_ADDON" = "true" ]; then
-            aws eks create-addon \
-              --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
-              --addon-name aws-ebs-csi-driver \
-              --addon-version v1.36.0-eksbuild.1 \
-              --service-account-role-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ env.EKS_CLUSTER_NAME }}-ebs-csi-controller \
-              --region ${{ env.AWS_REGION }} \
-              --resolve-conflicts OVERWRITE \
-              --configuration-values '{"controller":{"tolerations":[{"key":"workload","operator":"Exists","effect":"NoSchedule"}]}}' || {
-                echo "⚠️ Addon creation may have failed, checking status..."
-              }
-          fi
-
-          # Wait for addon to become ACTIVE (increased timeout to 60 attempts = 10 minutes)
-          echo "⏳ Waiting for addon to become active (max 10 minutes)..."
-          for i in {1..60}; do
-            STATUS=$(aws eks describe-addon \
-              --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
-              --addon-name aws-ebs-csi-driver \
-              --region ${{ env.AWS_REGION }} \
-              --query 'addon.status' \
-              --output text 2>/dev/null || echo "UNKNOWN")
-
-            echo "Attempt $i/60: Addon status = $STATUS"
-
-            if [ "$STATUS" = "ACTIVE" ]; then
-              echo "✅ EBS CSI driver addon is active"
-              break
-            fi
-
-            if [ "$i" = "60" ]; then
-              echo "❌ ERROR: EBS CSI driver addon did not become active in time"
-              echo "Final status: $STATUS"
-
-              # Show diagnostic information
-              echo "=== Addon Details ==="
-              aws eks describe-addon \
-                --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
-                --addon-name aws-ebs-csi-driver \
-                --region ${{ env.AWS_REGION }} || true
-
-              exit 1
-            fi
-
-            sleep 10
-          done
-
-          # Verify controller pods are running
-          echo "🔍 Verifying EBS CSI driver pods..."
-          kubectl wait --for=condition=Ready pods \
-            -l app.kubernetes.io/name=aws-ebs-csi-driver \
-            -n kube-system \
-            --timeout=180s || {
-              echo "❌ ERROR: EBS CSI driver pods not ready!"
-              kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-ebs-csi-driver
-              exit 1
-            }
-
-          echo "✅ EBS CSI driver is operational"
-          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-ebs-csi-driver
-
-      - name: Create monitoring namespace
-        run: |
-          echo "Creating monitoring namespace..."
-          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-          echo "✅ Namespace monitoring ready"
-
-      - name: Generate and create Grafana admin secret
-        id: create-grafana-secret
-        run: |
-          # Generate strong password
-          GRAFANA_PASSWORD=$(openssl rand -base64 20)
-
-          # Create secret
-          kubectl create secret generic grafana-admin-credentials \
-            --from-literal=admin-user=admin \
-            --from-literal=admin-password="$GRAFANA_PASSWORD" \
-            -n monitoring \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-          echo "✅ Grafana admin credentials created"
-          echo "password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
-
-      - name: Create gp3 StorageClass
-        run: |
-          echo "Creating gp3 StorageClass..."
-          kubectl apply -f k8s/storage/gp3-storageclass.yaml
-
-          # Set gp3 as default and remove default from gp2
-          kubectl patch storageclass gp2 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}' || true
-          kubectl patch storageclass gp3 -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-
-          echo "✅ gp3 StorageClass created and set as default"
-          kubectl get storageclass
-
-      - name: Add Helm repository
-        run: |
-          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-          helm repo update
-          echo "✅ Helm repo added and updated"
-
-      - name: Deploy kube-prometheus-stack (Optimized)
-        run: |
-          echo "🚀 Deploying kube-prometheus-stack..."
-
-          # Deploy with extended timeout, no --atomic on first install
-          # Note: First install may take 10-15min due to PVC provisioning
-          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-            --namespace monitoring \
-            --version 80.9.1 \
-            -f helm/kube-prometheus-stack/values-dev.yaml \
-            --timeout 15m \
-            --create-namespace
-
-          echo "✅ Helm command completed"
-          echo "⏳ Waiting for critical components..."
-
-          # Wait for Prometheus Operator first (manages other components)
-          kubectl rollout status deployment/kube-prometheus-stack-operator -n monitoring --timeout=180s || echo "⚠️ Operator not ready yet"
-
-          # Wait for kube-state-metrics (required for monitoring)
-          kubectl rollout status deployment/kube-prometheus-stack-kube-state-metrics -n monitoring --timeout=180s || echo "⚠️ Kube-state-metrics not ready yet"
-
-          # Check overall pod status
-          echo "📊 Current monitoring pod status:"
-          kubectl get pods -n monitoring
-
-          echo "✅ Monitoring stack deployment initiated, pods will become ready shortly"
-
-      - name: Wait for monitoring pods to be ready
-        run: |
-          echo "Waiting for monitoring pods to be ready..."
-
-          # Wait up to 5 minutes for all pods
-          kubectl wait --for=condition=Ready pods --all -n monitoring --timeout=300s || {
-            echo "⚠️ Some pods still starting, checking status..."
-            echo ""
-            echo "=== Monitoring Pod Status ==="
-            kubectl get pods -n monitoring
-
-            echo ""
-            echo "=== PVC Status ==="
-            kubectl get pvc -n monitoring
-
-            echo ""
-            echo "=== Recent Warning Events ==="
-            kubectl get events -n monitoring --sort-by='.lastTimestamp' --field-selector type=Warning | tail -20
-
-            echo ""
-            echo "=== Pods Not Running ==="
-            kubectl get pods -n monitoring --field-selector status.phase!=Running -o wide 2>/dev/null || echo "All pods are running or completed"
-          }
-
-          echo "✅ Monitoring stack pods ready"
-          kubectl get pods -n monitoring
-
-      - name: Deploy ArgoCD ServiceMonitors
-        run: |
-          echo "Deploying ArgoCD ServiceMonitors..."
-          kubectl apply -f k8s/monitoring/servicemonitor-argocd.yaml
-          echo "✅ ArgoCD ServiceMonitors deployed"
-
-      - name: Get Grafana LoadBalancer URL
-        id: get-grafana-url
-        run: |
-          echo "Waiting for Grafana LoadBalancer..."
-
-          GRAFANA_URL=""
-          for i in {1..18}; do
-            GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-            [ -z "$GRAFANA_URL" ] && GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-
-            if [ -n "$GRAFANA_URL" ]; then
-              echo "Grafana URL found: $GRAFANA_URL"
-              break
-            fi
-            echo "Waiting for LoadBalancer... ($i/18)"
-            sleep 10
-          done
-
-          [ -z "$GRAFANA_URL" ] && GRAFANA_URL="Pending (LoadBalancer provisioning)"
           echo "grafana_url=$GRAFANA_URL" >> $GITHUB_OUTPUT
+          echo "grafana_password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
 
-      - name: Get Grafana admin password
-        id: get-grafana-password
-        run: |
-          PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" | base64 -d)
-          echo "password=$PASSWORD" >> $GITHUB_OUTPUT
-
-      - name: Verify Prometheus targets
-        run: |
-          echo "Checking Prometheus target status..."
-          kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 &
-          PF_PID=$!
-          sleep 5
-
-          # Simple connectivity check
-          curl -s http://localhost:9090/api/v1/targets || echo "⚠️ Cannot reach Prometheus API"
-
-          kill $PF_PID || true
-          echo "✅ Prometheus verification complete"
-
-  # Output access information
-  output-access-info:
-    name: Output Access Information
-    needs: [sync-and-verify, deploy-monitoring]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
       - name: Display access information
         run: |
           echo "=========================================="
@@ -1062,6 +835,11 @@ jobs:
           echo "  URL:      http://${{ needs.sync-and-verify.outputs.argocd_url }}"
           echo "  Username: admin"
           echo "  Password: ${{ needs.sync-and-verify.outputs.argocd_password }}"
+          echo ""
+          echo "Grafana Dashboard:"
+          echo "  URL:      http://${{ steps.monitoring-info.outputs.grafana_url }}"
+          echo "  Username: admin"
+          echo "  Password: ${{ steps.monitoring-info.outputs.grafana_password }}"
           echo ""
           echo "RDS PostgreSQL Database:"
           echo "  Host:     ${{ needs.sync-and-verify.outputs.rds_endpoint }}"
@@ -1086,11 +864,11 @@ jobs:
           echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
           echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Monitoring Stack" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Monitoring Stack (Managed by ArgoCD)" >> $GITHUB_STEP_SUMMARY
           echo "**Grafana Dashboard:**" >> $GITHUB_STEP_SUMMARY
-          echo "- URL: http://${{ needs.deploy-monitoring.outputs.grafana_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: http://${{ steps.monitoring-info.outputs.grafana_url }}" >> $GITHUB_STEP_SUMMARY
           echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Password: \`${{ needs.deploy-monitoring.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Password: \`${{ steps.monitoring-info.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Prometheus:**" >> $GITHUB_STEP_SUMMARY
           echo "- Access via: \`kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090\`" >> $GITHUB_STEP_SUMMARY
@@ -1113,7 +891,6 @@ jobs:
           echo "### ✅ What Was Deployed" >> $GITHUB_STEP_SUMMARY
           echo "- Docker images built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
           echo "- Helm values updated with new image tags" >> $GITHUB_STEP_SUMMARY
-          echo "- ArgoCD applications synced" >> $GITHUB_STEP_SUMMARY
-          echo "- Prometheus + Grafana monitoring stack deployed" >> $GITHUB_STEP_SUMMARY
-          echo "- All pods verified healthy" >> $GITHUB_STEP_SUMMARY
+          echo "- ArgoCD applications synced (including monitoring stack)" >> $GITHUB_STEP_SUMMARY
+          echo "- All applications managed via GitOps (ArgoCD)" >> $GITHUB_STEP_SUMMARY
           echo "- LoadBalancers provisioned and accessible" >> $GITHUB_STEP_SUMMARY
