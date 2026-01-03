@@ -8,9 +8,6 @@ image:
   pullPolicy: Always
   tag: "fd4991d738a89a8bfc45439480afc128c40a4e94"
 
-imagePullSecrets:
-  - name: ecr-secret
-
 serviceAccount:
   create: true
   annotations: {}
