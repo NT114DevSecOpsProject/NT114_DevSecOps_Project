@@ -629,6 +629,36 @@ jobs:
           echo "Waiting 30s for ArgoCD to process sync requests..."
           sleep 30
 
+      - name: Install Metrics Server for HPA
+        run: |
+          echo "📊 Installing Metrics Server for HorizontalPodAutoscaler support..."
+
+          # Check if metrics-server already exists
+          if kubectl get deployment metrics-server -n kube-system &>/dev/null; then
+            echo "✅ Metrics Server already installed"
+          else
+            echo "📦 Installing Metrics Server..."
+
+            # Install metrics-server using official manifest
+            kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+            # Wait for metrics-server to be ready
+            echo "⏳ Waiting for Metrics Server to be ready..."
+            kubectl wait --for=condition=Ready pods \
+              -l k8s-app=metrics-server \
+              -n kube-system \
+              --timeout=120s || {
+                echo "⚠️ Metrics Server not ready yet, continuing..."
+                kubectl get pods -n kube-system -l k8s-app=metrics-server
+              }
+
+            echo "✅ Metrics Server installed"
+          fi
+
+          # Verify metrics API is available
+          echo "🔍 Verifying Metrics API..."
+          kubectl top nodes || echo "⚠️ Metrics API not ready yet (this is normal, may take 1-2 minutes)"
+
       - name: Wait for pods to be healthy
         run: |
           echo "Waiting for all pods to be healthy (max 5 minutes)..."
