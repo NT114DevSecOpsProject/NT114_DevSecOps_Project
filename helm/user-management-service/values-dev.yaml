@@ -4,7 +4,7 @@
 replicaCount: 2
 
 image:
-  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/dev/user-management-service
+  repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/user-management-service
   pullPolicy: Always
 
 imagePullSecrets:

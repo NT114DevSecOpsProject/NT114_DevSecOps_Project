@@ -236,13 +236,13 @@ jobs:
 
             echo " Building Docker image for ${{ matrix.service.name }}..."
             docker buildx build --platform linux/amd64 \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/dev/${{ matrix.service.name }}:${{ github.sha }} \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/dev/${{ matrix.service.name }}:latest \
+              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:${{ github.sha }} \
+              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:latest \
               --push .
 
             echo " Image pushed to ECR:"
-            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/dev/${{ matrix.service.name }}:${{ github.sha }}"
-            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/dev/${{ matrix.service.name }}:latest"
+            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:${{ github.sha }}"
+            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:latest"
 
       - name: Mark service as built
         if: steps.should-build.outputs.enabled == 'true'
@@ -288,8 +288,8 @@ jobs:
               --build-arg VITE_API_URL="" \
               --build-arg VITE_APP_TITLE="CodeLearn" \
               --build-arg VITE_APP_ENV=development \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/dev/frontend:${{ github.sha }} \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/dev/frontend:latest \
+              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:${{ github.sha }} \
+              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:latest \
               --push .
 
             echo " Frontend image pushed to ECR"
