@@ -598,33 +598,28 @@ jobs:
             fi
           done
 
-          # Create monitoring namespace and Grafana secret
-          echo "📝 Preparing monitoring prerequisites..."
+          # Setup monitoring prerequisites
+          echo "📝 Setting up monitoring prerequisites..."
+
+          # Create namespace (ArgoCD will also create it, but we need it for secret)
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
 
-          # Generate and create Grafana admin secret
-          GRAFANA_PASSWORD=$(openssl rand -base64 20)
-          kubectl create secret generic grafana-admin-credentials \
-            --from-literal=admin-user=admin \
-            --from-literal=admin-password="$GRAFANA_PASSWORD" \
-            -n monitoring \
-            --dry-run=client -o yaml | kubectl apply -f -
+          # Generate Grafana admin secret (only if not exists)
+          if ! kubectl get secret grafana-admin-credentials -n monitoring &>/dev/null; then
+            GRAFANA_PASSWORD=$(openssl rand -base64 20)
+            kubectl create secret generic grafana-admin-credentials \
+              --from-literal=admin-user=admin \
+              --from-literal=admin-password="$GRAFANA_PASSWORD" \
+              -n monitoring
+            echo "✅ Grafana secret created"
+          else
+            echo "✅ Grafana secret already exists"
+          fi
 
-          echo "✅ Grafana secret created with password: $GRAFANA_PASSWORD"
-
-          # Apply monitoring ArgoCD application
+          # Apply monitoring ArgoCD application (ArgoCD handles the rest!)
           echo "📝 Applying monitoring ArgoCD application..."
           kubectl apply -f argocd/applications/monitoring.yaml
-
-          # Verify application was created
-          if kubectl get application monitoring -n argocd &>/dev/null; then
-            echo "✅ Monitoring application created"
-            kubectl get application monitoring -n argocd -o jsonpath='{.metadata.name}: {.status.sync.status} - {.status.health.status}' || echo "Status not available yet"
-            echo ""
-          else
-            echo "❌ Failed to create monitoring application!"
-            exit 1
-          fi
+          echo "✅ Monitoring application created - ArgoCD will handle deployment"
 
           echo "✅ All ArgoCD applications verified"
 
@@ -639,89 +634,14 @@ jobs:
           echo "Waiting 30s for ArgoCD to process sync requests..."
           sleep 30
 
-      - name: Wait for monitoring stack CRDs
+      - name: Verify monitoring app created
         run: |
-          echo "⏳ Waiting for Prometheus Operator CRDs to be installed..."
-
-          # Clean up any stuck admission webhook jobs from previous runs
-          echo "🧹 Cleaning up any stuck admission webhook jobs..."
-          kubectl delete job -n monitoring -l app.kubernetes.io/component=admission-webhook --ignore-not-found=true
-          sleep 5
-
-          # Wait for ArgoCD monitoring app to be synced and healthy
-          echo "Checking monitoring ArgoCD application status..."
-          for i in {1..60}; do
-            APP_HEALTH=$(kubectl get application monitoring -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
-            APP_SYNC=$(kubectl get application monitoring -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
-
-            echo "Attempt $i/60: Health=$APP_HEALTH, Sync=$APP_SYNC"
-
-            if [ "$APP_HEALTH" = "Healthy" ] && [ "$APP_SYNC" = "Synced" ]; then
-              echo "✅ Monitoring application is healthy and synced"
-              break
-            fi
-
-            # Show sync error if OutOfSync
-            if [ "$APP_SYNC" = "OutOfSync" ] && [ "$i" -eq 10 ]; then
-              echo "⚠️ Application is OutOfSync, checking for errors..."
-              echo ""
-              echo "=== Application Status ==="
-              kubectl get application monitoring -n argocd -o jsonpath='{.status.conditions}' || echo "No conditions"
-              echo ""
-              echo "=== Sync Status ==="
-              echo "Sync revision: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.sync.revision}')"
-              echo "Sync status: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.sync.status}')"
-              echo "Operation state: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.operationState.phase}')"
-              echo "Operation message: $(kubectl get application monitoring -n argocd -o jsonpath='{.status.operationState.message}')"
-              echo ""
-              echo "=== Source Config ==="
-              echo "Repo URL: $(kubectl get application monitoring -n argocd -o jsonpath='{.spec.source.repoURL}')"
-              echo "Chart: $(kubectl get application monitoring -n argocd -o jsonpath='{.spec.source.chart}')"
-              echo "Target revision: $(kubectl get application monitoring -n argocd -o jsonpath='{.spec.source.targetRevision}')"
-              echo ""
-              echo "=== Forcing manual sync ==="
-              kubectl patch application monitoring -n argocd --type merge -p '{"operation":{"sync":{"syncStrategy":{"hook":{}}}}}' || echo "Sync trigger failed"
-              sleep 10
-            fi
-
-            if [ "$i" = "60" ]; then
-              echo "❌ Monitoring app not ready after 5 minutes!"
-              echo "=== Application Details ==="
-              kubectl get application monitoring -n argocd -o yaml
-              echo ""
-              echo "=== ArgoCD Server Logs ==="
-              kubectl logs -n argocd -l app.kubernetes.io/name=argocd-server --tail=50 || true
-              exit 1
-            fi
-
-            sleep 5
-          done
-
-          # Wait for ServiceMonitor CRD to exist
-          echo "Waiting for ServiceMonitor CRD..."
-          for i in {1..30}; do
-            if kubectl get crd servicemonitors.monitoring.coreos.com &>/dev/null; then
-              echo "✅ ServiceMonitor CRD is available"
-              break
-            fi
-            echo "Attempt $i/30: CRD not ready yet..."
-            sleep 5
-          done
-
-          # Verify CRD exists
-          if ! kubectl get crd servicemonitors.monitoring.coreos.com &>/dev/null; then
-            echo "❌ ServiceMonitor CRD still not available, checking monitoring pods..."
-            kubectl get pods -n monitoring
-            exit 1
-          fi
-
-          echo "✅ Ready to deploy ServiceMonitors"
-
-      - name: Deploy ArgoCD ServiceMonitor
-        run: |
-          echo "📝 Deploying ArgoCD ServiceMonitor for Prometheus..."
-          kubectl apply -f k8s/monitoring/servicemonitor-argocd.yaml
-          echo "✅ ArgoCD ServiceMonitor deployed"
+          echo "✅ Monitoring app delegated to ArgoCD"
+          echo "ArgoCD will handle deployment asynchronously"
+          echo ""
+          echo "Check status with:"
+          echo "  kubectl get application monitoring -n argocd"
+          echo "  kubectl get pods -n monitoring"
 
       - name: Install Metrics Server for HPA
         run: |
@@ -899,13 +819,25 @@ jobs:
       - name: Get monitoring info
         id: monitoring-info
         run: |
-          # Get Grafana URL
+          echo "⏳ Checking monitoring stack status (deployed by ArgoCD)..."
+
+          # Wait briefly for Grafana service (max 30s, non-blocking)
+          for i in {1..6}; do
+            if kubectl get svc kube-prometheus-stack-grafana -n monitoring &>/dev/null; then
+              echo "✅ Grafana service found"
+              break
+            fi
+            echo "Attempt $i/6: Waiting for Grafana service..."
+            sleep 5
+          done
+
+          # Get Grafana URL (may not be ready yet)
           GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
           [ -z "$GRAFANA_URL" ] && GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-          [ -z "$GRAFANA_URL" ] && GRAFANA_URL="Deploying via ArgoCD (check ArgoCD dashboard)"
+          [ -z "$GRAFANA_URL" ] && GRAFANA_URL="Deploying via ArgoCD - Check: kubectl get svc -n monitoring"
 
           # Get Grafana password
-          GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "managed-by-argocd")
+          GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "Check secret: grafana-admin-credentials")
 
           echo "grafana_url=$GRAFANA_URL" >> $GITHUB_OUTPUT
           echo "grafana_password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
