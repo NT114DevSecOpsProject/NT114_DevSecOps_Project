@@ -33,10 +33,7 @@ spec:
                   cpu: 100m
                   memory: 128Mi
           tolerations:
-            - key: workload
-              operator: Equal
-              value: monitoring
-              effect: NoSchedule
+            - operator: Exists  # ✅ Run on any available node (app nodes)
           resources:
             requests:
               memory: 128Mi
@@ -49,10 +46,7 @@ spec:
         prometheus:
           prometheusSpec:
             tolerations:
-              - key: workload
-                operator: Equal
-                value: monitoring
-                effect: NoSchedule
+              - operator: Exists  # ✅ Run on any available node (app nodes)
             replicas: 1
             retention: 7d
             retentionSize: 18GB
@@ -82,10 +76,7 @@ spec:
         alertmanager:
           alertmanagerSpec:
             tolerations:
-              - key: workload
-                operator: Equal
-                value: monitoring
-                effect: NoSchedule
+              - operator: Exists  # ✅ Run on any available node (app nodes)
             replicas: 1
             storage:
               volumeClaimTemplate:
@@ -106,10 +97,7 @@ spec:
         # Grafana - Visualization
         grafana:
           tolerations:
-            - key: workload
-              operator: Equal
-              value: monitoring
-              effect: NoSchedule
+            - operator: Exists  # ✅ Run on any available node (app nodes)
           replicas: 1
           persistence:
             enabled: true
@@ -142,10 +130,7 @@ spec:
         # Kube State Metrics - Cluster state metrics
         kube-state-metrics:
           tolerations:
-            - key: workload
-              operator: Equal
-              value: monitoring
-              effect: NoSchedule
+            - operator: Exists  # ✅ Run on any available node (app nodes)
           resources:
             requests:
               memory: 64Mi

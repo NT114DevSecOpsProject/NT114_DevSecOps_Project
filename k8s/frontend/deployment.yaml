@@ -16,17 +16,7 @@ spec:
         app: frontend
         tier: frontend
     spec:
-      # Node selection for application workload
-      nodeSelector:
-        workload: application
-
-      # Tolerations to schedule on application nodes
-      tolerations:
-      - key: "workload"
-        operator: "Equal"
-        value: "application"
-        effect: "NoSchedule"
-
+      # ✅ No nodeSelector/tolerations needed - app nodes accept all workloads
       containers:
       - name: frontend
         image: 039612870452.dkr.ecr.us-east-1.amazonaws.com/dev/frontend:latest
