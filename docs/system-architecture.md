@@ -1,8 +1,8 @@
 # NT114 DevSecOps Project - System Architecture
 
-**Version:** 3.0
-**Last Updated:** November 30, 2025
-**Status:** ✅ **Complete GitOps Implementation with ArgoCD**
+**Version:** 3.1
+**Last Updated:** December 29, 2025
+**Status:** ✅ **Complete GitOps Implementation with Multi-Node Group Architecture**
 
 ---
 
@@ -771,31 +771,70 @@ alertingRules:
 ### Kubernetes Cluster Configuration
 
 #### Node Groups Configuration
+
+**Architecture Strategy**: Multi-node group workload isolation for enhanced resource management and security
+
 ```
-┌─────────────────────────────────────────────────────┐
-│              EKS Node Groups                           │
-├─────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
-│  │   System    │  │ Application│  │   Spot      │  │
-│  │  Nodes      │  │   Nodes     │  │  Nodes      │  │
-│  │             │  │             │  │             │  │
-│  │ • m5.large  │  │ • m5.xlarge │  │ • m5.xlarge │  │
-│  │ • 3 nodes  │  │ • 3-6 nodes │  │ • 0-5 nodes │  │
-│  │ • Critical  │  │ • Stateful   │  │ • Stateless  │  │
-│  │ • On-Demand │  │ • On-Demand │  │ • Spot (70%  │  │
-│  │             │  │             │  │   savings)  │  │
-│  └─────────────┘  └─────────────┘  └─────────────┘  │
-│                                                             │
-│  Auto Scaling Configuration:                                   │
-│  • Min Nodes: 3 (2 app + 1 system)                     │
-│  • Max Nodes: 12 (6 app + 3 system + 3 spot)           │
-│  • Scale Up Threshold: 70% CPU/Memory Usage           │
-│  • Scale Down Threshold: 30% CPU/Memory Usage         │
-│  • Scale Up Cooldown: 3 minutes                      │
-│  • Scale Down Cooldown: 10 minutes                    │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      EKS Multi-Node Group Architecture                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│  ┌────────────────────┐  ┌────────────────────┐  ┌──────────────────┐  │
+│  │  Application       │  │    ArgoCD          │  │   Monitoring     │  │
+│  │  Node Group        │  │    Node Group      │  │   Node Group     │  │
+│  │                    │  │                    │  │                  │  │
+│  │ • t3.small         │  │ • t3.small         │  │ • t3.small       │  │
+│  │ • Min: 1           │  │ • Min: 1           │  │ • Min: 1         │  │
+│  │ • Desired: 2       │  │ • Desired: 1       │  │ • Desired: 1     │  │
+│  │ • Max: 3           │  │ • Max: 2           │  │ • Max: 1         │  │
+│  │ • On-Demand        │  │ • On-Demand        │  │ • On-Demand      │  │
+│  │                    │  │                    │  │                  │  │
+│  │ Workload:          │  │ Workload:          │  │ Workload:        │  │
+│  │ • User services    │  │ • ArgoCD server    │  │ • Prometheus     │  │
+│  │ • API Gateway      │  │ • Repo server      │  │ • Grafana        │  │
+│  │ • Frontend app     │  │ • Controller       │  │ • Metrics        │  │
+│  │ • Backend APIs     │  │ • GitOps sync      │  │ • Logs           │  │
+│  │                    │  │                    │  │                  │  │
+│  │ Taints/Labels:     │  │ Taints/Labels:     │  │ Taints/Labels:   │  │
+│  │ workload=          │  │ workload=          │  │ workload=        │  │
+│  │   application:     │  │   argocd:          │  │   monitoring:    │  │
+│  │   NoSchedule       │  │   NoSchedule       │  │   NoSchedule     │  │
+│  │ component=app      │  │ component=gitops   │  │ component=       │  │
+│  │ environment=dev    │  │ criticality=high   │  │   observability  │  │
+│  └────────────────────┘  └────────────────────┘  └──────────────────┘  │
+│                                                                           │
+│  Benefits:                                                                │
+│  • Workload isolation: Prevents resource contention between services    │
+│  • Independent scaling: Each workload scales based on its own needs     │
+│  • Security: Critical services (ArgoCD, monitoring) isolated            │
+│  • Reliability: ArgoCD/monitoring unaffected by app crashes/bursts     │
+│  • Cost optimization: Precise capacity per workload type                │
+│                                                                           │
+│  Total Minimum Capacity: 3 nodes (1 app + 1 argocd + 1 monitoring)     │
+│  Total Maximum Capacity: 6 nodes (3 app + 2 argocd + 1 monitoring)     │
+│  Estimated Cost (us-east-1): $54.75/month minimum (3× t3.small)        │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+**Workload Isolation Details:**
+
+1. **Application Node Group** (Primary workload)
+   - Dedicated to user-facing applications and backend services
+   - Handles variable traffic loads with autoscaling
+   - Taint ensures only application pods scheduled here
+   - Can scale to 0 in non-production for cost savings
+
+2. **ArgoCD Node Group** (GitOps management)
+   - Isolated GitOps deployment infrastructure
+   - Prevents ArgoCD disruption from application issues
+   - Steady-state workload, minimal scaling needed
+   - Critical for deployment pipeline reliability
+
+3. **Monitoring Node Group** (Observability)
+   - Dedicated metrics collection and visualization
+   - Isolated from application resource contention
+   - Fixed capacity for predictable costs
+   - Ensures monitoring availability during incidents
 
 #### Storage Architecture
 ```
@@ -1087,6 +1126,197 @@ hpa:
 
 ---
 
+## Node Taints and Tolerations Strategy
+
+### Overview
+
+The multi-node group architecture utilizes Kubernetes taints and tolerations to enforce workload isolation and prevent unintended pod scheduling across node groups.
+
+### Taint Configuration by Node Group
+
+#### 1. Application Node Group Taints
+```yaml
+# Applied via Terraform to all application nodes
+taints:
+  workload:
+    key: "workload"
+    value: "application"
+    effect: "NoSchedule"
+
+labels:
+  workload: "application"
+  component: "app"
+  environment: "dev"
+```
+
+**Purpose**: Ensures only application pods with matching tolerations are scheduled on these nodes.
+
+#### 2. ArgoCD Node Group Taints
+```yaml
+# Applied via Terraform to all ArgoCD nodes
+taints:
+  workload:
+    key: "workload"
+    value: "argocd"
+    effect: "NoSchedule"
+
+labels:
+  workload: "argocd"
+  component: "gitops"
+  criticality: "high"
+```
+
+**Purpose**: Isolates GitOps infrastructure from application workloads to ensure deployment reliability.
+
+#### 3. Monitoring Node Group Taints
+```yaml
+# Applied via Terraform to all monitoring nodes
+taints:
+  workload:
+    key: "workload"
+    value: "monitoring"
+    effect: "NoSchedule"
+
+labels:
+  workload: "monitoring"
+  component: "observability"
+  criticality: "high"
+```
+
+**Purpose**: Dedicates nodes to observability stack, preventing resource contention during incidents.
+
+### Pod Toleration Requirements
+
+#### Application Deployment Example
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-management-service
+spec:
+  template:
+    spec:
+      # Toleration allows scheduling on application nodes
+      tolerations:
+      - key: "workload"
+        operator: "Equal"
+        value: "application"
+        effect: "NoSchedule"
+
+      # Node selector ensures placement on application nodes
+      nodeSelector:
+        workload: "application"
+
+      containers:
+      - name: user-management
+        image: user-management:latest
+```
+
+#### ArgoCD Deployment Configuration
+```yaml
+# Helm values for ArgoCD deployment
+tolerations:
+- key: "workload"
+  operator: "Equal"
+  value: "argocd"
+  effect: "NoSchedule"
+
+nodeSelector:
+  workload: "argocd"
+
+# Applied to: server, repo-server, application-controller
+```
+
+#### Monitoring Stack Configuration
+```yaml
+# Prometheus/Grafana Helm values
+tolerations:
+- key: "workload"
+  operator: "Equal"
+  value: "monitoring"
+  effect: "NoSchedule"
+
+nodeSelector:
+  workload: "monitoring"
+```
+
+### Deployment Implications
+
+#### For Application Developers
+1. **Helm Chart Updates Required**: All Helm charts must include tolerations and nodeSelectors
+2. **Pod Deployment**: Pods without matching tolerations will remain in `Pending` state
+3. **Testing**: Verify pod placement using `kubectl get pods -o wide -n <namespace>`
+
+#### For Infrastructure Operators
+1. **Node Scaling**: Each node group scales independently based on workload demands
+2. **Cost Management**: Minimum 3 nodes required (one per node group)
+3. **Troubleshooting**: Check node taints with `kubectl describe node <node-name>`
+
+#### For GitOps/ArgoCD
+1. **Application Manifests**: Must include tolerations in deployment templates
+2. **ArgoCD Self-Deployment**: ArgoCD applications managing ArgoCD must have correct tolerations
+3. **Sync Policies**: Use automated pruning carefully to avoid removing critical tolerations
+
+### Cost and Operational Considerations
+
+#### Cost Impact
+- **Minimum Infrastructure**: 3 nodes × $18.25/month = $54.75/month (t3.small us-east-1)
+- **Production Recommended**: 4-5 nodes × $18.25/month = $73-91/month
+- **Trade-off**: Higher minimum cost vs. improved isolation and reliability
+
+#### Operational Benefits
+1. **Resource Isolation**: Application bursts don't affect ArgoCD or monitoring
+2. **Predictable Performance**: Each workload has guaranteed capacity
+3. **Incident Response**: Monitoring remains available during app failures
+4. **Security**: Critical services isolated from potentially compromised apps
+
+#### Resource Fragmentation
+- **Challenge**: Multiple node groups may have underutilized capacity
+- **Mitigation**: Use pod priorities and preemption for critical workloads
+- **Monitoring**: Track node utilization per node group via Prometheus metrics
+
+### Troubleshooting Guide
+
+#### Pod Stuck in Pending State
+```bash
+# Check pod events for scheduling failures
+kubectl describe pod <pod-name> -n <namespace>
+
+# Common error: "0/3 nodes are available: 3 node(s) had taint {workload: application}"
+# Solution: Add matching toleration to pod spec
+```
+
+#### Verify Node Taints
+```bash
+# List all nodes with taints
+kubectl get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints
+
+# Expected output:
+# NAME                                         TAINTS
+# ip-11-0-1-123.ec2.internal                   [map[effect:NoSchedule key:workload value:application]]
+# ip-11-0-2-456.ec2.internal                   [map[effect:NoSchedule key:workload value:argocd]]
+# ip-11-0-3-789.ec2.internal                   [map[effect:NoSchedule key:workload value:monitoring]]
+```
+
+#### Verify Pod Placement
+```bash
+# Check which nodes pods are running on
+kubectl get pods -n <namespace> -o wide
+
+# Verify pod tolerations
+kubectl get pod <pod-name> -n <namespace> -o jsonpath='{.spec.tolerations}'
+```
+
+### Best Practices
+
+1. **Consistent Naming**: Use uniform taint keys (`workload`, `component`, `environment`)
+2. **Documentation**: Document toleration requirements in Helm chart README files
+3. **CI/CD Validation**: Add deployment validation to check for required tolerations
+4. **Monitoring**: Alert on pods stuck in `Pending` state due to taint issues
+5. **Gradual Rollout**: Test toleration changes in dev before applying to production
+
+---
+
 ## Conclusion
 
 The NT114 DevSecOps Project implements a comprehensive, production-ready cloud architecture that demonstrates modern DevSecOps practices and GitOps workflows. The system architecture provides:
@@ -1120,12 +1350,13 @@ This architecture serves as a reference implementation for organizations adoptin
 
 ---
 
-**Document Version**: 3.0
-**Last Updated**: November 30, 2025
-**Next Review**: December 31, 2025
-**Status**: ✅ Production Architecture Implemented
-**Architecture Review**: Comprehensive system design completed
-**Implementation Status**: All components deployed and operational
+**Document Version**: 3.1
+**Last Updated**: December 29, 2025
+**Next Review**: January 31, 2026
+**Status**: ✅ Production Architecture Implemented with Multi-Node Group Isolation
+**Architecture Review**: Comprehensive system design with workload isolation completed
+**Implementation Status**: All components deployed with dedicated node groups operational
+**Recent Changes**: Multi-node group architecture (app, argocd, monitoring) with taints/tolerations
 
 ---
 

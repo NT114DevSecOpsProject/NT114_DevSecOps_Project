@@ -105,9 +105,17 @@ variable "cluster_addons" {
   description = "Map of cluster addon configurations"
   type        = any
   default = {
-    eks-pod-identity-agent = {}
-    kube-proxy             = {}
-    vpc-cni                = {}
+    # Addons already exist in cluster - don't manage via Terraform to avoid conflicts
+    # They are already configured with proper tolerations
+    # coredns = {
+    #   configuration_values = "{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}"
+    # }
+    # aws-ebs-csi-driver = {
+    #   configuration_values = "{\"controller\":{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}}"
+    # }
+    # eks-pod-identity-agent = {}
+    # kube-proxy             = {}
+    # vpc-cni                = {}
   }
 }
 
@@ -130,50 +138,156 @@ variable "enable_irsa" {
   default     = true
 }
 
-# Node Group Variables
-variable "node_group_name" {
-  description = "Name of the EKS managed node group"
-  type        = string
-  default     = "eks-node"
-}
-
-variable "node_instance_types" {
-  description = "List of instance types for the node group"
+# Application Node Group Variables
+variable "app_node_instance_types" {
+  description = "List of instance types for application node group (Spot Fleet)"
   type        = list(string)
-  default     = ["t3.medium"] # Changed from t3.large to save 50% on node costs
+  default     = ["t3.small", "t3a.small", "t2.small"]
 }
 
-variable "node_capacity_type" {
-  description = "Capacity type for node group (ON_DEMAND or SPOT)"
+variable "app_node_capacity_type" {
+  description = "Capacity type for application node group"
   type        = string
   default     = "SPOT"
 }
 
-variable "node_min_size" {
-  description = "Minimum number of nodes"
+variable "app_node_min_size" {
+  description = "Minimum number of application nodes"
   type        = number
   default     = 1
 }
 
-variable "node_max_size" {
-  description = "Maximum number of nodes"
+variable "app_node_max_size" {
+  description = "Maximum number of application nodes"
+  type        = number
+  default     = 3
+}
+
+variable "app_node_desired_size" {
+  description = "Desired number of application nodes"
   type        = number
   default     = 2
 }
 
-variable "node_desired_size" {
-  description = "Desired number of nodes"
+variable "app_node_labels" {
+  description = "Labels for application nodes"
+  type        = map(string)
+  default     = {}
+}
+
+variable "app_node_taints" {
+  description = "Taints for application nodes (empty to allow system pods)"
+  type = map(object({
+    key    = string
+    value  = string
+    effect = string
+  }))
+  default = {}  # No taints - allows both system and application pods
+}
+
+# ArgoCD Node Group Variables
+variable "argocd_node_instance_types" {
+  description = "List of instance types for ArgoCD node group (Spot Fleet)"
+  type        = list(string)
+  default     = ["t3.small", "t3a.small", "t2.small"]
+}
+
+variable "argocd_node_capacity_type" {
+  description = "Capacity type for ArgoCD node group"
+  type        = string
+  default     = "SPOT"
+}
+
+variable "argocd_node_min_size" {
+  description = "Minimum number of ArgoCD nodes"
   type        = number
   default     = 1
 }
 
-variable "node_labels" {
-  description = "Key-value map of Kubernetes labels for nodes"
+variable "argocd_node_max_size" {
+  description = "Maximum number of ArgoCD nodes"
+  type        = number
+  default     = 2
+}
+
+variable "argocd_node_desired_size" {
+  description = "Desired number of ArgoCD nodes"
+  type        = number
+  default     = 1
+}
+
+variable "argocd_node_labels" {
+  description = "Labels for ArgoCD nodes"
   type        = map(string)
+  default     = {}
+}
+
+variable "argocd_node_taints" {
+  description = "Taints for ArgoCD nodes"
+  type = map(object({
+    key    = string
+    value  = string
+    effect = string
+  }))
   default = {
-    Environment = "dev"
-    GithubRepo  = "terraform-aws-eks"
-    GithubOrg   = "terraform-aws-modules"
+    workload = {
+      key    = "workload"
+      value  = "argocd"
+      effect = "NO_SCHEDULE"  # Terraform AWS provider format (not Kubernetes format)
+    }
+  }
+}
+
+# Monitoring Node Group Variables
+variable "monitoring_node_instance_types" {
+  description = "List of instance types for monitoring node group (Spot Fleet)"
+  type        = list(string)
+  default     = ["t3.small", "t3a.small", "t2.small"]
+}
+
+variable "monitoring_node_capacity_type" {
+  description = "Capacity type for monitoring node group"
+  type        = string
+  default     = "SPOT"
+}
+
+variable "monitoring_node_min_size" {
+  description = "Minimum number of monitoring nodes"
+  type        = number
+  default     = 1
+}
+
+variable "monitoring_node_max_size" {
+  description = "Maximum number of monitoring nodes"
+  type        = number
+  default     = 2
+}
+
+variable "monitoring_node_desired_size" {
+  description = "Desired number of monitoring nodes"
+  type        = number
+  default     = 1
+}
+
+variable "monitoring_node_labels" {
+  description = "Labels for monitoring nodes"
+  type        = map(string)
+  default     = {}
+}
+
+variable "monitoring_node_taints" {
+  description = "Taints for monitoring nodes"
+  type = map(object({
+    key    = string
+    value  = string
+    effect = string
+  }))
+  default = {
+    workload = {
+      key    = "workload"
+      value  = "monitoring"
+      effect = "NO_SCHEDULE"  # Terraform AWS provider format (not Kubernetes format)
+    }
   }
 }
 

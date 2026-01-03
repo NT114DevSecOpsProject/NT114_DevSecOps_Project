@@ -6,10 +6,11 @@ replicaCount: 2
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/dev/scores-service
   pullPolicy: Always
-  tag: "058960e87aae08eb39cca961c1ff366cbda51fb5"
 
 imagePullSecrets:
   - name: ecr-secret
+tag: "fd4991d738a89a8bfc45439480afc128c40a4e94"
+
 
 serviceAccount:
   create: true
@@ -54,9 +55,14 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: 80
 
-nodeSelector: {}
+nodeSelector:
+  workload: application
 
-tolerations: []
+tolerations:
+  - key: workload
+    operator: Equal
+    value: application
+    effect: NoSchedule
 
 affinity: {}
 

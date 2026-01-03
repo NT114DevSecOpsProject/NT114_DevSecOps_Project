@@ -21,6 +21,18 @@ spec:
         spec:
           # Use node IAM role (simpler approach)
           restartPolicy: OnFailure
+
+          # Node selection for application workload
+          nodeSelector:
+            workload: application
+
+          # Tolerations to schedule on application nodes
+          tolerations:
+          - key: "workload"
+            operator: "Equal"
+            value: "application"
+            effect: "NoSchedule"
+
           containers:
           - name: refresh-token
             image: amazon/aws-cli:latest

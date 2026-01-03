@@ -66,19 +66,49 @@ output "cluster_status" {
 }
 
 # Node Group Outputs
-output "node_group_id" {
-  description = "EKS managed node group ID"
-  value       = module.eks_nodegroup.node_group_id
+output "app_node_group_id" {
+  description = "Application node group ID"
+  value       = module.eks_nodegroup_app.node_group_id
 }
 
-output "node_group_arn" {
-  description = "Amazon Resource Name (ARN) of the EKS Node Group"
-  value       = module.eks_nodegroup.node_group_arn
+output "app_node_group_arn" {
+  description = "Application node group ARN"
+  value       = module.eks_nodegroup_app.node_group_arn
 }
 
-output "node_group_status" {
-  description = "Status of the EKS Node Group"
-  value       = module.eks_nodegroup.node_group_status
+output "app_node_group_status" {
+  description = "Application node group status"
+  value       = module.eks_nodegroup_app.node_group_status
+}
+
+output "argocd_node_group_id" {
+  description = "ArgoCD node group ID"
+  value       = module.eks_nodegroup_argocd.node_group_id
+}
+
+output "argocd_node_group_arn" {
+  description = "ArgoCD node group ARN"
+  value       = module.eks_nodegroup_argocd.node_group_arn
+}
+
+output "argocd_node_group_status" {
+  description = "ArgoCD node group status"
+  value       = module.eks_nodegroup_argocd.node_group_status
+}
+
+output "monitoring_node_group_id" {
+  description = "Monitoring node group ID"
+  value       = module.eks_nodegroup_monitoring.node_group_id
+}
+
+output "monitoring_node_group_arn" {
+  description = "Monitoring node group ARN"
+  value       = module.eks_nodegroup_monitoring.node_group_arn
+}
+
+output "monitoring_node_group_status" {
+  description = "Monitoring node group status"
+  value       = module.eks_nodegroup_monitoring.node_group_status
 }
 
 # ALB Controller Outputs

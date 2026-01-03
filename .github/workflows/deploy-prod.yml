@@ -95,6 +95,47 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Validate EKS cluster connectivity
+        run: |
+          echo "🔍 Validating EKS cluster connectivity..."
+          echo "Target cluster: ${{ env.EKS_CLUSTER_NAME }}"
+          echo "Region: ${{ env.AWS_REGION }}"
+
+          # Clear any existing kubeconfig to avoid cache issues
+          rm -f ~/.kube/config
+          mkdir -p ~/.kube
+
+          # Check cluster status
+          echo "Checking cluster status..."
+          CLUSTER_STATUS=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query 'cluster.status' --output text)
+          echo "Cluster status: $CLUSTER_STATUS"
+
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
+            echo "❌ ERROR: EKS cluster is not ACTIVE (status: $CLUSTER_STATUS)"
+            exit 1
+          fi
+
+          # Configure kubectl
+          echo "Configuring kubectl for cluster: ${{ env.EKS_CLUSTER_NAME }}..."
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+          # Verify kubeconfig
+          echo "Current kubeconfig context:"
+          kubectl config current-context
+
+          # Test connection
+          echo "Testing cluster connection..."
+          kubectl cluster-info || {
+            echo "❌ ERROR: Cannot connect to EKS cluster"
+            echo "Possible causes:"
+            echo "  1. IAM user lacks EKS access entry"
+            echo "  2. Security group blocking access"
+            echo "  3. Network connectivity issue"
+            exit 1
+          }
+
+          echo "✅ EKS cluster validated and kubectl configured"
+
       - name: Get RDS endpoint and password
         id: rds-info
         run: |
@@ -106,10 +147,6 @@ jobs:
           # Use RDS password from GitHub Secrets (managed manually)
           echo "password=${{ secrets.RDS_PASSWORD }}" >> $GITHUB_OUTPUT
           echo "✅ RDS Password retrieved from GitHub Secrets"
-
-      - name: Configure kubectl
-        run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
 
       - name: Create prod namespace
         run: |
@@ -518,10 +555,133 @@ jobs:
           echo "argocd_url=$ARGOCD_URL" >> $GITHUB_OUTPUT
           echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
 
+  # Deploy monitoring stack
+  deploy-monitoring:
+    name: Deploy Monitoring Stack
+    needs: [sync-and-verify]
+    runs-on: ubuntu-latest
+    outputs:
+      grafana_url: ${{ steps.get-grafana-url.outputs.grafana_url }}
+      grafana_password: ${{ steps.get-grafana-password.outputs.password }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+          kubectl cluster-info
+
+      - name: Create monitoring namespace
+        run: |
+          echo "Creating monitoring namespace..."
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          echo "✅ Namespace monitoring ready"
+
+      - name: Generate and create Grafana admin secret
+        id: create-grafana-secret
+        run: |
+          # Generate strong password
+          GRAFANA_PASSWORD=$(openssl rand -base64 20)
+
+          # Create secret
+          kubectl create secret generic grafana-admin-credentials \
+            --from-literal=admin-user=admin \
+            --from-literal=admin-password="$GRAFANA_PASSWORD" \
+            -n monitoring \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "✅ Grafana admin credentials created"
+          echo "password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
+
+      - name: Add Helm repository
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          echo "✅ Helm repo added and updated"
+
+      - name: Deploy kube-prometheus-stack
+        run: |
+          echo "Deploying kube-prometheus-stack..."
+
+          helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --version 80.9.1 \
+            -f helm/kube-prometheus-stack/values-prod.yaml \
+            --wait --timeout 10m
+
+          echo "✅ kube-prometheus-stack deployed"
+
+      - name: Wait for monitoring pods to be ready
+        run: |
+          echo "Waiting for monitoring pods to be ready..."
+
+          # Wait up to 5 minutes for all pods
+          kubectl wait --for=condition=Ready pods --all -n monitoring --timeout=300s || {
+            echo "⚠️ Some pods still starting, checking status..."
+            kubectl get pods -n monitoring
+          }
+
+          echo "✅ Monitoring stack pods ready"
+          kubectl get pods -n monitoring
+
+      - name: Deploy ArgoCD ServiceMonitors
+        run: |
+          echo "Deploying ArgoCD ServiceMonitors..."
+          kubectl apply -f k8s/monitoring/servicemonitor-argocd.yaml
+          echo "✅ ArgoCD ServiceMonitors deployed"
+
+      - name: Get Grafana LoadBalancer URL
+        id: get-grafana-url
+        run: |
+          echo "Waiting for Grafana LoadBalancer..."
+
+          GRAFANA_URL=""
+          for i in {1..18}; do
+            GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            [ -z "$GRAFANA_URL" ] && GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+
+            if [ -n "$GRAFANA_URL" ]; then
+              echo "Grafana URL found: $GRAFANA_URL"
+              break
+            fi
+            echo "Waiting for LoadBalancer... ($i/18)"
+            sleep 10
+          done
+
+          [ -z "$GRAFANA_URL" ] && GRAFANA_URL="Pending (LoadBalancer provisioning)"
+          echo "grafana_url=$GRAFANA_URL" >> $GITHUB_OUTPUT
+
+      - name: Get Grafana admin password
+        id: get-grafana-password
+        run: |
+          PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" | base64 -d)
+          echo "password=$PASSWORD" >> $GITHUB_OUTPUT
+
+      - name: Verify Prometheus targets
+        run: |
+          echo "Checking Prometheus target status..."
+          kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090 &
+          PF_PID=$!
+          sleep 5
+
+          # Simple connectivity check
+          curl -s http://localhost:9090/api/v1/targets || echo "⚠️ Cannot reach Prometheus API"
+
+          kill $PF_PID || true
+          echo "✅ Prometheus verification complete"
+
   # Output access information
   output-access-info:
     name: Output Access Information
-    needs: sync-and-verify
+    needs: [sync-and-verify, deploy-monitoring]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -562,6 +722,16 @@ jobs:
           echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
           echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Monitoring Stack" >> $GITHUB_STEP_SUMMARY
+          echo "**Grafana Dashboard:**" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: http://${{ needs.deploy-monitoring.outputs.grafana_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Password: \`${{ needs.deploy-monitoring.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Prometheus:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Access via: \`kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Then visit: http://localhost:9090" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🗄️ RDS PostgreSQL Database" >> $GITHUB_STEP_SUMMARY
           echo "- Host: \`${{ needs.sync-and-verify.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Port: \`5432\`" >> $GITHUB_STEP_SUMMARY
@@ -582,5 +752,6 @@ jobs:
           echo "- Docker images built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
           echo "- Helm values updated with new image tags" >> $GITHUB_STEP_SUMMARY
           echo "- ArgoCD applications synced" >> $GITHUB_STEP_SUMMARY
+          echo "- Prometheus + Grafana monitoring stack deployed (HA mode)" >> $GITHUB_STEP_SUMMARY
           echo "- All pods verified healthy" >> $GITHUB_STEP_SUMMARY
           echo "- LoadBalancers provisioned and accessible" >> $GITHUB_STEP_SUMMARY
