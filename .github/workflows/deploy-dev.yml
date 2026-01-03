@@ -437,14 +437,28 @@ jobs:
           wait_for_critical_components() {
             echo "⏳ Waiting for critical ArgoCD components..."
 
+            # Note: argocd-application-controller is a StatefulSet, not a Deployment
+            # Changed in ArgoCD v1.8+ for sharding support
+
+            # Wait for StatefulSet (application controller)
+            echo "  ├─ Waiting for argocd-application-controller (StatefulSet)..."
+            if kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=180s; then
+              echo "  ├─ ✅ argocd-application-controller ready"
+            else
+              echo "  ├─ ❌ argocd-application-controller failed to become ready"
+              kubectl describe statefulset/argocd-application-controller -n argocd
+              kubectl logs -n argocd -l app.kubernetes.io/name=argocd-application-controller --tail=50 || true
+              return 1
+            fi
+
+            # Wait for Deployments (server and repo-server)
             CRITICAL_DEPLOYMENTS=(
               "argocd-server"
-              "argocd-application-controller"
               "argocd-repo-server"
             )
 
             for deployment in "${CRITICAL_DEPLOYMENTS[@]}"; do
-              echo "  ├─ Waiting for $deployment..."
+              echo "  ├─ Waiting for $deployment (Deployment)..."
               if kubectl rollout status deployment/$deployment -n argocd --timeout=120s; then
                 echo "  ├─ ✅ $deployment ready"
               else
