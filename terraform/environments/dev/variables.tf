@@ -166,7 +166,7 @@ variable "app_node_max_size" {
 variable "app_node_desired_size" {
   description = "Desired number of application nodes (initial count)"
   type        = number
-  default     = 4  # Increased from 2 to handle current load
+  default     = 3  # Optimal for dev: all workloads on app nodes (no dedicated nodes)
 }
 
 variable "app_node_labels" {
@@ -213,7 +213,7 @@ variable "argocd_node_max_size" {
 variable "argocd_node_desired_size" {
   description = "Desired number of ArgoCD nodes"
   type        = number
-  default     = 1
+  default     = 0  # Dev: Run ArgoCD on app nodes (no dedicated nodes needed)
 }
 
 variable "argocd_node_labels" {
@@ -266,7 +266,7 @@ variable "monitoring_node_max_size" {
 variable "monitoring_node_desired_size" {
   description = "Desired number of monitoring nodes"
   type        = number
-  default     = 1
+  default     = 0  # Dev: Run monitoring on app nodes (no dedicated nodes needed)
 }
 
 variable "monitoring_node_labels" {
