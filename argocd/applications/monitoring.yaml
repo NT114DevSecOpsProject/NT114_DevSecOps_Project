@@ -7,13 +7,18 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  source:
-    repoURL: https://github.com/NT114DevSecOpsProject/NT114_DevSecOps_Project.git
-    targetRevision: main
-    path: helm/kube-prometheus-stack
-    helm:
-      valueFiles:
-        - values-dev.yaml
+  sources:
+    # Helm chart from prometheus-community
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 80.9.1
+      helm:
+        valueFiles:
+          - $values/helm/kube-prometheus-stack/values-dev.yaml
+    # Values from git repo
+    - repoURL: https://github.com/NT114DevSecOpsProject/NT114_DevSecOps_Project.git
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
