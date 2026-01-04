@@ -9,7 +9,7 @@ replicaCount: 2
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/scores-service
   pullPolicy: IfNotPresent
-  tag: "6891bb6c46737455e7ad681c0d85f64ef90b885f"
+  tag: "e65cf2babb44abbdb5ed139316f2f031309679e0"
 
 imagePullSecrets:
   - name: ecr-secret
