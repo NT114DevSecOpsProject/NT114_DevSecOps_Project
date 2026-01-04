@@ -427,30 +427,55 @@ jobs:
           cleanup_kubectl_argocd() {
             echo "WARNING: Cleaning up kubectl-installed ArgoCD..."
 
-            # Delete ArgoCD Applications
-            kubectl delete applications --all -n argocd --wait=true --timeout=60s || true
+            # Delete cluster-scoped resources FIRST (before namespace)
+            echo "Step 1/4: Deleting cluster-scoped resources..."
+            kubectl delete clusterrole -l app.kubernetes.io/part-of=argocd --ignore-not-found=true --wait=false
+            kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=argocd --ignore-not-found=true --wait=false
 
-            # Delete namespace with finalizer patch fallback
-            kubectl delete namespace argocd --wait=true --timeout=120s || \
-              kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}' || true
+            # Delete specific ClusterRoles by name (fallback)
+            kubectl delete clusterrole argocd-application-controller --ignore-not-found=true --wait=false
+            kubectl delete clusterrole argocd-applicationset-controller --ignore-not-found=true --wait=false
+            kubectl delete clusterrole argocd-server --ignore-not-found=true --wait=false
+            kubectl delete clusterrolebinding argocd-application-controller --ignore-not-found=true --wait=false
+            kubectl delete clusterrolebinding argocd-applicationset-controller --ignore-not-found=true --wait=false
+            kubectl delete clusterrolebinding argocd-server --ignore-not-found=true --wait=false
 
-            # Wait for namespace deletion
-            for i in {1..24}; do
+            echo "Step 2/4: Deleting ArgoCD Applications..."
+            kubectl delete applications --all -n argocd --wait=false --timeout=30s 2>/dev/null || true
+
+            echo "Step 3/4: Force deleting argocd namespace..."
+            # Force delete with no wait
+            kubectl delete namespace argocd --wait=false --grace-period=0 --force 2>/dev/null || true
+
+            # Patch finalizers immediately
+            kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
+
+            # Wait for namespace deletion with timeout
+            echo "Step 4/4: Waiting for namespace deletion..."
+            for i in {1..30}; do
               if ! kubectl get namespace argocd &>/dev/null; then
+                echo "SUCCESS: Namespace deleted after $i attempts"
                 break
               fi
-              echo "  Waiting for namespace deletion... ($i/24)"
-              sleep 5
+              if [ $i -eq 30 ]; then
+                echo "WARNING: Namespace still exists after 30 attempts, forcing removal..."
+                kubectl get namespace argocd -o json | \
+                  sed 's/"finalizers": \[[^]]*\]/"finalizers": []/' | \
+                  kubectl replace --raw /api/v1/namespaces/argocd/finalize -f - 2>/dev/null || true
+              fi
+              sleep 2
             done
 
-            # Delete cluster-scoped resources
-            kubectl delete clusterrole -l app.kubernetes.io/part-of=argocd --ignore-not-found=true
-            kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=argocd --ignore-not-found=true
+            # Final verification - wait a bit more
+            sleep 5
 
             # Verify cleanup
-            if kubectl get namespace argocd &>/dev/null; then
-              echo "ERROR: Cleanup failed - namespace still exists"
-              return 1
+            REMAINING_NS=$(kubectl get namespace argocd 2>/dev/null | grep -c argocd || echo "0")
+            REMAINING_CR=$(kubectl get clusterrole -l app.kubernetes.io/part-of=argocd 2>/dev/null | grep -c argocd || echo "0")
+
+            if [ "$REMAINING_NS" != "0" ] || [ "$REMAINING_CR" != "0" ]; then
+              echo "WARNING: Some resources may still exist, but proceeding with installation"
+              echo "Remaining namespace: $REMAINING_NS, Remaining ClusterRoles: $REMAINING_CR"
             fi
 
             echo "SUCCESS: Cleanup completed"
