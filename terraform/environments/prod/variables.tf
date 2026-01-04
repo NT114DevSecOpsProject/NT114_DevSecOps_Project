@@ -105,9 +105,8 @@ variable "cluster_addons" {
   description = "Map of cluster addon configurations"
   type        = any
   default = {
-    coredns = {
-      configuration_values = "{\"tolerations\":[{\"key\":\"workload\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}]}"
-    }
+    # CoreDNS removed - will be installed after nodes are ready to avoid timeout
+    # CoreDNS needs nodes to schedule pods, but Terraform tries to create it before nodes exist
     eks-pod-identity-agent = {}
     kube-proxy             = {}
     vpc-cni                = {}
