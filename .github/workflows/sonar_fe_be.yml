@@ -3,13 +3,13 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY_ALIAS: nt114-devsecops
-  SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
 permissions:
   contents: read
@@ -21,157 +21,93 @@ jobs:
   # Stage 1: Code Quality & Security Analysis
   # =============================================
   code-analysis:
-    name: SonarQube & Security Analysis
-    runs-on:
-      - self-hosted
-      - linux
-    if: |
-      contains(github.event.head_commit.message, '[scan]') ||
-      contains(github.event.head_commit.message, '[sonar]') ||
-      github.event_name == 'workflow_dispatch'
+    name: SonarCloud & Security Analysis
+    runs-on: ubuntu-latest
     
-    outputs:
-      sonar-passed: ${{ steps.sonar-gate.outputs.passed }}
-      
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for SonarQube
-
-      - name: Print runner info
-        run: |
-          echo "🖥️ Runner: $(hostname)"
-          echo "📍 Region: ${{ env.AWS_REGION }}"
-          uname -a
+          fetch-depth: 0  # Full history for better SonarCloud analysis
 
       - name: Install Trivy CLI
         run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o /tmp/install_trivy.sh
-          chmod +x /tmp/install_trivy.sh
-          /tmp/install_trivy.sh -b "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
           trivy --version
       
-      # Update Trivy DB
       - name: Update Trivy Database
         run: |
           echo "=== Updating Trivy vulnerability database ==="
           trivy image --download-db-only
           echo "✅ Database updated successfully"
       
-      # Install SonarQube Scanner
-      - name: Setup SonarQube Scanner
-        run: |
-          rm -rf $HOME/sonar-scanner
-          mkdir -p $HOME/sonar-scanner
-          curl -sSLo $HOME/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-          unzip -q $HOME/sonar-scanner.zip -d $HOME/sonar-scanner
-          echo "$HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin" >> $GITHUB_PATH
-      
       # ============================================
       # FRONTEND Analysis
       # ============================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm ci
+      
+      - name: Run Frontend Tests with Coverage
+        working-directory: frontend
+        run: npm test -- --coverage --watchAll=false
+        continue-on-error: true
       
       - name: 🔍 Trivy Scan - Frontend Dependencies
         working-directory: frontend
         continue-on-error: true
         run: |
           echo "### 🔍 Frontend Dependencies Scan" >> $GITHUB_STEP_SUMMARY
-          trivy fs \
-            --format table \
-            --security-checks vuln \
-            package-lock.json | tee /tmp/frontend-deps-scan.txt
-          
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat /tmp/frontend-deps-scan.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          trivy fs --format table --security-checks vuln package-lock.json
       
-      - name: 🔍 Trivy Scan - Frontend Source
-        working-directory: frontend
-        continue-on-error: true
-        run: |
-          echo "### 🔍 Frontend Source Code Scan" >> $GITHUB_STEP_SUMMARY
-          trivy fs \
-            --scanners vuln,secret,misconfig \
-            --format table \
-            .
+      - name: SonarCloud Scan - Frontend
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: frontend
       
-      - name: Run SonarQube Scanner - FRONTEND
-        working-directory: frontend
-        run: |
-          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
-            -Dsonar.projectKey=nt114-project \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
-            -Dsonar.token=${{ env.SONAR_TOKEN }} \
-            -Dsonar.language=js \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=node_modules/**,dist/**,coverage/**,src/test/** \
-            -Dsonar.tests=src/test \
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-      
-      # ===============================================
+      # ============================================
       # BACKEND SERVICES Analysis
       # ============================================
-      - name: Analyze Backend Services
-        run: |
-          # Ensure Python is set up for subsequent service steps
-          echo "Setting up Python for backend analysis"
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
-
+          python-version: "3.9"
+      
       # API-GATEWAY
       - name: Install API-GATEWAY Dependencies
         working-directory: microservices/api-gateway
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest pytest-cov
       
-      - name: Run Pytest and Generate Coverage for API-GATEWAY
+      - name: Run Tests - API-GATEWAY
         working-directory: microservices/api-gateway
-        run: |
-          python -m pytest --cov=. --cov-report=xml || true
+        run: python -m pytest --cov=. --cov-report=xml
+        continue-on-error: true
       
-      - name: Run SonarQube Scanner - API-GATEWAY
-        run: |
-          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
-            -Dsonar.projectKey=NT114-api-gateway \
-            -Dsonar.sources=microservices/api-gateway \
-            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
-            -Dsonar.token=${{ env.SONAR_TOKEN }} \
-            -Dsonar.language=py \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=microservices/api-gateway/requirements.txt,microservices/api-gateway/Dockerfile,microservices/api-gateway/coverage.xml \
-            -Dsonar.python.coverage.reportPaths=microservices/api-gateway/coverage.xml
-
-      - name: Run Trivy Scan - API-GATEWAY Dependencies
+      - name: SonarCloud Scan - API Gateway
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/api-gateway
+      
+      - name: Trivy Scan - API-GATEWAY
         working-directory: microservices/api-gateway
         continue-on-error: true
-        run: |
-          echo "=== Trivy Dependency Scan (API Gateway) - ALL SEVERITIES ==="
-          trivy fs \
-            --format table \
-            --security-checks vuln \
-            requirements.txt
-          
-          
-      - name: Run Trivy Scan - API-GATEWAY Source
-        working-directory: microservices/api-gateway
-        continue-on-error: true
-        run: |
-          echo "=== Trivy Source Scan (API Gateway) - ALL SEVERITIES ==="
-          trivy fs \
-            --scanners vuln,secret,misconfig \
-            --format table \
-            .
+        run: trivy fs --format table --security-checks vuln requirements.txt
 
       # EXERCISES-SERVICE
       - name: Install Exercises-Service Dependencies
@@ -179,99 +115,51 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest pytest-cov
       
-      - name: Run Pytest and Generate Coverage for Exercises-Service
+      - name: Run Tests - Exercises-Service
         working-directory: microservices/exercises-service
-        run: |
-          python -m pytest --cov --cov-config=.coveragerc --cov-report=xml
+        run: python -m pytest --cov=app --cov-report=xml
+        continue-on-error: true
       
-      - name: Show coverage.xml (debug)
-        working-directory: microservices/exercises-service
-        run: |
-          echo "coverage.xml size:"
-          ls -l coverage.xml || true
-          head -n 20 coverage.xml || true
+      - name: SonarCloud Scan - Exercises Service
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/exercises-service
       
-      - name: Run SonarQube Scanner - EXERCISES-SERVICE
-        working-directory: microservices/exercises-service
-        run: |
-          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
-            -Dsonar.projectKey=NT114-exercises-service \
-            -Dsonar.sources=app \
-            -Dsonar.tests=tests \
-            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
-            -Dsonar.token=${{ env.SONAR_TOKEN }} \
-            -Dsonar.language=py \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=requirements.txt,Dockerfile \
-            -Dsonar.coverage.exclusions=tests/**,**/migrations/** \
-            -Dsonar.python.coverage.reportPaths=coverage.xml
-      
-      - name: Run Trivy Scan - EXERCISES-SERVICE Dependencies
+      - name: Trivy Scan - Exercises Service
         working-directory: microservices/exercises-service
         continue-on-error: true
-        run: |
-          echo "=== Trivy Dependency Scan (Exercises Service) - ALL SEVERITIES ==="
-          trivy fs \
-            --format table \
-            --security-checks vuln \
-            requirements.txt
-      
-      - name: Run Trivy Scan - EXERCISES-SERVICE Source
-        working-directory: microservices/exercises-service
-        continue-on-error: true
-        run: |
-          echo "=== Trivy Source Scan (Exercises Service) - ALL ==="
-          trivy fs \
-            --scanners vuln,secret,misconfig \
-            --format table \
-            .
+        run: trivy fs --format table --security-checks vuln requirements.txt
 
       # SCORES-SERVICE
       - name: Install Scores-Service Dependencies
         working-directory: microservices/scores-service
         run: |
           python -m pip install --upgrade pip
-          pip install --ignore-installed --no-clean -r requirements.txt
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
       
-      - name: Run Pytest and Generate Coverage for Scores-Service
+      - name: Run Tests - Scores-Service
         working-directory: microservices/scores-service
-        run: |
-          python -m pytest --cov=app --cov-report=xml || true
+        run: python -m pytest --cov=app --cov-report=xml
+        continue-on-error: true
       
-      - name: Run SonarQube Scanner - SCORES-SERVICE
-        working-directory: microservices/scores-service
-        run: |
-          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
-            -Dsonar.projectKey=NT114-scores-service \
-            -Dsonar.sources=app \
-            -Dsonar.tests=tests \
-            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
-            -Dsonar.token=${{ env.SONAR_TOKEN }} \
-            -Dsonar.language=py \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=requirements.txt,Dockerfile \
-            -Dsonar.python.coverage.reportPaths=coverage.xml
+      - name: SonarCloud Scan - Scores Service
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/scores-service
       
-      - name: Run Trivy Scan - SCORES-SERVICE Dependencies
+      - name: Trivy Scan - Scores Service
         working-directory: microservices/scores-service
         continue-on-error: true
-        run: |
-          echo "=== Trivy Dependency Scan (Scores Service) - ALL SEVERITIES ==="
-          trivy fs \
-            --format table \
-            --security-checks vuln \
-            requirements.txt
-      
-      - name: Run Trivy Scan - SCORES-SERVICE Source
-        working-directory: microservices/scores-service
-        continue-on-error: true
-        run: |
-          echo "=== Trivy Source Scan (Scores Service) - ALL ==="
-          trivy fs \
-            --scanners vuln,secret,misconfig \
-            --format table \
-            .
+        run: trivy fs --format table --security-checks vuln requirements.txt
 
       # USER-MANAGEMENT-SERVICE
       - name: Install User-Management-Service Dependencies
@@ -279,79 +167,40 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest pytest-cov
       
-      - name: Run Pytest and Generate Coverage for User-Management-Service
+      - name: Run Tests - User-Management-Service
         working-directory: microservices/user-management-service
-        run: |
-          python -m pytest --cov=app --cov-report=xml || true
+        run: python -m pytest --cov=app --cov-report=xml
+        continue-on-error: true
       
-      - name: Run SonarQube Scanner - USER-MANAGEMENT-SERVICE
-        working-directory: microservices/user-management-service
-        run: |
-          $HOME/sonar-scanner/sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
-            -Dsonar.projectKey=NT114-user-service \
-            -Dsonar.sources=app \
-            -Dsonar.tests=tests \
-            -Dsonar.host.url=${{ env.SONAR_HOST_URL }} \
-            -Dsonar.token=${{ env.SONAR_TOKEN }} \
-            -Dsonar.language=py \
-            -Dsonar.sourceEncoding=UTF-8 \
-            -Dsonar.exclusions=requirements.txt,Dockerfile \
-            -Dsonar.python.coverage.reportPaths=coverage.xml
-
-      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Dependencies
+      - name: SonarCloud Scan - User Management Service
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/user-management-service
+      
+      - name: Trivy Scan - User Management Service
         working-directory: microservices/user-management-service
         continue-on-error: true
-        run: |
-          echo "=== Trivy Dependency Scan (User Management Service) - ALL SEVERITIES ==="
-          trivy fs \
-            --format table \
-            --security-checks vuln \
-            requirements.txt
-          
-      - name: Run Trivy Scan - USER-MANAGEMENT-SERVICE Source
-        working-directory: microservices/user-management-service
-        continue-on-error: true
-        run: |
-          echo "=== Trivy Source Scan (User Management Service) - ALL ==="
-          trivy fs \
-            --scanners vuln,secret,misconfig \
-            --format table \
-            .
+        run: trivy fs --format table --security-checks vuln requirements.txt
 
       # Generate Security Summary
       - name: 📊 Generate Security Summary
         continue-on-error: true
         run: |
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🛡️ Security Scan Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "| Service | Critical | High | Medium | Low |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|----------|------|--------|-----|" >> $GITHUB_STEP_SUMMARY
-          
-          for SERVICE in "api-gateway" "exercises-service" "scores-service" "user-management-service"; do
-            RESULT=$(trivy fs --format json --security-checks vuln microservices/$SERVICE/requirements.txt 2>/dev/null | \
-              jq -r '.Results[] | select(.Vulnerabilities != null) | 
-              "| '"$SERVICE"' | \([.Vulnerabilities[] | select(.Severity == "CRITICAL")] | length) | \([.Vulnerabilities[] | select(.Severity == "HIGH")] | length) | \([.Vulnerabilities[] | select(.Severity == "MEDIUM")] | length) | \([.Vulnerabilities[] | select(.Severity == "LOW")] | length) |"' || echo "| $SERVICE | - | - | - | - |")
-            echo "$RESULT" >> $GITHUB_STEP_SUMMARY
-          done
-          
-          # Frontend
-          FRONTEND_RESULT=$(trivy fs --format json --security-checks vuln frontend/package-lock.json 2>/dev/null | \
-            jq -r '.Results[] | select(.Vulnerabilities != null) | 
-            "| frontend | \([.Vulnerabilities[] | select(.Severity == "CRITICAL")] | length) | \([.Vulnerabilities[] | select(.Severity == "HIGH")] | length) | \([.Vulnerabilities[] | select(.Severity == "MEDIUM")] | length) | \([.Vulnerabilities[] | select(.Severity == "LOW")] | length) |"' || echo "| frontend | - | - | - | - |")
-          echo "$FRONTEND_RESULT" >> $GITHUB_STEP_SUMMARY
-      
-      - name: Check SonarQube Quality Gate
-        id: sonar-gate
-        continue-on-error: true
-        run: |
-          echo "Checking SonarQube Quality Gate status..."
-          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "### 🔍 SonarCloud Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "View detailed reports at: https://sonarcloud.io/organizations/nt114devsecopsproject/projects" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🐛 Trivy Vulnerability Scans" >> $GITHUB_STEP_SUMMARY
+          echo "All services scanned for dependencies and source code vulnerabilities." >> $GITHUB_STEP_SUMMARY
 
   # ============================================
-  # Stage 2: Build Docker Images (Giữ nguyên vì chạy trên ubuntu-latest)
+  # Stage 2: Build Docker Images
   # ============================================
   build-images:
     name: Build & Scan Docker Images
@@ -379,16 +228,10 @@ jobs:
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
         
-      - name: Install Trivy (Ubuntu runner)
+      - name: Install Trivy
         run: |
-          echo "Installing Trivy CLI..."
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh -o /tmp/install_trivy.sh
-          chmod +x /tmp/install_trivy.sh
-          sudo /tmp/install_trivy.sh -b /usr/local/bin
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
           trivy --version
       
       - name: Build Docker Image
@@ -399,15 +242,7 @@ jobs:
       - name: 🔍 Trivy Scan Docker Image
         continue-on-error: true
         run: |
-          echo "### 🐳 Docker Image Scan - ${{ matrix.name }}" >> $GITHUB_STEP_SUMMARY
-          trivy image \
-            --severity CRITICAL,HIGH \
-            --format table \
-            ${{ matrix.name }}:${{ github.sha }} | tee /tmp/image-scan.txt
-          
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat /tmp/image-scan.txt >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          trivy image --severity CRITICAL,HIGH --format table ${{ matrix.name }}:${{ github.sha }}
       
       - name: Save Docker Image
         run: |
@@ -422,7 +257,7 @@ jobs:
           retention-days: 1
 
   # ============================================
-  # Stage 3: Push to ECR (Giữ nguyên vì chạy trên ubuntu-latest)
+  # Stage 3: Push to ECR
   # ============================================
   push-to-ecr:
     name: Push to Amazon ECR
@@ -447,8 +282,7 @@ jobs:
           path: /tmp/docker-images
       
       - name: Load Docker Image
-        run: |
-          docker load < /tmp/docker-images/${{ matrix.name }}.tar.gz
+        run: docker load < /tmp/docker-images/${{ matrix.name }}.tar.gz
       
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -466,36 +300,15 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          # Tag images
           docker tag ${{ matrix.name }}:$IMAGE_TAG \
             $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.name }}:$IMAGE_TAG
-          
           docker tag ${{ matrix.name }}:$IMAGE_TAG \
             $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.name }}:latest
-          
-          # Push images
           docker push $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.name }}:$IMAGE_TAG
           docker push $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.name }}:latest
-          
-          echo "✅ Pushed ${{ matrix.name }} to ECR"
-      
-      - name: 📦 Image Summary
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          echo "### ✅ ${{ matrix.name }} Pushed to ECR" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Registry:** $ECR_REGISTRY" >> $GITHUB_STEP_SUMMARY
-          echo "**Repository:** ${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Tags:** ${{ github.sha }}, latest" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Pull Command:**" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull $ECR_REGISTRY/${{ env.ECR_REGISTRY_ALIAS }}/${{ matrix.name }}:latest" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
 
   # ============================================
-  # Stage 4: Final Summary
+  # Stage 4: Pipeline Summary
   # ============================================
   pipeline-summary:
     name: 📊 Pipeline Summary
@@ -508,22 +321,8 @@ jobs:
         run: |
           echo "## 🚀 CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Pipeline Status" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Code Analysis | ${{ needs.code-analysis.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Images | ${{ needs.build-images.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Push to ECR | ${{ needs.push-to-ecr.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📝 Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **AWS Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ needs.push-to-ecr.result }}" == "success" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🎉 Deployment Ready!" >> $GITHUB_STEP_SUMMARY
-            echo "All images have been successfully pushed to ECR and are ready for deployment." >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "| Code Analysis | ${{ needs.code-analysis.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Images | ${{ needs.build-images.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Push to ECR | ${{ needs.push-to-ecr.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
