@@ -21,19 +21,5 @@ resource "kubernetes_storage_class_v1" "gp3" {
   depends_on = [var.ebs_csi_driver_ready]
 }
 
-# GP2 Storage Class (existing in-tree provisioner)
-resource "kubernetes_storage_class_v1" "gp2" {
-  metadata {
-    name = "gp2"
-  }
-
-  storage_provisioner    = "kubernetes.io/aws-ebs"
-  reclaim_policy         = "Delete"
-  allow_volume_expansion = false
-  volume_binding_mode    = "WaitForFirstConsumer"
-
-  parameters = {
-    type   = "gp2"
-    fsType = "ext4"
-  }
-}
+# Note: gp2 storage class already exists in the cluster (created by AWS/Kubernetes)
+# We don't need to manage it with Terraform since we're using gp3 as default
