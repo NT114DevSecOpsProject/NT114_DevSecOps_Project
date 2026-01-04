@@ -398,6 +398,83 @@ jobs:
       - name: Checkout code for ArgoCD values
         uses: actions/checkout@v4
 
+      # IMPORTANT: ArgoCD MUST be installed via Helm only
+      # This workflow automatically detects and cleans up kubectl-installed ArgoCD
+      # to ensure consistent Helm-based management
+      - name: Ensure clean ArgoCD state (idempotent)
+        id: argocd-cleanup
+        run: |
+          set -e
+
+          # Detection function
+          detect_installation_method() {
+            if ! kubectl get deployment argocd-server -n argocd &>/dev/null; then
+              echo "not_installed"
+              return
+            fi
+
+            MANAGED_BY=$(kubectl get deployment argocd-server -n argocd \
+              -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null)
+
+            if [ "$MANAGED_BY" = "Helm" ]; then
+              echo "helm_managed"
+            else
+              echo "kubectl_installed"
+            fi
+          }
+
+          # Cleanup function
+          cleanup_kubectl_argocd() {
+            echo "WARNING: Cleaning up kubectl-installed ArgoCD..."
+
+            # Delete ArgoCD Applications
+            kubectl delete applications --all -n argocd --wait=true --timeout=60s || true
+
+            # Delete namespace with finalizer patch fallback
+            kubectl delete namespace argocd --wait=true --timeout=120s || \
+              kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}' || true
+
+            # Wait for namespace deletion
+            for i in {1..24}; do
+              if ! kubectl get namespace argocd &>/dev/null; then
+                break
+              fi
+              echo "  Waiting for namespace deletion... ($i/24)"
+              sleep 5
+            done
+
+            # Delete cluster-scoped resources
+            kubectl delete clusterrole -l app.kubernetes.io/part-of=argocd --ignore-not-found=true
+            kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=argocd --ignore-not-found=true
+
+            # Verify cleanup
+            if kubectl get namespace argocd &>/dev/null; then
+              echo "ERROR: Cleanup failed - namespace still exists"
+              return 1
+            fi
+
+            echo "SUCCESS: Cleanup completed"
+            return 0
+          }
+
+          # Main logic
+          echo "Detecting ArgoCD installation method..."
+          INSTALL_METHOD=$(detect_installation_method)
+
+          case "$INSTALL_METHOD" in
+            "not_installed")
+              echo "SUCCESS: ArgoCD not installed - will perform fresh installation"
+              ;;
+            "helm_managed")
+              echo "SUCCESS: ArgoCD managed by Helm - no cleanup needed"
+              ;;
+            "kubectl_installed")
+              echo "WARNING: ArgoCD installed via kubectl - cleanup required"
+              cleanup_kubectl_argocd
+              echo "SUCCESS: Ready for Helm installation"
+              ;;
+          esac
+
       - name: Install or upgrade ArgoCD (Production-ready)
         run: |
           set -e
@@ -532,6 +609,28 @@ jobs:
           echo ""
           echo "🎉 ArgoCD installation/upgrade completed successfully (Production)!"
           show_pod_status
+
+      - name: Validate ArgoCD Helm management
+        run: |
+          echo "Validating ArgoCD management method..."
+
+          # Check if deployment exists first
+          if ! kubectl get deployment argocd-server -n argocd &>/dev/null; then
+            echo "ERROR: ArgoCD deployment not found"
+            exit 1
+          fi
+
+          # Check management label
+          MANAGED_BY=$(kubectl get deployment argocd-server -n argocd \
+            -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')
+
+          if [ "$MANAGED_BY" != "Helm" ]; then
+            echo "ERROR: ArgoCD not managed by Helm"
+            kubectl get deployment argocd-server -n argocd -o yaml | grep -A 5 "labels:"
+            exit 1
+          fi
+
+          echo "SUCCESS: ArgoCD correctly managed by Helm"
 
       - name: Ensure ArgoCD applications exist
         run: |
