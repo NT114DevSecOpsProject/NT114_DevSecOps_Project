@@ -9,7 +9,7 @@ replicaCount: 2
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/exercises-service
   pullPolicy: IfNotPresent
-  tag: "e65cf2babb44abbdb5ed139316f2f031309679e0"
+  tag: "2b734914cac49e336924f3e4bbf19ff41fb5446d"
 
 imagePullSecrets:
   - name: ecr-secret
