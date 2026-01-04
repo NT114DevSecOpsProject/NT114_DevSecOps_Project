@@ -391,22 +391,42 @@ jobs:
       - name: Install ArgoCD if not exists
         run: |
           echo "Checking if ArgoCD is installed..."
-          if kubectl get namespace argocd &>/dev/null; then
-            echo "✅ ArgoCD namespace exists"
+
+          # Add ArgoCD Helm repo
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo update
+
+          if helm list -n argocd | grep -q argocd; then
+            echo "📦 ArgoCD Helm release exists, upgrading with production values..."
+            helm upgrade argocd argo/argo-cd \
+              --namespace argocd \
+              --values helm/argocd/values-prod.yaml \
+              --version 7.7.15 \
+              --wait \
+              --timeout 10m
+            echo "✅ ArgoCD upgraded successfully"
+          elif kubectl get namespace argocd &>/dev/null; then
+            echo "⚠️ ArgoCD namespace exists but not managed by Helm, adopting with Helm..."
+            helm install argocd argo/argo-cd \
+              --namespace argocd \
+              --values helm/argocd/values-prod.yaml \
+              --version 7.7.15 \
+              --wait \
+              --timeout 10m \
+              --replace
+            echo "✅ ArgoCD adopted and configured with production values"
           else
-            echo "📦 Installing ArgoCD..."
+            echo "📦 Installing ArgoCD via Helm (production-ready)..."
             kubectl create namespace argocd
-            kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
-            echo "⏳ Waiting for ArgoCD to be ready..."
-            kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s || {
-              echo "⚠️ Some ArgoCD pods may still be starting, continuing..."
-            }
+            helm install argocd argo/argo-cd \
+              --namespace argocd \
+              --values helm/argocd/values-prod.yaml \
+              --version 7.7.15 \
+              --wait \
+              --timeout 10m
 
-            echo "🌐 Exposing ArgoCD UI via LoadBalancer..."
-            kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "LoadBalancer"}}'
-
-            echo "✅ ArgoCD installed successfully"
+            echo "✅ ArgoCD installed successfully with production configuration"
           fi
 
       - name: Ensure ArgoCD applications exist
