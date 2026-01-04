@@ -608,7 +608,7 @@ jobs:
             helm upgrade argocd argo/argo-cd \
               --namespace argocd \
               -f helm/argocd/values-prod.yaml \
-              --timeout 3m \
+              --timeout 10m \
               --atomic \
               --cleanup-on-fail
           else
@@ -617,7 +617,7 @@ jobs:
             helm install argocd argo/argo-cd \
               --namespace argocd \
               -f helm/argocd/values-prod.yaml \
-              --timeout 3m \
+              --timeout 10m \
               --atomic
           fi
 
