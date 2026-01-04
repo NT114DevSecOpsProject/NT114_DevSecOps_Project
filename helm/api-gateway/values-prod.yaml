@@ -76,7 +76,11 @@ autoscaling:
 
 nodeSelector: {}
 
-tolerations: []
+tolerations:
+  - key: workload
+    operator: Equal
+    value: application
+    effect: NoSchedule
 
 affinity:
   # Spread pods across different nodes for high availability
