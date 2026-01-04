@@ -258,3 +258,14 @@ output "bastion_security_group_id" {
   description = "Bastion host security group ID"
   value       = module.bastion_host.security_group_id
 }
+
+# EBS CSI Driver Outputs
+output "ebs_csi_driver_role_arn" {
+  description = "ARN of the IAM role for EBS CSI driver"
+  value       = module.ebs_csi_driver.role_arn
+}
+
+output "ebs_csi_driver_addon_version" {
+  description = "Version of the EBS CSI driver addon"
+  value       = module.ebs_csi_driver.addon_version
+}

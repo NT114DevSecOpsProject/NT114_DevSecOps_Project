@@ -1,5 +1,25 @@
 # Accessing NodePort Services in Dev Environment
 
+## Quick Access Guide
+
+### ArgoCD Dashboard
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Open: http://localhost:8080
+# Username: admin
+# Password: FD4Fd5lo0HmEkSiu
+```
+
+### Grafana Dashboard
+```bash
+kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80
+# Open: http://localhost:3000
+# Username: admin
+# Password: E8c7xUlrKv2BW2PpcFvciguSMgY=
+```
+
+---
+
 ## Overview
 
 To save costs (~$48/month), we use **NodePort** instead of LoadBalancer for admin-only services:

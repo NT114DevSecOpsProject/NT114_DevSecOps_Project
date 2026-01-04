@@ -185,6 +185,38 @@ module "eks_nodegroup_monitoring" {
   depends_on = [module.eks_cluster, module.eks_nodegroup_app]
 }
 
+# EBS CSI Driver Module
+module "ebs_csi_driver" {
+  source = "../../modules/ebs-csi-driver"
+
+  cluster_name      = module.eks_cluster.cluster_name
+  oidc_provider     = module.eks_cluster.oidc_provider
+  oidc_provider_arn = module.eks_cluster.oidc_provider_arn
+
+  tags = merge(
+    var.tags,
+    {
+      Module = "ebs-csi-driver"
+    }
+  )
+
+  depends_on = [
+    module.eks_cluster,
+    module.eks_nodegroup_app
+  ]
+}
+
+# Storage Classes Module
+module "storage_classes" {
+  source = "../../modules/storage-classes"
+
+  ebs_csi_driver_ready = module.ebs_csi_driver.addon_arn
+
+  depends_on = [
+    module.ebs_csi_driver
+  ]
+}
+
 # ALB Controller Module - Comment out for initial deployment
 # Uncomment after EKS cluster is created and Helm providers are configured
 # module "alb_controller" {

@@ -779,23 +779,12 @@ jobs:
           echo "Getting ArgoCD credentials..."
           ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "N/A")
 
-          echo "Getting LoadBalancer URLs (waiting up to 3 minutes)..."
+          echo "Getting service endpoints..."
 
-          # Get ArgoCD URL
-          ARGOCD_URL=""
-          for i in {1..18}; do
-            ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-            [ -z "$ARGOCD_URL" ] && ARGOCD_URL=$(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+          # ArgoCD uses NodePort - provide port-forward command
+          ARGOCD_URL="kubectl port-forward svc/argocd-server -n argocd 8080:443"
 
-            if [ -n "$ARGOCD_URL" ]; then
-              echo "ArgoCD URL found: $ARGOCD_URL"
-              break
-            fi
-            echo "Waiting for ArgoCD LoadBalancer... ($i/18)"
-            sleep 10
-          done
-
-          # Get Frontend URL
+          # Get Frontend LoadBalancer URL (waiting up to 3 minutes)
           FRONTEND_URL=""
           for i in {1..18}; do
             FRONTEND_URL=$(kubectl get svc frontend-dev -n dev -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
@@ -809,7 +798,6 @@ jobs:
             sleep 10
           done
 
-          [ -z "$ARGOCD_URL" ] && ARGOCD_URL="Pending (LoadBalancer provisioning)"
           [ -z "$FRONTEND_URL" ] && FRONTEND_URL="Pending (LoadBalancer provisioning)"
 
           echo "argocd_password=$ARGOCD_PASSWORD" >> $GITHUB_OUTPUT
@@ -839,25 +827,19 @@ jobs:
         run: |
           echo "⏳ Checking monitoring stack status (deployed by ArgoCD)..."
 
-          # Wait briefly for Grafana service (max 30s, non-blocking)
+          # Wait briefly for Grafana credentials (max 30s, non-blocking)
           for i in {1..6}; do
-            if kubectl get svc kube-prometheus-stack-grafana -n monitoring &>/dev/null; then
-              echo "✅ Grafana service found"
+            if kubectl get secret grafana-admin-credentials -n monitoring &>/dev/null; then
+              echo "✅ Grafana credentials ready"
               break
             fi
-            echo "Attempt $i/6: Waiting for Grafana service..."
+            echo "Attempt $i/6: Waiting for Grafana credentials..."
             sleep 5
           done
 
-          # Get Grafana URL (may not be ready yet)
-          GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-          [ -z "$GRAFANA_URL" ] && GRAFANA_URL=$(kubectl get svc kube-prometheus-stack-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-          [ -z "$GRAFANA_URL" ] && GRAFANA_URL="Deploying via ArgoCD - Check: kubectl get svc -n monitoring"
+          # Get Grafana password (Grafana uses NodePort - access via kubectl port-forward)
+          GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "N/A")
 
-          # Get Grafana password
-          GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "Check secret: grafana-admin-credentials")
-
-          echo "grafana_url=$GRAFANA_URL" >> $GITHUB_OUTPUT
           echo "grafana_password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
 
       - name: Display access information
@@ -869,13 +851,15 @@ jobs:
           echo "Frontend Application:"
           echo "  URL: http://${{ needs.sync-and-verify.outputs.frontend_url }}"
           echo ""
-          echo "ArgoCD Dashboard:"
-          echo "  URL:      http://${{ needs.sync-and-verify.outputs.argocd_url }}"
+          echo "ArgoCD Dashboard (NodePort - use port-forward):"
+          echo "  Command:  ${{ needs.sync-and-verify.outputs.argocd_url }}"
+          echo "  Access:   http://localhost:8080"
           echo "  Username: admin"
           echo "  Password: ${{ needs.sync-and-verify.outputs.argocd_password }}"
           echo ""
-          echo "Grafana Dashboard:"
-          echo "  URL:      http://${{ steps.monitoring-info.outputs.grafana_url }}"
+          echo "Grafana Dashboard (NodePort - use port-forward):"
+          echo "  Command:  kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80"
+          echo "  Access:   http://localhost:3000"
           echo "  Username: admin"
           echo "  Password: ${{ steps.monitoring-info.outputs.grafana_password }}"
           echo ""
@@ -897,14 +881,20 @@ jobs:
           echo "**Frontend Application:**" >> $GITHUB_STEP_SUMMARY
           echo "- http://${{ needs.sync-and-verify.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**ArgoCD Dashboard:**" >> $GITHUB_STEP_SUMMARY
-          echo "- URL: http://${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**ArgoCD Dashboard (NodePort):**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "# Then access: http://localhost:8080" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
           echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📊 Monitoring Stack (Managed by ArgoCD)" >> $GITHUB_STEP_SUMMARY
-          echo "**Grafana Dashboard:**" >> $GITHUB_STEP_SUMMARY
-          echo "- URL: http://${{ steps.monitoring-info.outputs.grafana_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Grafana Dashboard (NodePort):**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80" >> $GITHUB_STEP_SUMMARY
+          echo "# Then access: http://localhost:3000" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
           echo "- Password: \`${{ steps.monitoring-info.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
