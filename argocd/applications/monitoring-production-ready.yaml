@@ -128,9 +128,22 @@ spec:
               label: grafana_dashboard
               searchNamespace: ALL
           service:
-            type: LoadBalancer
+            type: ClusterIP  # Use ClusterIP for internal ALB
+          ingress:
+            enabled: true
+            ingressClassName: alb
             annotations:
-              service.beta.kubernetes.io/aws-load-balancer-type: nlb
+              alb.ingress.kubernetes.io/scheme: internal  # Internal ALB (production)
+              alb.ingress.kubernetes.io/target-type: ip
+              alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+              alb.ingress.kubernetes.io/healthcheck-path: /api/health
+              alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+              alb.ingress.kubernetes.io/group.name: monitoring-internal
+            hosts:
+              - host: grafana.internal.codeland.local
+                paths:
+                  - path: /
+                    pathType: Prefix
           resources:
             requests:
               memory: 128Mi
