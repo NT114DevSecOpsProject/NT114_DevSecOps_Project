@@ -10,7 +10,7 @@ image:
 imagePullSecrets:
   - name: ecr-secret
 
-tag: "f4ffe7eae355f3ad9bd96755a426c3d1c211dde4"
+tag: "981fabba7fb3aabb8c30f23cc2349dae250eb39a"
 
 serviceAccount:
   create: true
