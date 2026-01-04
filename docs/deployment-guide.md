@@ -1,8 +1,8 @@
 # NT114 DevSecOps Project - Deployment Guide
 
-**Version:** 3.1
-**Last Updated:** December 29, 2025
-**Deployment Status:** ✅ **Complete GitOps Implementation with Multi-Node Group Architecture**
+**Version:** 3.2
+**Last Updated:** January 4, 2026
+**Deployment Status:** ✅ **Complete GitOps Implementation with ArgoCD Cleanup Automation**
 
 ---
 
@@ -681,6 +681,312 @@ terraform state list | grep node_group
 1. **Non-production environments**: Scale to 0 during off-hours using scheduled Auto Scaling actions
 2. **Development clusters**: Use min=1 for all node groups ($54.75/month)
 3. **Production clusters**: Use min=2 for ArgoCD and app nodes for high availability ($73+/month)
+
+---
+
+## ArgoCD Installation Policy and Cleanup Automation
+
+### Overview
+
+**CRITICAL POLICY**: ArgoCD MUST be installed exclusively via Helm in production environments. This ensures consistent management, proper versioning, and reliable upgrades.
+
+### Automated Cleanup System
+
+The production deployment workflow (`.github/workflows/deploy-prod.yml`) includes an **idempotent cleanup automation** that automatically detects and resolves ArgoCD installation method conflicts.
+
+#### Detection Logic
+
+The workflow automatically detects three possible states:
+
+1. **not_installed**: ArgoCD is not present - proceeds with fresh Helm installation
+2. **helm_managed**: ArgoCD is managed by Helm (correct state) - no action needed
+3. **kubectl_installed**: ArgoCD was installed via kubectl - triggers automatic cleanup
+
+**Detection Implementation:**
+```bash
+# Check deployment existence
+kubectl get deployment argocd-server -n argocd
+
+# Check management label
+MANAGED_BY=$(kubectl get deployment argocd-server -n argocd \
+  -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')
+
+# Determine state
+if [ "$MANAGED_BY" = "Helm" ]; then
+  echo "helm_managed"
+else
+  echo "kubectl_installed"  # Requires cleanup
+fi
+```
+
+#### Cleanup Sequence
+
+When kubectl-installed ArgoCD is detected, the workflow executes the following cleanup sequence:
+
+**Step 1: Delete ArgoCD Applications**
+```bash
+kubectl delete applications --all -n argocd --wait=true --timeout=60s || true
+```
+- Removes all ArgoCD Application resources
+- Prevents finalizer deadlocks during namespace deletion
+- 60-second timeout with graceful failure handling
+
+**Step 2: Delete Namespace with Finalizer Handling**
+```bash
+# Primary deletion
+kubectl delete namespace argocd --wait=true --timeout=120s
+
+# Fallback: Remove finalizers if stuck
+kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}' || true
+```
+- Attempts clean namespace deletion (120s timeout)
+- Removes finalizers as fallback if namespace is stuck
+- Ensures namespace can be deleted even with resource dependencies
+
+**Step 3: Wait for Namespace Deletion**
+```bash
+for i in {1..24}; do
+  if ! kubectl get namespace argocd &>/dev/null; then
+    break  # Namespace deleted successfully
+  fi
+  echo "  Waiting for namespace deletion... ($i/24)"
+  sleep 5  # Total wait: up to 120 seconds
+done
+```
+- Polls namespace deletion status every 5 seconds
+- Maximum wait: 2 minutes (24 iterations × 5 seconds)
+- Provides progress feedback during cleanup
+
+**Step 4: Clean Cluster-Scoped Resources**
+```bash
+kubectl delete clusterrole -l app.kubernetes.io/part-of=argocd --ignore-not-found=true
+kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=argocd --ignore-not-found=true
+```
+- Removes ClusterRoles created by kubectl installation
+- Removes ClusterRoleBindings created by kubectl installation
+- Label-based deletion ensures only ArgoCD resources are removed
+- `--ignore-not-found` prevents errors if resources don't exist
+
+**Step 5: Verify Cleanup Success**
+```bash
+if kubectl get namespace argocd &>/dev/null; then
+  echo "ERROR: Cleanup failed - namespace still exists"
+  exit 1
+fi
+echo "SUCCESS: Cleanup completed"
+```
+- Validates namespace no longer exists
+- Fails workflow if cleanup unsuccessful
+- Provides clear error message for troubleshooting
+
+### Validation Step
+
+After ArgoCD Helm installation, the workflow validates proper management:
+
+```bash
+# Verify ArgoCD deployment exists
+kubectl get deployment argocd-server -n argocd
+
+# Check management label
+MANAGED_BY=$(kubectl get deployment argocd-server -n argocd \
+  -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')
+
+# Validate Helm management
+if [ "$MANAGED_BY" != "Helm" ]; then
+  echo "ERROR: ArgoCD not managed by Helm"
+  exit 1
+fi
+
+echo "SUCCESS: ArgoCD correctly managed by Helm"
+```
+
+### Key Benefits
+
+#### 1. Idempotent Operations
+- Safe to run multiple times without side effects
+- Handles all installation states correctly
+- No manual intervention required
+
+#### 2. Automatic Conflict Resolution
+- Detects kubectl vs Helm installation conflicts
+- Automatically cleans up incorrect installations
+- Ensures consistent Helm-based management
+
+#### 3. Comprehensive Cleanup
+- Applications deleted first (prevents finalizers)
+- Namespace deletion with finalizer fallback
+- Cluster-scoped resources removed
+- Verification ensures complete cleanup
+
+#### 4. Production Safety
+- Graceful failure handling at each step
+- Progress feedback during cleanup
+- Clear error messages for troubleshooting
+- Validation step ensures correct final state
+
+### Troubleshooting
+
+#### Issue: Namespace Stuck in Terminating State
+
+**Symptom:**
+```bash
+kubectl get namespace argocd
+# NAME     STATUS        AGE
+# argocd   Terminating   5m
+```
+
+**Cause:** Resources with finalizers blocking namespace deletion
+
+**Automatic Fix:** Workflow patches namespace to remove finalizers:
+```bash
+kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}'
+```
+
+**Manual Fix (if workflow fails):**
+```bash
+# Remove all finalizers from namespace
+kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}' --type=merge
+
+# Force delete namespace
+kubectl delete namespace argocd --grace-period=0 --force
+```
+
+#### Issue: ClusterRoles/ClusterRoleBindings Remain
+
+**Symptom:** Cluster-scoped resources not deleted
+
+**Detection:**
+```bash
+kubectl get clusterrole -l app.kubernetes.io/part-of=argocd
+kubectl get clusterrolebinding -l app.kubernetes.io/part-of=argocd
+```
+
+**Automatic Fix:** Workflow deletes using label selector
+
+**Manual Fix:**
+```bash
+kubectl delete clusterrole -l app.kubernetes.io/part-of=argocd
+kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=argocd
+```
+
+#### Issue: Cleanup Fails After 120s
+
+**Symptom:** Namespace still exists after maximum wait time
+
+**Investigation:**
+```bash
+# Check namespace status
+kubectl get namespace argocd -o yaml
+
+# Check remaining resources in namespace
+kubectl get all -n argocd
+
+# Check finalizers
+kubectl get namespace argocd -o jsonpath='{.spec.finalizers}'
+```
+
+**Manual Intervention:**
+```bash
+# Delete all resources in namespace
+kubectl delete all --all -n argocd
+
+# Remove finalizers
+kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}'
+
+# Re-run workflow
+gh workflow run deploy-prod.yml
+```
+
+### Best Practices
+
+#### 1. Never Use kubectl for ArgoCD Installation in Production
+- Always use Helm for production ArgoCD
+- kubectl installations lack version management
+- kubectl installations complicate upgrades
+- Helm provides consistent configuration management
+
+#### 2. Verify Installation Method After Deployment
+```bash
+# Check ArgoCD management method
+helm list -n argocd | grep argocd
+
+# Expected output:
+# argocd  argocd  1  <timestamp>  deployed  argo-cd-x.x.x  vx.x.x
+```
+
+#### 3. Monitor Cleanup Logs
+- Review workflow logs for cleanup operations
+- Validate no errors during cleanup sequence
+- Ensure validation step passes
+
+#### 4. Maintain Helm-Only Policy
+- Document Helm-only requirement in team guidelines
+- Include in onboarding documentation
+- Use workflow automation to enforce policy
+
+### Rollback Procedures
+
+If cleanup automation fails and manual intervention is required:
+
+#### Option 1: Manual Cleanup Script
+```bash
+#!/bin/bash
+# manual-argocd-cleanup.sh
+
+echo "Starting manual ArgoCD cleanup..."
+
+# Delete applications
+kubectl delete applications --all -n argocd --wait=false
+
+# Remove finalizers from applications
+kubectl get applications -n argocd -o name | \
+  xargs -I {} kubectl patch {} -n argocd -p '{"metadata":{"finalizers":null}}' --type=merge
+
+# Delete namespace
+kubectl delete namespace argocd --wait=false
+
+# Remove namespace finalizers
+kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}'
+
+# Delete cluster-scoped resources
+kubectl delete clusterrole -l app.kubernetes.io/part-of=argocd
+kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=argocd
+
+echo "Manual cleanup completed. Re-run deployment workflow."
+```
+
+#### Option 2: Infrastructure Reset
+```bash
+# Extreme measure - only if other options fail
+
+# Delete entire EKS cluster argocd namespace
+kubectl delete namespace argocd --grace-period=0 --force
+
+# Clean up orphaned resources
+kubectl delete clusterrole,clusterrolebinding -l app.kubernetes.io/part-of=argocd
+
+# Re-run deployment
+gh workflow run deploy-prod.yml
+```
+
+### Workflow Integration
+
+The cleanup automation is integrated into the production deployment workflow at line 404:
+
+**File:** `.github/workflows/deploy-prod.yml`
+**Step:** "Ensure clean ArgoCD state (idempotent)"
+**Lines:** 401-476 (cleanup logic), 613-633 (validation)
+
+**Execution Order:**
+1. Configure AWS credentials
+2. Install kubectl
+3. Configure kubectl for EKS
+4. Install Helm
+5. **→ Execute ArgoCD cleanup automation** (lines 404-476)
+6. Install/upgrade ArgoCD via Helm (lines 478-611)
+7. **→ Validate Helm management** (lines 613-633)
+8. Create ArgoCD applications
+9. Sync and verify deployment
 
 ---
 
@@ -2112,11 +2418,16 @@ For deployment issues or questions:
 
 ---
 
-**Document Version**: 3.1
-**Last Updated**: December 29, 2025
-**Next Review**: January 31, 2026
-**Status**: ✅ Complete Implementation with Multi-Node Group Architecture
-**Recent Changes**: Added multi-node group deployment procedures, taint/toleration configurations, cost analysis
+**Document Version**: 3.2
+**Last Updated**: January 4, 2026
+**Next Review**: February 4, 2026
+**Status**: ✅ Complete Implementation with ArgoCD Cleanup Automation
+**Recent Changes**:
+- Added ArgoCD Helm-only installation policy documentation
+- Documented automated cleanup detection and resolution system
+- Added comprehensive troubleshooting for ArgoCD conflicts
+- Included rollback procedures and manual cleanup scripts
+- Updated workflow integration details for cleanup automation
 
 ---
 

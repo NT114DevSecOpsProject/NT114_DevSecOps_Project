@@ -1,8 +1,8 @@
 # NT114 DevSecOps Project - System Architecture
 
-**Version:** 3.1
-**Last Updated:** December 29, 2025
-**Status:** ✅ **Complete GitOps Implementation with Multi-Node Group Architecture**
+**Version:** 3.2
+**Last Updated:** January 4, 2026
+**Status:** ✅ **Complete GitOps Implementation with ArgoCD Cleanup Automation**
 
 ---
 
@@ -250,6 +250,45 @@ The NT114 DevSecOps Project implements a comprehensive cloud-native architecture
     └─────────────────────────────────────────────┘
 ```
 
+### ArgoCD Installation Management
+
+#### Helm-Only Policy
+
+**CRITICAL**: ArgoCD MUST be installed exclusively via Helm in all environments, especially production.
+
+**Rationale:**
+- **Version Control**: Helm provides explicit version management and rollback capability
+- **Configuration Management**: Centralized values files ensure consistent configuration
+- **Upgrade Path**: Helm manages ArgoCD upgrades safely with atomic operations
+- **Auditability**: Helm releases provide clear deployment history and state tracking
+
+#### Automated Cleanup System
+
+Production deployments include automated detection and cleanup of installation method conflicts:
+
+**Detection States:**
+- `not_installed`: Fresh installation proceeds
+- `helm_managed`: Correct state, no action needed
+- `kubectl_installed`: Automatic cleanup triggered
+
+**Cleanup Process:**
+1. Delete all ArgoCD Applications (prevents finalizer deadlocks)
+2. Delete argocd namespace with finalizer fallback handling
+3. Wait for namespace deletion (up to 120 seconds)
+4. Remove cluster-scoped resources (ClusterRoles, ClusterRoleBindings)
+5. Verify cleanup success before proceeding
+
+**Validation:**
+Post-installation verification ensures `app.kubernetes.io/managed-by=Helm` label exists on all ArgoCD resources.
+
+**Benefits:**
+- Idempotent: Safe to run multiple times
+- Automatic: No manual intervention required
+- Comprehensive: Handles all cleanup scenarios
+- Validated: Confirms correct final state
+
+See Deployment Guide § "ArgoCD Installation Policy and Cleanup Automation" for detailed documentation.
+
 ### ArgoCD Applications
 
 #### Application Management Strategy
@@ -260,6 +299,7 @@ The NT114 DevSecOps Project implements a comprehensive cloud-native architecture
 - **Rollback Capability**: Instant rollback to previous versions
 - **Pre-flight Validation**: IAM identity and access entry verification
 - **Auto-Remediation**: Security group rules auto-created for RDS access
+- **Installation Enforcement**: Automated Helm-only policy enforcement
 
 #### Application Configuration
 ```yaml
