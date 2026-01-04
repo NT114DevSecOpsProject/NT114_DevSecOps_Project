@@ -484,11 +484,19 @@ jobs:
 
           for i in {1..30}; do
             READY_PODS=$(kubectl get pods -n prod --no-headers 2>/dev/null | grep -c "1/1.*Running" || echo "0")
-            TOTAL_PODS=$(kubectl get pods -n prod --no-headers 2>/dev/null | wc -l || echo "0")
+            TOTAL_PODS=$(kubectl get pods -n prod --no-headers 2>/dev/null | wc -l | tr -d '[:space:]')
+
+            # Ensure numeric values (remove any whitespace/newlines)
+            READY_PODS=$(echo "$READY_PODS" | tr -d '[:space:]')
+            TOTAL_PODS=$(echo "$TOTAL_PODS" | tr -d '[:space:]')
+
+            # Default to 0 if empty
+            READY_PODS=${READY_PODS:-0}
+            TOTAL_PODS=${TOTAL_PODS:-0}
 
             echo "Attempt $i/30: $READY_PODS/$TOTAL_PODS pods ready"
 
-            if [ "$READY_PODS" -ge "8" ] && [ "$READY_PODS" == "$TOTAL_PODS" ]; then
+            if [ "$READY_PODS" -ge "8" ] && [ "$READY_PODS" -eq "$TOTAL_PODS" ]; then
               echo "All pods are healthy!"
               kubectl get pods -n prod
               break
