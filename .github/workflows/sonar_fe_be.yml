@@ -10,6 +10,7 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY_ALIAS: nt114-devsecops
+  NODE_OPTIONS: --max-old-space-size=4096
 
 permissions:
   contents: read
@@ -60,14 +61,7 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=8192
         run: |
-          echo "=== Running Frontend Tests ==="
-          npm test -- --run --coverage --pool=forks --poolOptions.forks.singleFork=true
-          echo ""
-          echo "=== Coverage Files Generated ==="
-          ls -la coverage/
-          echo ""
-          echo "=== Coverage Summary ==="
-          head -50 coverage/lcov.info || echo "No lcov.info found"
+          run: npm test -- --coverage --watchAll=false
         continue-on-error: true
       
       - name: 🔍 Trivy Scan - Frontend Dependencies
