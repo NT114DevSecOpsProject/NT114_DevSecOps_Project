@@ -78,7 +78,7 @@ jobs:
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_frontend
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-            -Dsonar.branch.name=main
+            
 
       # ============================================
       # BACKEND SERVICES Analysis
@@ -112,7 +112,7 @@ jobs:
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_api-gateway
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.branch.name=main
+            
 
       - name: Trivy Scan - API-GATEWAY
         working-directory: microservices/api-gateway
@@ -143,7 +143,7 @@ jobs:
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_exercises-service
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.branch.name=main
+            
 
       - name: Trivy Scan - Exercises Service
         working-directory: microservices/exercises-service
@@ -174,8 +174,7 @@ jobs:
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_scores-service
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.branch.name=main
-
+            
       - name: Trivy Scan - Scores Service
         working-directory: microservices/scores-service
         continue-on-error: true
@@ -205,7 +204,7 @@ jobs:
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_user-management-service
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            -Dsonar.branch.name=main
+            
 
       - name: Trivy Scan - User Management Service
         working-directory: microservices/user-management-service
