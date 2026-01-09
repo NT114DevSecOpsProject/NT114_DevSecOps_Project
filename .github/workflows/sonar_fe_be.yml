@@ -28,7 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for better SonarCloud analysis
+          fetch-depth: 0
 
       - name: Install Trivy CLI
         run: |
@@ -58,8 +58,14 @@ jobs:
       - name: Run Frontend Tests with Coverage
         working-directory: frontend
         run: |
+          echo "=== Running Frontend Tests ==="
           npm test -- --run --coverage
+          echo ""
+          echo "=== Coverage Files Generated ==="
           ls -la coverage/
+          echo ""
+          echo "=== Coverage Summary ==="
+          cat coverage/lcov.info | head -50 || echo "No lcov.info found"
         continue-on-error: true
       
       - name: 🔍 Trivy Scan - Frontend Dependencies
@@ -84,7 +90,6 @@ jobs:
             -Dsonar.test.inclusions=**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx,**/*.spec.js,**/*.spec.jsx,**/*.spec.ts,**/*.spec.tsx
             -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-            
 
       # ============================================
       # BACKEND SERVICES Analysis
@@ -94,7 +99,7 @@ jobs:
         with:
           python-version: "3.9"
       
-      # API-GATEWAY
+      # API-GATEWAY (Files ở root)
       - name: Install API-GATEWAY Dependencies
         working-directory: microservices/api-gateway
         run: |
@@ -105,8 +110,17 @@ jobs:
       - name: Run Tests - API-GATEWAY
         working-directory: microservices/api-gateway
         run: |
-          python -m pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term
+          echo "=== API Gateway Structure ==="
+          ls -la | grep ".py"
+          echo ""
+          echo "=== Running API Gateway Tests ==="
+          python -m pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing -v
+          echo ""
+          echo "=== Coverage Report Generated ==="
           ls -la coverage.xml
+          echo ""
+          echo "=== Coverage XML Preview ==="
+          cat coverage.xml | head -50
         continue-on-error: true
       
       - name: SonarCloud Scan - API Gateway
@@ -127,7 +141,7 @@ jobs:
         continue-on-error: true
         run: trivy fs --format table --security-checks vuln requirements.txt
 
-      # EXERCISES-SERVICE
+      # EXERCISES-SERVICE (Files trong app/)
       - name: Install Exercises-Service Dependencies
         working-directory: microservices/exercises-service
         run: |
@@ -138,8 +152,21 @@ jobs:
       - name: Run Tests - Exercises-Service
         working-directory: microservices/exercises-service
         run: |
-          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term
+          echo "=== Exercises Service Structure ==="
+          ls -la
+          ls -la app/
+          echo ""
+          echo "=== Running Exercises Service Tests ==="
+          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term-missing -v
+          echo ""
+          echo "=== Coverage Report Generated ==="
           ls -la coverage.xml
+          echo ""
+          echo "=== Coverage XML Preview ==="
+          cat coverage.xml | head -50
+          echo ""
+          echo "=== Coverage Stats ==="
+          grep -A 5 '<package name="app"' coverage.xml || echo "No app package found in coverage"
         continue-on-error: true
       
       - name: SonarCloud Scan - Exercises Service
@@ -152,6 +179,8 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_exercises-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.python.version=3.9
 
@@ -160,7 +189,7 @@ jobs:
         continue-on-error: true
         run: trivy fs --format table --security-checks vuln requirements.txt
 
-      # SCORES-SERVICE
+      # SCORES-SERVICE (Files trong app/)
       - name: Install Scores-Service Dependencies
         working-directory: microservices/scores-service
         run: |
@@ -171,8 +200,21 @@ jobs:
       - name: Run Tests - Scores-Service
         working-directory: microservices/scores-service
         run: |
-          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term
+          echo "=== Scores Service Structure ==="
+          ls -la
+          ls -la app/
+          echo ""
+          echo "=== Running Scores Service Tests ==="
+          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term-missing -v
+          echo ""
+          echo "=== Coverage Report Generated ==="
           ls -la coverage.xml
+          echo ""
+          echo "=== Coverage XML Preview ==="
+          cat coverage.xml | head -50
+          echo ""
+          echo "=== Coverage Stats ==="
+          grep -A 5 '<package name="app"' coverage.xml || echo "No app package found in coverage"
         continue-on-error: true
       
       - name: SonarCloud Scan - Scores Service
@@ -185,6 +227,8 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_scores-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.python.version=3.9
 
@@ -193,7 +237,7 @@ jobs:
         continue-on-error: true
         run: trivy fs --format table --security-checks vuln requirements.txt
 
-      # USER-MANAGEMENT-SERVICE
+      # USER-MANAGEMENT-SERVICE (Files trong app/)
       - name: Install User-Management-Service Dependencies
         working-directory: microservices/user-management-service
         run: |
@@ -204,8 +248,21 @@ jobs:
       - name: Run Tests - User-Management-Service
         working-directory: microservices/user-management-service
         run: |
-          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term
+          echo "=== User Management Service Structure ==="
+          ls -la
+          ls -la app/
+          echo ""
+          echo "=== Running User Management Service Tests ==="
+          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term-missing -v
+          echo ""
+          echo "=== Coverage Report Generated ==="
           ls -la coverage.xml
+          echo ""
+          echo "=== Coverage XML Preview ==="
+          cat coverage.xml | head -50
+          echo ""
+          echo "=== Coverage Stats ==="
+          grep -A 5 '<package name="app"' coverage.xml || echo "No app package found in coverage"
         continue-on-error: true
       
       - name: SonarCloud Scan - User Management Service
@@ -218,6 +275,8 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_user-management-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.python.version=3.9
 
