@@ -57,7 +57,9 @@ jobs:
       
       - name: Run Frontend Tests with Coverage
         working-directory: frontend
-        run: npm test -- --coverage --watchAll=false
+        run: |
+          npm test -- --run --coverage
+          ls -la coverage/
         continue-on-error: true
       
       - name: 🔍 Trivy Scan - Frontend Dependencies
@@ -79,7 +81,7 @@ jobs:
             -Dsonar.projectKey=nt114devsecopsproject_frontend
             -Dsonar.sources=src
             -Dsonar.tests=src
-            -Dsonar.test.inclusions=**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx
+            -Dsonar.test.inclusions=**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx,**/*.spec.js,**/*.spec.jsx,**/*.spec.ts,**/*.spec.tsx
             -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             
@@ -102,7 +104,9 @@ jobs:
       
       - name: Run Tests - API-GATEWAY
         working-directory: microservices/api-gateway
-        run: python -m pytest --cov=. --cov-report=xml
+        run: |
+          python -m pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term
+          ls -la coverage.xml
         continue-on-error: true
       
       - name: SonarCloud Scan - API Gateway
@@ -133,7 +137,9 @@ jobs:
       
       - name: Run Tests - Exercises-Service
         working-directory: microservices/exercises-service
-        run: python -m pytest --cov=app --cov-report=xml
+        run: |
+          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term
+          ls -la coverage.xml
         continue-on-error: true
       
       - name: SonarCloud Scan - Exercises Service
@@ -164,7 +170,9 @@ jobs:
       
       - name: Run Tests - Scores-Service
         working-directory: microservices/scores-service
-        run: python -m pytest --cov=app --cov-report=xml
+        run: |
+          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term
+          ls -la coverage.xml
         continue-on-error: true
       
       - name: SonarCloud Scan - Scores Service
@@ -195,7 +203,9 @@ jobs:
       
       - name: Run Tests - User-Management-Service
         working-directory: microservices/user-management-service
-        run: python -m pytest --cov=app --cov-report=xml
+        run: |
+          python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term
+          ls -la coverage.xml
         continue-on-error: true
       
       - name: SonarCloud Scan - User Management Service
