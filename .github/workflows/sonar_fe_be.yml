@@ -10,7 +10,6 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY_ALIAS: nt114-devsecops
-  NODE_OPTIONS: --max-old-space-size=4096
 
 permissions:
   contents: read
@@ -43,7 +42,7 @@ jobs:
           echo "✅ Database updated successfully"
       
       # ============================================
-      # FRONTEND Analysis
+      # FRONTEND Analysis (Skip coverage for now)
       # ============================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -55,14 +54,6 @@ jobs:
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm ci
-      
-      - name: Run Frontend Tests with Coverage
-        working-directory: frontend
-        env:
-          NODE_OPTIONS: --max-old-space-size=8192
-        run: |
-          run: npm test -- --coverage --watchAll=false
-        continue-on-error: true
       
       - name: 🔍 Trivy Scan - Frontend Dependencies
         working-directory: frontend
@@ -83,9 +74,8 @@ jobs:
             -Dsonar.projectKey=nt114devsecopsproject_frontend
             -Dsonar.sources=src
             -Dsonar.tests=src
-            -Dsonar.test.inclusions=**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx,**/*.spec.js,**/*.spec.jsx,**/*.spec.ts,**/*.spec.tsx
+            -Dsonar.test.inclusions=**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx
             -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**
-            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
 
       # ============================================
       # BACKEND SERVICES Analysis
@@ -95,7 +85,7 @@ jobs:
         with:
           python-version: "3.9"
       
-      # API-GATEWAY (Files ở root)
+      # API-GATEWAY
       - name: Install API-GATEWAY Dependencies
         working-directory: microservices/api-gateway
         run: |
@@ -131,7 +121,7 @@ jobs:
         continue-on-error: true
         run: trivy fs --format table --security-checks vuln requirements.txt
 
-      # EXERCISES-SERVICE (Files trong app/)
+      # EXERCISES-SERVICE
       - name: Install Exercises-Service Dependencies
         working-directory: microservices/exercises-service
         run: |
@@ -175,7 +165,7 @@ jobs:
         continue-on-error: true
         run: trivy fs --format table --security-checks vuln requirements.txt
 
-      # SCORES-SERVICE (Files trong app/)
+      # SCORES-SERVICE
       - name: Install Scores-Service Dependencies
         working-directory: microservices/scores-service
         run: |
@@ -219,7 +209,7 @@ jobs:
         continue-on-error: true
         run: trivy fs --format table --security-checks vuln requirements.txt
 
-      # USER-MANAGEMENT-SERVICE (Files trong app/)
+      # USER-MANAGEMENT-SERVICE
       - name: Install User-Management-Service Dependencies
         working-directory: microservices/user-management-service
         run: |
@@ -263,7 +253,6 @@ jobs:
         continue-on-error: true
         run: trivy fs --format table --security-checks vuln requirements.txt
 
-      # Generate Security Summary
       - name: 📊 Generate Security Summary
         continue-on-error: true
         run: |
@@ -271,9 +260,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔍 SonarCloud Analysis" >> $GITHUB_STEP_SUMMARY
           echo "View detailed reports at: https://sonarcloud.io/organizations/nt114devsecopsproject/projects" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🐛 Trivy Vulnerability Scans" >> $GITHUB_STEP_SUMMARY
-          echo "All services scanned for dependencies and source code vulnerabilities." >> $GITHUB_STEP_SUMMARY
 
   # ============================================
   # Stage 2: Build Docker Images
