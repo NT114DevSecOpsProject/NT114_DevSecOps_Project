@@ -10,7 +10,6 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REGISTRY_ALIAS: nt114-devsecops
-  NODE_OPTIONS: --max-old-space-size=4096
 
 permissions:
   contents: read
@@ -59,10 +58,10 @@ jobs:
       - name: Run Frontend Tests with Coverage
         working-directory: frontend
         env:
-          NODE_OPTIONS: --max-old-space-size=4096
+          NODE_OPTIONS: --max-old-space-size=8192
         run: |
           echo "=== Running Frontend Tests ==="
-          npm test -- --run --coverage --maxWorkers=2
+          npm test -- --run --coverage --pool=forks --poolOptions.forks.singleFork=true
           echo ""
           echo "=== Coverage Files Generated ==="
           ls -la coverage/
