@@ -115,9 +115,6 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_api-gateway
-            -Dsonar.sources=.
-            -Dsonar.tests=tests
-            -Dsonar.exclusions=**/__pycache__/**,**/venv/**,**/.pytest_cache/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.python.version=3.9
 
@@ -149,9 +146,6 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_exercises-service
-            -Dsonar.sources=app
-            -Dsonar.tests=tests
-            -Dsonar.exclusions=**/__pycache__/**,**/venv/**,**/.pytest_cache/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.python.version=3.9
 
@@ -183,9 +177,6 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_scores-service
-            -Dsonar.sources=app
-            -Dsonar.tests=tests
-            -Dsonar.exclusions=**/__pycache__/**,**/venv/**,**/.pytest_cache/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.python.version=3.9
 
@@ -217,12 +208,9 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_user-management-service
-            -Dsonar.sources=app
-            -Dsonar.tests=tests
-            -Dsonar.exclusions=**/__pycache__/**,**/venv/**,**/.pytest_cache/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
             -Dsonar.python.version=3.9
-      
+
       - name: Trivy Scan - User Management Service
         working-directory: microservices/user-management-service
         continue-on-error: true
