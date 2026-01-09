@@ -76,7 +76,7 @@ jobs:
           projectBaseDir: frontend
           args: >
             -Dsonar.organization=nt114devsecopsproject
-            -Dsonar.projectKey=NT114DevSecOpsProject_NT114-Frontend
+            -Dsonar.projectKey=nt114devsecopsproject_frontend
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
 
       # ============================================
@@ -109,7 +109,7 @@ jobs:
           projectBaseDir: microservices/api-gateway
           args: >
             -Dsonar.organization=nt114devsecopsproject
-            -Dsonar.projectKey=NT114DevSecOpsProject_NT114-API-Gateway
+            -Dsonar.projectKey=nt114devsecopsproject_api-gateway
             -Dsonar.python.coverage.reportPaths=coverage.xml
 
       - name: Trivy Scan - API-GATEWAY
@@ -139,7 +139,7 @@ jobs:
           projectBaseDir: microservices/exercises-service
           args: >
             -Dsonar.organization=nt114devsecopsproject
-            -Dsonar.projectKey=NT114DevSecOpsProject_NT114-Exercises-Service
+            -Dsonar.projectKey=nt114devsecopsproject_exercises-service
             -Dsonar.python.coverage.reportPaths=coverage.xml
 
       - name: Trivy Scan - Exercises Service
@@ -169,7 +169,7 @@ jobs:
           projectBaseDir: microservices/scores-service
           args: >
             -Dsonar.organization=nt114devsecopsproject
-            -Dsonar.projectKey=NT114DevSecOpsProject_NT114-Scores-Service
+            -Dsonar.projectKey=nt114devsecopsproject_scores-service
             -Dsonar.python.coverage.reportPaths=coverage.xml
 
       - name: Trivy Scan - Scores Service
@@ -199,7 +199,7 @@ jobs:
           projectBaseDir: microservices/user-management-service
           args: >
             -Dsonar.organization=nt114devsecopsproject
-            -Dsonar.projectKey=NT114DevSecOpsProject_NT114-User-Management-Service
+            -Dsonar.projectKey=nt114devsecopsproject_user-management-service
             -Dsonar.python.coverage.reportPaths=coverage.xml
 
       - name: Trivy Scan - User Management Service
