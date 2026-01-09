@@ -77,6 +77,10 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_frontend
+            -Dsonar.sources=src
+            -Dsonar.tests=src
+            -Dsonar.test.inclusions=**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx
+            -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             
 
@@ -111,8 +115,11 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_api-gateway
+            -Dsonar.sources=.
+            -Dsonar.tests=tests
+            -Dsonar.exclusions=**/__pycache__/**,**/venv/**,**/.pytest_cache/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            
+            -Dsonar.python.version=3.9
 
       - name: Trivy Scan - API-GATEWAY
         working-directory: microservices/api-gateway
@@ -142,8 +149,11 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_exercises-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.exclusions=**/__pycache__/**,**/venv/**,**/.pytest_cache/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            
+            -Dsonar.python.version=3.9
 
       - name: Trivy Scan - Exercises Service
         working-directory: microservices/exercises-service
@@ -173,8 +183,12 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_scores-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.exclusions=**/__pycache__/**,**/venv/**,**/.pytest_cache/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            
+            -Dsonar.python.version=3.9
+
       - name: Trivy Scan - Scores Service
         working-directory: microservices/scores-service
         continue-on-error: true
@@ -203,9 +217,12 @@ jobs:
           args: >
             -Dsonar.organization=nt114devsecopsproject
             -Dsonar.projectKey=nt114devsecopsproject_user-management-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.exclusions=**/__pycache__/**,**/venv/**,**/.pytest_cache/**
             -Dsonar.python.coverage.reportPaths=coverage.xml
-            
-
+            -Dsonar.python.version=3.9
+      
       - name: Trivy Scan - User Management Service
         working-directory: microservices/user-management-service
         continue-on-error: true
