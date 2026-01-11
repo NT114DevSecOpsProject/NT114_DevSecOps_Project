@@ -56,6 +56,8 @@ bastion_key_name      = "nt114-bastion-key-prod"
 migration_bucket_name = "nt114-migration-bucket-prod"
 
 # Feature Toggles
+# Note: ALB controller installed via GitHub Actions (see deploy-prod.yml)
+# Used for internal ALB (ArgoCD, Grafana Ingress)
 enable_alb_controller     = true
 enable_ebs_csi_controller = true
 

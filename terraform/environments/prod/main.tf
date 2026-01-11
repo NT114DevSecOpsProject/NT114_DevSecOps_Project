@@ -101,9 +101,11 @@ module "eks_nodegroup_app" {
   tags = merge(
     var.tags,
     {
-      Module      = "eks-nodegroup-app"
-      Environment = "production"
-      NodeType    = "application"
+      Module                                          = "eks-nodegroup-app"
+      Environment                                     = "production"
+      NodeType                                        = "application"
+      "k8s.io/cluster-autoscaler/enabled"             = "true"
+      "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
     }
   )
 
@@ -145,9 +147,11 @@ module "eks_nodegroup_argocd" {
   tags = merge(
     var.tags,
     {
-      Module      = "eks-nodegroup-argocd"
-      Environment = "production"
-      NodeType    = "argocd"
+      Module                                          = "eks-nodegroup-argocd"
+      Environment                                     = "production"
+      NodeType                                        = "argocd"
+      "k8s.io/cluster-autoscaler/enabled"             = "true"
+      "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
     }
   )
 
@@ -189,37 +193,41 @@ module "eks_nodegroup_monitoring" {
   tags = merge(
     var.tags,
     {
-      Module      = "eks-nodegroup-monitoring"
-      Environment = "production"
-      NodeType    = "monitoring"
+      Module                                          = "eks-nodegroup-monitoring"
+      Environment                                     = "production"
+      NodeType                                        = "monitoring"
+      "k8s.io/cluster-autoscaler/enabled"             = "true"
+      "k8s.io/cluster-autoscaler/${var.cluster_name}" = "owned"
     }
   )
 
   depends_on = [module.eks_cluster, module.eks_nodegroup_app]
 }
 
-# ALB Controller Module - Manages AWS Load Balancer Controller
-module "alb_controller" {
-  source = "../../modules/alb-controller"
-
-  cluster_name      = module.eks_cluster.cluster_name
-  aws_region        = var.aws_region
-  vpc_id            = module.vpc.vpc_id
-  oidc_provider     = module.eks_cluster.oidc_provider
-  oidc_provider_arn = module.eks_cluster.oidc_provider_arn
-  node_group_id     = module.eks_nodegroup_app.node_group_id
-
-  enable_alb_controller     = var.enable_alb_controller
-  enable_ebs_csi_controller = var.enable_ebs_csi_controller
-
-  helm_release_name      = var.helm_release_name
-  helm_namespace         = var.helm_namespace
-  helm_chart_name        = var.helm_chart_name
-  helm_chart_repository  = var.helm_chart_repository
-  helm_chart_version     = var.helm_chart_version
-  service_account_name   = var.service_account_name
-  additional_helm_values = var.additional_helm_values
-}
+# ALB Controller Module - Installed via GitHub Actions workflow (deploy-prod.yml)
+# ArgoCD and Grafana use internal ALB (Ingress) for VPC access
+# Keep commented out - workflow handles installation automatically
+# module "alb_controller" {
+#   source = "../../modules/alb-controller"
+#
+#   cluster_name      = module.eks_cluster.cluster_name
+#   aws_region        = var.aws_region
+#   vpc_id            = module.vpc.vpc_id
+#   oidc_provider     = module.eks_cluster.oidc_provider
+#   oidc_provider_arn = module.eks_cluster.oidc_provider_arn
+#   node_group_id     = module.eks_nodegroup_app.node_group_id
+#
+#   enable_alb_controller     = var.enable_alb_controller
+#   enable_ebs_csi_controller = var.enable_ebs_csi_controller
+#
+#   helm_release_name      = var.helm_release_name
+#   helm_namespace         = var.helm_namespace
+#   helm_chart_name        = var.helm_chart_name
+#   helm_chart_repository  = var.helm_chart_repository
+#   helm_chart_version     = var.helm_chart_version
+#   service_account_name   = var.service_account_name
+#   additional_helm_values = var.additional_helm_values
+# }
 
 # EBS CSI Driver Module - Storage provisioner for EBS volumes
 module "ebs_csi_driver" {
@@ -444,7 +452,7 @@ module "iam_access" {
 
   # GitHub Actions EKS Access Configuration
   create_github_actions_access_entry     = true
-  github_actions_user_name               = module.ecr.github_actions_user_name  # Use dynamic name from ECR module
+  github_actions_user_arn                = module.ecr.github_actions_user_arn
   create_github_actions_access_policy    = true
   github_actions_access_policy_arn       = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   github_actions_access_scope_type       = "cluster"
@@ -466,7 +474,7 @@ module "iam_access" {
     }
   )
 
-  depends_on = [module.eks_cluster]
+  depends_on = [module.eks_cluster, module.ecr]
 }
 
 # ECR Module

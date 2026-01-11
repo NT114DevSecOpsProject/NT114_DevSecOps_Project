@@ -849,6 +849,82 @@ jobs:
           kubectl get deployment cluster-autoscaler -n kube-system
           kubectl logs -n kube-system deployment/cluster-autoscaler --tail=10 || echo "INFO: Logs will be available once pod starts"
 
+      - name: Install AWS Load Balancer Controller
+        run: |
+          echo "🚀 Installing AWS Load Balancer Controller for Ingress support..."
+
+          # Check if ALB controller already exists
+          if kubectl get deployment aws-load-balancer-controller -n kube-system &>/dev/null; then
+            echo "✅ AWS Load Balancer Controller already installed"
+          else
+            echo "📦 Installing AWS Load Balancer Controller..."
+
+            # Create IAM policy if not exists
+            POLICY_NAME="AWSLoadBalancerControllerIAMPolicy-prod"
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+            if ! aws iam get-policy --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}" &>/dev/null; then
+              echo "Creating IAM policy..."
+              curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.6.0/docs/install/iam_policy.json
+              aws iam create-policy \
+                --policy-name ${POLICY_NAME} \
+                --policy-document file:///tmp/iam_policy.json
+              echo "✅ IAM policy created"
+            else
+              echo "✅ IAM policy already exists"
+            fi
+
+            # Create IAM service account using eksctl
+            ROLE_NAME="AmazonEKSLoadBalancerControllerRole-prod"
+
+            if ! aws iam get-role --role-name ${ROLE_NAME} &>/dev/null; then
+              echo "Creating IAM service account..."
+              eksctl create iamserviceaccount \
+                --cluster=eks-prod \
+                --namespace=kube-system \
+                --name=aws-load-balancer-controller \
+                --role-name ${ROLE_NAME} \
+                --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
+                --approve \
+                --override-existing-serviceaccounts
+              echo "✅ IAM service account created"
+            else
+              echo "✅ IAM service account already exists"
+            fi
+
+            # Install ALB controller via Helm
+            echo "Installing Helm chart..."
+            helm repo add eks https://aws.github.io/eks-charts
+            helm repo update
+
+            helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+              -n kube-system \
+              --set clusterName=eks-prod \
+              --set serviceAccount.create=false \
+              --set serviceAccount.name=aws-load-balancer-controller \
+              --set tolerations[0].operator=Exists \
+              --wait \
+              --timeout 5m
+
+            echo "✅ AWS Load Balancer Controller installed"
+          fi
+
+          # Verify installation
+          echo "📊 Verifying AWS Load Balancer Controller..."
+          kubectl get deployment aws-load-balancer-controller -n kube-system
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+
+          # Wait for controller to be ready
+          kubectl wait --for=condition=available \
+            --timeout=180s \
+            deployment/aws-load-balancer-controller \
+            -n kube-system || {
+              echo "⚠️ AWS Load Balancer Controller not ready yet"
+              kubectl describe deployment aws-load-balancer-controller -n kube-system
+            }
+
+          echo "✅ AWS Load Balancer Controller is ready"
+
       - name: Wait for pods to be healthy
         run: |
           echo "Waiting for all pods to be healthy (max 5 minutes)..."

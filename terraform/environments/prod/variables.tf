@@ -386,7 +386,7 @@ variable "create_admin_group" {
 variable "admin_group_name" {
   description = "Name of the admin IAM group"
   type        = string
-  default     = "eks-admin-group"
+  default     = "eks-admin-group-prod"
 }
 
 variable "create_admin_role" {
@@ -398,7 +398,7 @@ variable "create_admin_role" {
 variable "admin_role_name" {
   description = "Name of the admin IAM role"
   type        = string
-  default     = "eks-admin-role"
+  default     = "eks-admin-role-prod"
 }
 
 variable "attach_admin_policy" {
@@ -416,7 +416,7 @@ variable "create_assume_role_policy" {
 variable "assume_role_policy_name" {
   description = "Name of the assume role policy"
   type        = string
-  default     = "eks-assume-role-policy"
+  default     = "eks-assume-role-policy-prod"
 }
 
 variable "create_eks_access_entry" {
