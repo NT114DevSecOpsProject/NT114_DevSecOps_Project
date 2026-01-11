@@ -3,7 +3,7 @@ data "aws_caller_identity" "current" {}
 # IAM Group for EKS Admins
 resource "aws_iam_group" "admin_group" {
   count = var.create_admin_group ? 1 : 0
-  name  = var.admin_group_name
+  name  = var.admin_group_name != null ? var.admin_group_name : "${var.cluster_name}-admin-group"
 
   lifecycle {
     ignore_changes = [name]
@@ -141,7 +141,7 @@ resource "aws_eks_access_policy_association" "admin_policy" {
 resource "aws_eks_access_entry" "github_actions_user_access" {
   count         = var.create_github_actions_access_entry ? 1 : 0
   cluster_name  = var.cluster_name
-  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/nt114-devsecops-github-actions-user"
+  principal_arn = var.github_actions_user_arn != "" ? var.github_actions_user_arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.github_actions_user_name != null ? var.github_actions_user_name : "github-actions-user"}"
   type          = "STANDARD"
 
   tags = var.tags
@@ -156,7 +156,7 @@ resource "aws_eks_access_policy_association" "github_actions_user_policy" {
   count         = var.create_github_actions_access_entry && var.create_github_actions_access_policy ? 1 : 0
   cluster_name  = var.cluster_name
   policy_arn    = var.github_actions_access_policy_arn
-  principal_arn = length(aws_eks_access_entry.github_actions_user_access) > 0 ? aws_eks_access_entry.github_actions_user_access[0].principal_arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/nt114-devsecops-github-actions-user"
+  principal_arn = length(aws_eks_access_entry.github_actions_user_access) > 0 ? aws_eks_access_entry.github_actions_user_access[0].principal_arn : (var.github_actions_user_arn != "" ? var.github_actions_user_arn : "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.github_actions_user_name != null ? var.github_actions_user_name : "github-actions-user"}")
 
   access_scope {
     type       = var.github_actions_access_scope_type

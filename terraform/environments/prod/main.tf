@@ -444,7 +444,7 @@ module "iam_access" {
 
   # GitHub Actions EKS Access Configuration
   create_github_actions_access_entry     = true
-  github_actions_user_arn                = "arn:aws:iam::039612870452:user/nt114-devsecops-github-actions-user"
+  github_actions_user_name               = module.ecr.github_actions_user_name  # Use dynamic name from ECR module
   create_github_actions_access_policy    = true
   github_actions_access_policy_arn       = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
   github_actions_access_scope_type       = "cluster"

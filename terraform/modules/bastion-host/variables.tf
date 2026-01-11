@@ -87,7 +87,7 @@ variable "s3_bucket_name" {
 variable "iam_role_name" {
   description = "IAM role name for bastion host"
   type        = string
-  default     = "bastion-host-role"
+  default     = null  # Will be constructed from environment
 }
 
 variable "root_volume_size" {

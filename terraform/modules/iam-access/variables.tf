@@ -12,7 +12,7 @@ variable "create_admin_group" {
 variable "admin_group_name" {
   description = "Name of the admin IAM group"
   type        = string
-  default     = "eks-admin-group"
+  default     = null  # Will be constructed from cluster name
 }
 
 variable "create_admin_role" {
@@ -98,6 +98,12 @@ variable "github_actions_user_arn" {
   description = "ARN of GitHub Actions IAM user/role"
   type        = string
   default     = ""
+}
+
+variable "github_actions_user_name" {
+  description = "Name of GitHub Actions IAM user (for constructing ARN)"
+  type        = string
+  default     = null  # Will be constructed if not provided
 }
 
 variable "create_github_actions_access_policy" {

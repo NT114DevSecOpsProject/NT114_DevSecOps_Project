@@ -76,8 +76,8 @@ resource "aws_ecr_lifecycle_policy" "lifecycle_policy" {
 resource "aws_iam_policy" "github_actions_ecr_policy" {
   count = var.create_github_actions_policy ? 1 : 0
 
-  name        = "${var.project_name}-github-actions-ecr-policy"
-  description = "Policy for GitHub Actions to push images to ECR"
+  name        = "${var.project_name}-github-actions-ecr-policy-${var.environment}"
+  description = "Policy for GitHub Actions to push images to ECR (${var.environment})"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -182,7 +182,7 @@ resource "aws_iam_policy" "github_actions_ecr_policy" {
   tags = merge(
     var.tags,
     {
-      Name = "${var.project_name}-github-actions-ecr-policy"
+      Name = "${var.project_name}-github-actions-ecr-policy-${var.environment}"
     }
   )
 
@@ -195,12 +195,12 @@ resource "aws_iam_policy" "github_actions_ecr_policy" {
 resource "aws_iam_user" "github_actions_user" {
   count = var.create_github_actions_user ? 1 : 0
 
-  name = "${var.project_name}-github-actions-user"
+  name = "${var.project_name}-github-actions-user-${var.environment}"
 
   tags = merge(
     var.tags,
     {
-      Name = "${var.project_name}-github-actions-user"
+      Name = "${var.project_name}-github-actions-user-${var.environment}"
     }
   )
 

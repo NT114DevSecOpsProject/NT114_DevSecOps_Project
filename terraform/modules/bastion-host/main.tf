@@ -19,7 +19,7 @@ resource "aws_key_pair" "bastion" {
 
 # IAM Role for Bastion Host
 resource "aws_iam_role" "bastion" {
-  name = var.iam_role_name
+  name = var.iam_role_name != null ? var.iam_role_name : "bastion-host-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
