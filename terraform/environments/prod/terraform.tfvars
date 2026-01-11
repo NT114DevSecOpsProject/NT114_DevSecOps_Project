@@ -61,4 +61,4 @@ enable_ebs_csi_controller = true
 
 # Cost Optimization
 enable_nat_gateway = true
-single_nat_gateway = false
+single_nat_gateway = true  # Use 1 NAT Gateway for all AZs to save cost (~$65/month savings)
