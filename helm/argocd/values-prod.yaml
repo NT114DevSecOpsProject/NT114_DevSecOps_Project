@@ -72,6 +72,11 @@ repoServer:
 
   replicas: 2
 
+  # Increase liveness probe timeout to prevent false failures under load
+  livenessProbe:
+    initialDelaySeconds: 30
+    timeoutSeconds: 5
+
 ## Application Controller Configuration
 controller:
   tolerations:
