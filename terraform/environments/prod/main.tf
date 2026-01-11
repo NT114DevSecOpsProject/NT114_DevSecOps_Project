@@ -198,29 +198,28 @@ module "eks_nodegroup_monitoring" {
   depends_on = [module.eks_cluster, module.eks_nodegroup_app]
 }
 
-# ALB Controller Module - Comment out for initial deployment
-# Uncomment after EKS cluster is created and Helm providers are configured
-# module "alb_controller" {
-#   source = "../../modules/alb-controller"
-#
-#   cluster_name      = module.eks_cluster.cluster_name
-#   aws_region        = var.aws_region
-#   vpc_id            = module.vpc.vpc_id
-#   oidc_provider     = module.eks_cluster.oidc_provider
-#   oidc_provider_arn = module.eks_cluster.oidc_provider_arn
-#   node_group_id     = module.eks_nodegroup_app.node_group_id
-#
-#   enable_alb_controller     = var.enable_alb_controller
-#   enable_ebs_csi_controller = var.enable_ebs_csi_controller
-#
-#   helm_release_name      = var.helm_release_name
-#   helm_namespace         = var.helm_namespace
-#   helm_chart_name        = var.helm_chart_name
-#   helm_chart_repository  = var.helm_chart_repository
-#   helm_chart_version     = var.helm_chart_version
-#   service_account_name   = var.service_account_name
-#   additional_helm_values = var.additional_helm_values
-# }
+# ALB Controller Module - Manages AWS Load Balancer Controller
+module "alb_controller" {
+  source = "../../modules/alb-controller"
+
+  cluster_name      = module.eks_cluster.cluster_name
+  aws_region        = var.aws_region
+  vpc_id            = module.vpc.vpc_id
+  oidc_provider     = module.eks_cluster.oidc_provider
+  oidc_provider_arn = module.eks_cluster.oidc_provider_arn
+  node_group_id     = module.eks_nodegroup_app.node_group_id
+
+  enable_alb_controller     = var.enable_alb_controller
+  enable_ebs_csi_controller = var.enable_ebs_csi_controller
+
+  helm_release_name      = var.helm_release_name
+  helm_namespace         = var.helm_namespace
+  helm_chart_name        = var.helm_chart_name
+  helm_chart_repository  = var.helm_chart_repository
+  helm_chart_version     = var.helm_chart_version
+  service_account_name   = var.service_account_name
+  additional_helm_values = var.additional_helm_values
+}
 
 # EBS CSI Driver Addon - Comment out for initial deployment (depends on ALB controller)
 # Uncomment after ALB controller module is uncommented

@@ -68,6 +68,12 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = 1
   }
 
+  # Tolerations to run on any node (including tainted nodes)
+  set {
+    name  = "tolerations[0].operator"
+    value = "Exists"
+  }
+
   dynamic "set" {
     for_each = var.additional_helm_values
     content {
