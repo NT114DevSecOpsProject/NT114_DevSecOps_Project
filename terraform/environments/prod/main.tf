@@ -237,7 +237,7 @@ module "ebs_csi_driver" {
   }
 
   depends_on = [
-    module.eks_nodegroup_application,
+    module.eks_nodegroup_app,
     module.eks_nodegroup_argocd,
     module.eks_nodegroup_monitoring
   ]

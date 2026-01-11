@@ -47,6 +47,18 @@ resource "aws_eks_addon" "ebs_csi_driver" {
   addon_name               = "aws-ebs-csi-driver"
   addon_version            = var.addon_version
   service_account_role_arn = aws_iam_role.ebs_csi_driver.arn
+
+  # Configuration to add tolerations for controller to run on tainted nodes
+  configuration_values = jsonencode({
+    controller = {
+      tolerations = [
+        {
+          operator = "Exists"  # Allow scheduling on any node including tainted ones
+        }
+      ]
+    }
+  })
+
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
