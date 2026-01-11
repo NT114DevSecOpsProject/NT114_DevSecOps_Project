@@ -56,6 +56,9 @@ resource "aws_eks_addon" "coredns" {
 
   addon_version = var.coredns_version
 
+  # Configuration values for tolerations to run on tainted nodes
+  configuration_values = var.coredns_configuration_values
+
   resolve_conflicts_on_create = var.resolve_conflicts_on_create
   resolve_conflicts_on_update = var.resolve_conflicts_on_update
 

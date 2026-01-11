@@ -85,8 +85,16 @@ module "eks_nodegroup_app" {
 
   taints = var.app_node_taints
 
-  enable_coredns_addon        = false # Managed at cluster level via cluster_addons
-  coredns_version             = var.coredns_version
+  # CoreDNS addon with tolerations to run on tainted nodes
+  enable_coredns_addon = true
+  coredns_version      = var.coredns_version
+  coredns_configuration_values = jsonencode({
+    tolerations = [
+      {
+        operator = "Exists"
+      }
+    ]
+  })
   resolve_conflicts_on_create = var.resolve_conflicts_on_create
   resolve_conflicts_on_update = var.resolve_conflicts_on_update
 

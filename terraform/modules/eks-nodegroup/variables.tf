@@ -84,6 +84,12 @@ variable "resolve_conflicts_on_update" {
   default     = "OVERWRITE"
 }
 
+variable "coredns_configuration_values" {
+  description = "Configuration values for CoreDNS addon (JSON string)"
+  type        = string
+  default     = null
+}
+
 variable "taints" {
   description = "Taints to apply to nodes in the node group"
   type = map(object({
