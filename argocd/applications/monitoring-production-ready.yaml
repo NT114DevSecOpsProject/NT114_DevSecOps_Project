@@ -67,7 +67,7 @@ spec:
             storageSpec:
               volumeClaimTemplate:
                 spec:
-                  storageClassName: gp3  # EKS gp3 for cost optimization
+                  storageClassName: gp2  # EKS gp3 for cost optimization
                   accessModes: ["ReadWriteOnce"]
                   resources:
                     requests:
@@ -90,7 +90,7 @@ spec:
             storage:
               volumeClaimTemplate:
                 spec:
-                  storageClassName: gp3
+                  storageClassName: gp2
                   accessModes: ["ReadWriteOnce"]
                   resources:
                     requests:
@@ -113,7 +113,7 @@ spec:
           replicas: 1
           persistence:
             enabled: true
-            storageClassName: gp3
+            storageClassName: gp2
             accessModes: ["ReadWriteOnce"]
             size: 10Gi
           admin:
@@ -140,10 +140,9 @@ spec:
               alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
               alb.ingress.kubernetes.io/group.name: monitoring-internal
             hosts:
-              - host: grafana.internal.codeland.local
-                paths:
-                  - path: /
-                    pathType: Prefix
+              - grafana.internal.codeland.local
+            paths:
+              - /
           resources:
             requests:
               memory: 128Mi
