@@ -87,3 +87,60 @@ class Score(db.Model):
             logger.exception("Full traceback:")
             db.session.rollback()
             raise e
+    
+    def to_json(self):
+        """Convert entity to JSON with normalized results and user_results."""
+        logger.debug(f"Converting Score {self.id} to JSON")
+        results_array, all_correct = self._normalize_results(self.results)
+        user_results_array = self._normalize_user_results(self.user_results)
+
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "exercise_id": self.exercise_id,
+            "answer": self.answer,
+            "results": results_array,
+            "user_results": user_results_array,
+            "all_correct": all_correct,
+            "created_at": self._iso_or_none(self.created_at),
+            "updated_at": self._iso_or_none(self.updated_at),
+        }
+
+    @staticmethod
+    def _normalize_results(results):
+        """Return (results_array, all_correct)."""
+        if not results:
+            return [], False
+
+        if isinstance(results, dict):
+            if "passed" in results:
+                passed = bool(results["passed"])
+                return [passed], passed
+            test_results = results.get("test_results")
+            if isinstance(test_results, list):
+                arr = test_results
+            else:
+                arr = [True]
+            return arr, (all(arr) if arr else False)
+
+        if isinstance(results, list):
+            arr = results
+            return arr, (all(arr) if arr else False)
+
+        val = bool(results)
+        return [val], val
+
+    @staticmethod
+    def _normalize_user_results(user_results):
+        """Normalize user_results to list[str]."""
+        if not user_results:
+            return []
+        if isinstance(user_results, dict):
+            return [str(v) for v in user_results.values()]
+        if isinstance(user_results, list):
+            return [str(item) for item in user_results]
+        return [str(user_results)]
+
+    @staticmethod
+    def _iso_or_none(dt):
+        return dt.isoformat() if dt else None
