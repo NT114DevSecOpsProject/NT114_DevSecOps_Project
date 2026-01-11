@@ -139,10 +139,10 @@ jobs:
           ls -la coverage.xml
           echo ""
           echo "=== Fix Coverage XML paths ==="
-          sed -i 's|<source>.*</source>|<source>.</source>|g' coverage.xml
-          sed -i 's|filename="|filename="app/|g' coverage.xml
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
           echo "=== Verify Fixed Coverage ==="
-          head -30 coverage.xml
+          head -40 coverage.xml
         continue-on-error: true
       
       - name: SonarCloud Scan - Exercises Service
@@ -182,11 +182,18 @@ jobs:
           echo "=== Coverage Generated ==="
           ls -la coverage.xml
           echo ""
+          echo "=== Original Coverage XML ==="
+          head -40 coverage.xml
+          echo ""
           echo "=== Fix Coverage XML paths ==="
-          sed -i 's|<source>.*</source>|<source>.</source>|g' coverage.xml
-          sed -i 's|filename="|filename="app/|g' coverage.xml
-          echo "=== Verify Fixed Coverage ==="
-          head -30 coverage.xml
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
+          echo ""
+          echo "=== Fixed Coverage XML ==="
+          head -40 coverage.xml
+          echo ""
+          echo "=== Verify app/ in filenames ==="
+          grep 'filename="app/' coverage.xml | head -5 || echo "⚠️ No app/ files found!"
         continue-on-error: true
       
       - name: SonarCloud Scan - Scores Service
@@ -226,11 +233,18 @@ jobs:
           echo "=== Coverage Generated ==="
           ls -la coverage.xml
           echo ""
+          echo "=== Original Coverage XML ==="
+          head -40 coverage.xml
+          echo ""
           echo "=== Fix Coverage XML paths ==="
-          sed -i 's|<source>.*</source>|<source>.</source>|g' coverage.xml
-          sed -i 's|filename="|filename="app/|g' coverage.xml
-          echo "=== Verify Fixed Coverage ==="
-          head -30 coverage.xml
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
+          echo ""
+          echo "=== Fixed Coverage XML ==="
+          head -40 coverage.xml
+          echo ""
+          echo "=== Verify app/ in filenames ==="
+          grep 'filename="app/' coverage.xml | head -5 || echo "⚠️ No app/ files found!"
         continue-on-error: true
       
       - name: SonarCloud Scan - User Management Service
