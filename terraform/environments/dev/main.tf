@@ -423,7 +423,7 @@ module "bastion_host" {
   s3_bucket_name = aws_s3_bucket.migration.bucket
 
   root_volume_size = 8 # Smaller for demo
-  allocate_eip     = true
+  allocate_eip     = false  # No EIP - use regular public IP to save cost
 
   tags = merge(var.tags, {
     Name = var.bastion_instance_name
