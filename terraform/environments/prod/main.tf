@@ -221,24 +221,27 @@ module "alb_controller" {
   additional_helm_values = var.additional_helm_values
 }
 
-# EBS CSI Driver Addon - Comment out for initial deployment (depends on ALB controller)
-# Uncomment after ALB controller module is uncommented
-# resource "aws_eks_addon" "ebs_csi_driver" {
-#   count = var.enable_ebs_csi_controller ? 1 : 0
-#
-#   cluster_name             = module.eks_cluster.cluster_name
-#   addon_name               = "aws-ebs-csi-driver"
-#   addon_version            = var.ebs_csi_addon_version
-#   service_account_role_arn = module.alb_controller.ebs_csi_controller_role_arn
-#
-#   resolve_conflicts_on_create = "OVERWRITE"
-#   resolve_conflicts_on_update = "OVERWRITE"
-#
-#   depends_on = [
-#     module.eks_nodegroup_app,
-#     module.alb_controller
-#   ]
-# }
+# EBS CSI Driver Module - Storage provisioner for EBS volumes
+module "ebs_csi_driver" {
+  source = "../../modules/ebs-csi-driver"
+
+  cluster_name      = module.eks_cluster.cluster_name
+  oidc_provider     = module.eks_cluster.oidc_provider
+  oidc_provider_arn = module.eks_cluster.oidc_provider_arn
+
+  addon_version = var.ebs_csi_addon_version
+
+  tags = {
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+  }
+
+  depends_on = [
+    module.eks_nodegroup_application,
+    module.eks_nodegroup_argocd,
+    module.eks_nodegroup_monitoring
+  ]
+}
 
 # RDS PostgreSQL Module
 module "rds_postgresql" {
