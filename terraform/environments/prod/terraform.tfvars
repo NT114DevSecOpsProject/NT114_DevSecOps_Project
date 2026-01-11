@@ -26,7 +26,7 @@ app_node_max_size       = 6
 argocd_node_instance_types = ["t3.medium", "t3a.medium"]
 argocd_node_capacity_type  = "SPOT"
 argocd_node_min_size       = 1
-argocd_node_desired_size   = 1
+argocd_node_desired_size   = 2
 argocd_node_max_size       = 2
 
 # Monitoring Node Group - min=1, desired=1, max=2 (Spot Fleet - Dedicated with taints)
