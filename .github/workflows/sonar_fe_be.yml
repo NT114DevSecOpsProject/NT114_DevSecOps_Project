@@ -137,14 +137,17 @@ jobs:
           echo ""
           echo "=== Coverage Generated ==="
           ls -la coverage.xml
-          echo ""
+        continue-on-error: true
+      
+      - name: Fix Coverage Paths - Exercises Service
+        working-directory: microservices/exercises-service
+        run: |
           echo "=== Fix Coverage XML paths ==="
           sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
           sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
           echo "=== Verify Fixed Coverage ==="
           head -40 coverage.xml
-        continue-on-error: true
-      
+
       - name: SonarCloud Scan - Exercises Service
         uses: SonarSource/sonarcloud-github-action@v3.1.0
         env:
