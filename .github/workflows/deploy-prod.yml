@@ -849,15 +849,72 @@ jobs:
           kubectl get deployment cluster-autoscaler -n kube-system
           kubectl logs -n kube-system deployment/cluster-autoscaler --tail=10 || echo "INFO: Logs will be available once pod starts"
 
+      - name: Install eksctl CLI
+        run: |
+          echo "Installing eksctl CLI..."
+
+          # Check if eksctl is already installed
+          if command -v eksctl &>/dev/null; then
+            echo "eksctl already installed: $(eksctl version)"
+          else
+            echo "Installing eksctl..."
+            EKSCTL_VERSION="0.167.0"
+            curl -sLO "https://github.com/weaveworks/eksctl/releases/download/v${EKSCTL_VERSION}/eksctl_Linux_amd64.tar.gz"
+            tar -xzf eksctl_Linux_amd64.tar.gz
+            sudo mv eksctl /usr/local/bin/
+            rm eksctl_Linux_amd64.tar.gz
+            echo "eksctl installed: $(eksctl version)"
+          fi
+
+      - name: Verify OIDC Provider
+        run: |
+          echo "Verifying OIDC provider for EKS cluster..."
+          set -x  # Enable debug tracing
+
+          # Get OIDC issuer URL
+          OIDC_ISSUER=$(aws eks describe-cluster --name eks-prod --region us-east-1 --query "cluster.identity.oidc.issuer" --output text 2>&1)
+
+          if [ -z "$OIDC_ISSUER" ] || [ "$OIDC_ISSUER" == "None" ]; then
+            echo "ERROR: No OIDC issuer found for cluster"
+            echo "Creating OIDC provider..."
+            eksctl utils associate-iam-oidc-provider \
+              --cluster eks-prod \
+              --region us-east-1 \
+              --approve
+            echo "OIDC provider created"
+          else
+            echo "OIDC issuer found: $OIDC_ISSUER"
+
+            # Extract provider ID from URL
+            PROVIDER_ID=$(echo "$OIDC_ISSUER" | sed 's|https://||')
+
+            # Check if provider exists in IAM
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            if aws iam get-open-id-connect-provider \
+              --open-id-connect-provider-arn "arn:aws:iam::${ACCOUNT_ID}:oidc-provider/${PROVIDER_ID}" &>/dev/null; then
+              echo "OIDC provider already exists in IAM"
+            else
+              echo "OIDC provider not in IAM, creating..."
+              eksctl utils associate-iam-oidc-provider \
+                --cluster eks-prod \
+                --region us-east-1 \
+                --approve
+              echo "OIDC provider created"
+            fi
+          fi
+
+          set +x  # Disable debug tracing
+
       - name: Install AWS Load Balancer Controller
         run: |
-          echo "🚀 Installing AWS Load Balancer Controller for Ingress support..."
+          echo "Installing AWS Load Balancer Controller for Ingress support..."
+          set -x  # Enable debug tracing for troubleshooting
 
           # Check if ALB controller already exists
           if kubectl get deployment aws-load-balancer-controller -n kube-system &>/dev/null; then
-            echo "✅ AWS Load Balancer Controller already installed"
+            echo "AWS Load Balancer Controller already installed"
           else
-            echo "📦 Installing AWS Load Balancer Controller..."
+            echo "Installing AWS Load Balancer Controller..."
 
             # Create IAM policy if not exists
             POLICY_NAME="AWSLoadBalancerControllerIAMPolicy-prod"
@@ -869,9 +926,9 @@ jobs:
               aws iam create-policy \
                 --policy-name ${POLICY_NAME} \
                 --policy-document file:///tmp/iam_policy.json
-              echo "✅ IAM policy created"
+              echo "IAM policy created"
             else
-              echo "✅ IAM policy already exists"
+              echo "IAM policy already exists"
             fi
 
             # Create IAM service account using eksctl
@@ -886,44 +943,67 @@ jobs:
                 --role-name ${ROLE_NAME} \
                 --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
                 --approve \
-                --override-existing-serviceaccounts
-              echo "✅ IAM service account created"
+                --override-existing-serviceaccounts \
+                --region us-east-1
+              echo "IAM service account created"
             else
-              echo "✅ IAM service account already exists"
+              echo "IAM service account already exists"
             fi
 
-            # Install ALB controller via Helm
+            # Install ALB controller via Helm with retry logic
             echo "Installing Helm chart..."
             helm repo add eks https://aws.github.io/eks-charts
             helm repo update
 
-            helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-              -n kube-system \
-              --set clusterName=eks-prod \
-              --set serviceAccount.create=false \
-              --set serviceAccount.name=aws-load-balancer-controller \
-              --set tolerations[0].operator=Exists \
-              --wait \
-              --timeout 5m
+            # Retry logic for Helm install
+            MAX_RETRIES=3
+            RETRY_COUNT=0
+            until [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
+              echo "Helm install attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
 
-            echo "✅ AWS Load Balancer Controller installed"
+              if helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+                -n kube-system \
+                --set clusterName=eks-prod \
+                --set serviceAccount.create=false \
+                --set serviceAccount.name=aws-load-balancer-controller \
+                --set tolerations[0].operator=Exists \
+                --wait \
+                --timeout 10m; then
+                echo "Helm install successful"
+                break
+              else
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                  echo "WARNING: Helm install failed, retrying in 30s..."
+                  sleep 30
+                else
+                  echo "ERROR: Helm install failed after $MAX_RETRIES attempts"
+                  exit 1
+                fi
+              fi
+            done
+
+            echo "AWS Load Balancer Controller installed"
           fi
 
           # Verify installation
-          echo "📊 Verifying AWS Load Balancer Controller..."
+          echo "Verifying AWS Load Balancer Controller..."
           kubectl get deployment aws-load-balancer-controller -n kube-system
           kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
 
           # Wait for controller to be ready
           kubectl wait --for=condition=available \
-            --timeout=180s \
+            --timeout=300s \
             deployment/aws-load-balancer-controller \
             -n kube-system || {
-              echo "⚠️ AWS Load Balancer Controller not ready yet"
+              echo "WARNING: AWS Load Balancer Controller not ready yet"
               kubectl describe deployment aws-load-balancer-controller -n kube-system
+              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50
+              exit 1
             }
 
-          echo "✅ AWS Load Balancer Controller is ready"
+          echo "AWS Load Balancer Controller is ready"
+          set +x  # Disable debug tracing
 
       - name: Wait for pods to be healthy
         run: |

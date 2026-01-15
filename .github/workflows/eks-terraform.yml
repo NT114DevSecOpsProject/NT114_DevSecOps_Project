@@ -60,7 +60,7 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          echo "✅ AWS credentials configured successfully"
+          echo "AWS credentials configured successfully"
           echo ""
           echo "### EKS Cluster Status Check" >> $GITHUB_STEP_SUMMARY
 
@@ -74,9 +74,9 @@ jobs:
           fi
 
           if aws eks describe-cluster --name $CLUSTER_NAME --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1; then
-            echo "✅ EKS cluster access verified for $CLUSTER_NAME"
+            echo "EKS cluster access verified for $CLUSTER_NAME"
           else
-            echo "⚠️ EKS cluster access blocked - checking alternative permissions..."
+            echo "WARNING: EKS cluster access blocked - checking alternative permissions..."
             aws eks list-clusters --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1 || echo "EKS API access restricted"
           fi
 
@@ -94,7 +94,7 @@ jobs:
         if: github.event.inputs.action == 'apply'
         continue-on-error: true
         run: |
-          echo "🔄 Checking for existing EKS access entries to import..."
+          echo "Checking for existing EKS access entries to import..."
 
           # Get current IAM user/role ARN
           CURRENT_ARN=$(aws sts get-caller-identity --query Arn --output text)
@@ -107,24 +107,40 @@ jobs:
           fi
           echo "Checking access entries for cluster: $CLUSTER_NAME"
 
-          # Check if access entry exists
+          # Import test_user access entry if needed
+          TEST_USER_ARN="arn:aws:iam::039612870452:user/test_user"
+          echo "Checking for test_user access entry..."
+          if aws eks describe-access-entry \
+            --cluster-name "$CLUSTER_NAME" \
+            --principal-arn "$TEST_USER_ARN" \
+            --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "test_user access entry exists - importing into Terraform state..."
+            terraform import \
+              'module.iam_access.aws_eks_access_entry.current_user_access' \
+              "${CLUSTER_NAME}:${TEST_USER_ARN}" 2>&1 | grep -v "Refreshing state" || true
+            echo "test_user import completed"
+          else
+            echo "test_user access entry not found - will be created by Terraform"
+          fi
+
+          # Check if current user access entry exists
           if aws eks describe-access-entry \
             --cluster-name "$CLUSTER_NAME" \
             --principal-arn "$CURRENT_ARN" \
             --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-            echo "📥 Access entry already exists - importing into Terraform state..."
+            echo "Access entry already exists - importing into Terraform state..."
 
             # Import the access entry into Terraform state
             terraform import \
               'module.iam_access.aws_eks_access_entry.current_user_access' \
               "${CLUSTER_NAME}:${CURRENT_ARN}" 2>&1 | grep -v "Refreshing state" || true
 
-            echo "✅ Import completed (or already in state)"
+            echo "Import completed (or already in state)"
           else
-            echo "ℹ️ No existing access entry found - Terraform will create it"
+            echo "No existing access entry found - Terraform will create it"
           fi
 
-          echo "🎯 Access entry check completed"
+          echo "Access entry check completed"
 
       - name: Terraform Plan
         id: plan
@@ -133,17 +149,17 @@ jobs:
         run: |
           echo "Running Terraform plan with enhanced error handling..."
           if terraform plan -out=tfplan 2>&1 | tee tfplan.log; then
-            echo "✅ Terraform plan completed successfully"
+            echo "Terraform plan completed successfully"
           else
-            echo "❌ Terraform plan failed. Checking for SCP-related errors..."
+            echo "ERROR: Terraform plan failed. Checking for SCP-related errors..."
             if grep -q "AccessDeniedException" tfplan.log; then
-              echo "❌ EKS access blocked by Service Control Policy"
-              echo "🔄 Please ensure AWS Organizations SCP allows EKS service access"
+              echo "ERROR: EKS access blocked by Service Control Policy"
+              echo "Please ensure AWS Organizations SCP allows EKS service access"
             fi
             if grep -q "inline_policy is deprecated" tfplan.log; then
-              echo "⚠️ inline_policy deprecation warning detected (non-blocking)"
+              echo "WARNING: inline_policy deprecation warning detected (non-blocking)"
             fi
-            echo "🔄 Plan failed - will trigger auto-destroy if action is apply"
+            echo "Plan failed - will trigger auto-destroy if action is apply"
             exit 1
           fi
 
@@ -154,14 +170,14 @@ jobs:
         run: |
           echo "Running Terraform apply with enhanced error handling..."
           if terraform apply -auto-approve tfplan 2>&1 | tee tfapply.log; then
-            echo "✅ Terraform apply completed successfully"
+            echo "Terraform apply completed successfully"
           else
-            echo "❌ Terraform apply failed. Checking for SCP-related errors..."
+            echo "ERROR: Terraform apply failed. Checking for SCP-related errors..."
             if grep -q "AccessDeniedException" tfapply.log; then
-              echo "❌ EKS access blocked by Service Control Policy"
-              echo "🔄 Please ensure AWS Organizations SCP allows EKS service access"
+              echo "ERROR: EKS access blocked by Service Control Policy"
+              echo "Please ensure AWS Organizations SCP allows EKS service access"
             fi
-            echo "🔄 Deployment failed - will trigger auto-destroy"
+            echo "Deployment failed - will trigger auto-destroy"
             exit 1
           fi
 
@@ -173,8 +189,8 @@ jobs:
           terraform destroy -auto-approve 2>&1 | tee tfdestroy.log || {
             echo "Terraform destroy failed. Checking for SCP-related errors..."
             if grep -q "AccessDeniedException" tfdestroy.log; then
-              echo "❌ EKS access blocked by Service Control Policy"
-              echo "🔄 Please ensure AWS Organizations SCP allows EKS service access"
+              echo "ERROR: EKS access blocked by Service Control Policy"
+              echo "Please ensure AWS Organizations SCP allows EKS service access"
               exit 1
             fi
           }
@@ -194,9 +210,9 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             --name $CLUSTER_NAME \
             --alias $CLUSTER_NAME; then
-            echo "✅ kubeconfig updated successfully" >> $GITHUB_STEP_SUMMARY
+            echo "kubeconfig updated successfully" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Failed to update kubeconfig" >> $GITHUB_STEP_SUMMARY
+            echo "ERROR: Failed to update kubeconfig" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 
@@ -210,9 +226,9 @@ jobs:
           # Test EKS token generation
           echo "### EKS Token Generation Test" >> $GITHUB_STEP_SUMMARY
           if aws eks get-token --cluster-name $CLUSTER_NAME --region ${{ env.AWS_REGION }} >> $GITHUB_STEP_SUMMARY 2>&1; then
-            echo "✅ EKS token generation successful" >> $GITHUB_STEP_SUMMARY
+            echo "EKS token generation successful" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ EKS token generation failed" >> $GITHUB_STEP_SUMMARY
+            echo "ERROR: EKS token generation failed" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 
@@ -230,10 +246,10 @@ jobs:
             echo "Attempt $((RETRY_COUNT + 1)) of $MAX_RETRIES" >> $GITHUB_STEP_SUMMARY
 
             if kubectl get nodes --v=2 >> $GITHUB_STEP_SUMMARY 2>&1; then
-              echo "✅ kubectl access verified successfully" >> $GITHUB_STEP_SUMMARY
+              echo "kubectl access verified successfully" >> $GITHUB_STEP_SUMMARY
               break
             else
-              echo "⚠️ kubectl access failed, retrying..." >> $GITHUB_STEP_SUMMARY
+              echo "WARNING: kubectl access failed, retrying..." >> $GITHUB_STEP_SUMMARY
               RETRY_COUNT=$((RETRY_COUNT + 1))
               sleep 15
 
@@ -249,7 +265,7 @@ jobs:
           done
 
           if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-            echo "❌ All kubectl access attempts failed" >> $GITHUB_STEP_SUMMARY
+            echo "ERROR: All kubectl access attempts failed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Debugging Information" >> $GITHUB_STEP_SUMMARY
             echo "AWS Identity:" >> $GITHUB_STEP_SUMMARY
@@ -271,7 +287,7 @@ jobs:
       - name: Deployment Summary
         if: github.event.inputs.action != 'destroy'
         run: |
-          echo "### Terraform ${{ github.event.inputs.action }} completed successfully 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "### Terraform ${{ github.event.inputs.action }} completed successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Action:** ${{ github.event.inputs.action }}" >> $GITHUB_STEP_SUMMARY
           echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
@@ -290,22 +306,22 @@ jobs:
            steps.plan.outcome == 'failure' ||
            steps.apply.outcome == 'failure')
         run: |
-          echo "❌ Deployment failed. Auto-destroying resources..."
+          echo "ERROR: Deployment failed. Auto-destroying resources..."
           echo "Failed step: Init=${{ steps.init.outcome }}, Plan=${{ steps.plan.outcome }}, Apply=${{ steps.apply.outcome }}"
 
           # Always re-init to ensure proper state
           terraform init -upgrade
 
           # Force destroy all resources to prevent costs
-          echo "🔥 Destroying all resources to prevent costs..."
+          echo "Destroying all resources to prevent costs..."
           terraform destroy -auto-approve 2>&1 | tee "tfdestroy.log" || {
-            echo "⚠️ Destroy failed, attempting with lock override after 30s wait..."
+            echo "WARNING: Destroy failed, attempting with lock override after 30s wait..."
             sleep 30
             terraform destroy -auto-approve -lock=false || true
           }
 
-          echo "🧹 Auto-destroy completed successfully"
-          echo "💰 AWS resources cleaned up to prevent further costs"
+          echo "Auto-destroy completed successfully"
+          echo "AWS resources cleaned up to prevent further costs"
 
           # Mark job as failed to indicate deployment didn't succeed
           exit 1
