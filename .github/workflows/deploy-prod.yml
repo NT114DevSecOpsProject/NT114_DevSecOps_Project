@@ -1220,6 +1220,109 @@ jobs:
 
           set +x  # Disable debug tracing
 
+      - name: Install AWS EBS CSI Driver
+        run: |
+          echo "Installing AWS EBS CSI Driver for persistent storage (gp3)..."
+          set -x
+
+          # Check if EBS CSI Driver already installed
+          if kubectl get deployment ebs-csi-controller -n kube-system &>/dev/null; then
+            echo "EBS CSI Driver already installed"
+          else
+            echo "Installing EBS CSI Driver..."
+
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+            # Create IAM policy for EBS CSI Driver if not exists
+            POLICY_NAME="AmazonEBSCSIDriverPolicy-prod"
+            if ! aws iam get-policy --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}" &>/dev/null; then
+              echo "Creating EBS CSI Driver IAM policy..."
+              curl -o /tmp/ebs_csi_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-ebs-csi-driver/master/docs/example-iam-policy.json
+              aws iam create-policy \
+                --policy-name ${POLICY_NAME} \
+                --policy-document file:///tmp/ebs_csi_policy.json
+              echo "EBS CSI Driver IAM policy created"
+            else
+              echo "EBS CSI Driver IAM policy already exists"
+            fi
+
+            # Create IAM service account for EBS CSI Driver
+            ROLE_NAME="AmazonEKSEBSCSIDriverRole-prod"
+            if ! aws iam get-role --role-name ${ROLE_NAME} &>/dev/null; then
+              echo "Creating EBS CSI Driver IAM service account..."
+              eksctl create iamserviceaccount \
+                --cluster=eks-prod \
+                --namespace=kube-system \
+                --name=ebs-csi-controller-sa \
+                --role-name ${ROLE_NAME} \
+                --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
+                --approve \
+                --override-existing-serviceaccounts \
+                --region us-east-1
+              echo "EBS CSI Driver IAM service account created"
+            else
+              echo "EBS CSI Driver IAM service account already exists"
+            fi
+
+            # Install EBS CSI Driver using Helm
+            echo "Installing EBS CSI Driver via Helm..."
+            helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+            helm repo update
+
+            helm install aws-ebs-csi-driver aws-ebs-csi-driver/aws-ebs-csi-driver \
+              --namespace kube-system \
+              --set controller.serviceAccount.create=false \
+              --set controller.serviceAccount.name=ebs-csi-controller-sa \
+              --set controller.tolerations[0].operator=Exists \
+              --set node.tolerations[0].operator=Exists \
+              --wait \
+              --timeout 5m
+
+            echo "EBS CSI Driver installed"
+          fi
+
+          # Verify EBS CSI Driver
+          echo "Verifying EBS CSI Driver..."
+          kubectl get deployment ebs-csi-controller -n kube-system
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-ebs-csi-driver
+
+          # Wait for controller to be ready
+          kubectl wait --for=condition=available \
+            --timeout=300s \
+            deployment/ebs-csi-controller \
+            -n kube-system || {
+              echo "WARNING: EBS CSI Driver controller not ready yet"
+              kubectl describe deployment ebs-csi-controller -n kube-system
+              kubectl logs -n kube-system -l app=ebs-csi-controller --tail=50
+            }
+
+          echo "EBS CSI Driver is ready"
+          set +x
+
+      - name: Create gp3 StorageClass
+        run: |
+          echo "Creating gp3 StorageClass for better performance and cost..."
+
+          cat <<EOF | kubectl apply -f -
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: gp3
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "false"
+          provisioner: ebs.csi.aws.com
+          parameters:
+            type: gp3
+            encrypted: "true"
+            fsType: ext4
+          volumeBindingMode: WaitForFirstConsumer
+          allowVolumeExpansion: true
+          reclaimPolicy: Delete
+          EOF
+
+          echo "gp3 StorageClass created"
+          kubectl get storageclass gp3
+
       - name: Install AWS Load Balancer Controller
         run: |
           echo "Installing AWS Load Balancer Controller for Ingress support..."
