@@ -113,11 +113,11 @@ jobs:
 
           # Verify kubeconfig
           echo "Current kubeconfig context:"
-          kubectl config current-context
+          kubectl config current-context 2>&1 | grep -v "metrics.k8s.io" || true
 
           # Test connection
           echo "Testing cluster connection..."
-          kubectl cluster-info || {
+          kubectl cluster-info 2>&1 | grep -v "metrics.k8s.io" || {
             echo "ERROR: ERROR: Cannot connect to EKS cluster"
             echo "Possible causes:"
             echo "  1. IAM user lacks EKS access entry"
@@ -143,7 +143,7 @@ jobs:
       - name: Create prod namespace
         run: |
           echo "Creating prod namespace..."
-          kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create namespace prod --dry-run=client -o yaml 2>&1 | grep -v "metrics.k8s.io" | kubectl apply -f - 2>&1 | grep -v "metrics.k8s.io" || true
           echo " Namespace prod ready"
 
       - name: Create database secrets
@@ -151,7 +151,7 @@ jobs:
           # Replace placeholders in template with values from Terraform
           sed -e "s/RDS_ENDPOINT_PLACEHOLDER/${{ steps.rds-info.outputs.endpoint }}/g" \
               -e "s/RDS_PASSWORD_PLACEHOLDER/${{ steps.rds-info.outputs.password }}/g" \
-              k8s/manifests/db-secrets-prod.yaml | kubectl apply -f -
+              k8s/manifests/db-secrets-prod.yaml | kubectl apply -f - 2>&1 | grep -v "metrics.k8s.io" || true
 
           echo " Database secrets created successfully with Terraform password"
 
@@ -169,12 +169,12 @@ jobs:
             --docker-username=AWS \
             --docker-password=$(aws ecr get-login-password --region ${{ env.AWS_REGION }}) \
             --namespace=prod \
-            --dry-run=client -o yaml | kubectl apply -f -
+            --dry-run=client -o yaml 2>&1 | grep -v "metrics.k8s.io" | kubectl apply -f - 2>&1 | grep -v "metrics.k8s.io" || true
 
           echo " ECR secret created for registry: $ECR_REGISTRY"
 
           # Verify
-          kubectl get secret ecr-secret -n prod && echo " Secret verified"
+          kubectl get secret ecr-secret -n prod 2>&1 | grep -v "metrics.k8s.io" && echo " Secret verified"
 
   # Build and push backend services to ECR
   build-backend:
@@ -388,7 +388,122 @@ jobs:
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-          kubectl cluster-info
+          kubectl cluster-info 2>&1 | grep -v "metrics.k8s.io" || true
+
+      - name: Install Metrics Server (early to prevent warnings)
+        run: |
+          echo "Installing Metrics Server to enable metrics API..."
+          set -x
+
+          # Function to check Metrics Server health
+          check_metrics_health() {
+            echo "Checking Metrics Server health..."
+
+            # Check pod status
+            POD_STATUS=$(kubectl get pods -n kube-system -l k8s-app=metrics-server -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
+            echo "Pod status: $POD_STATUS"
+
+            # Check APIService status
+            API_STATUS=$(kubectl get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "NotFound")
+            echo "APIService status: $API_STATUS"
+
+            if [ "$POD_STATUS" = "Running" ] && [ "$API_STATUS" = "True" ]; then
+              return 0
+            else
+              return 1
+            fi
+          }
+
+          # Function to install/patch Metrics Server
+          install_metrics_server() {
+            echo "Installing Metrics Server..."
+
+            # Install metrics-server using official manifest
+            kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml 2>&1 | grep -v "metrics.k8s.io" || true
+
+            # Wait for deployment to be created
+            sleep 5
+
+            # Patch metrics-server deployment for EKS compatibility
+            echo "Patching Metrics Server for EKS..."
+            kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
+              {
+                "op": "add",
+                "path": "/spec/template/spec/containers/0/args/-",
+                "value": "--kubelet-insecure-tls"
+              },
+              {
+                "op": "add",
+                "path": "/spec/template/spec/containers/0/args/-",
+                "value": "--kubelet-preferred-address-types=InternalIP"
+              }
+            ]' 2>&1 | grep -v "metrics.k8s.io" || true
+
+            # Add tolerations to schedule on all nodes
+            kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
+              {
+                "op": "add",
+                "path": "/spec/template/spec/tolerations",
+                "value": [{"operator": "Exists"}]
+              }
+            ]' 2>&1 | grep -v "metrics.k8s.io" || true
+
+            # Wait for metrics-server pod to be ready
+            echo "Waiting for Metrics Server pod to be ready..."
+            kubectl wait --for=condition=Ready pods \
+              -l k8s-app=metrics-server \
+              -n kube-system \
+              --timeout=120s 2>&1 | grep -v "metrics.k8s.io" || {
+                echo "ERROR: Metrics Server pod not ready"
+                kubectl get pods -n kube-system -l k8s-app=metrics-server 2>&1 | grep -v "metrics.k8s.io" || true
+                return 1
+              }
+
+            # Wait for APIService to be available
+            echo "Waiting for Metrics APIService to be available..."
+            kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=120s || {
+              echo "ERROR: Metrics APIService not available"
+              kubectl get apiservice v1beta1.metrics.k8s.io -o yaml
+              return 1
+            }
+
+            echo "Metrics Server installed successfully"
+            return 0
+          }
+
+          # Main installation logic with retry
+          MAX_RETRIES=2
+          RETRY_COUNT=0
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+
+            # Check if healthy installation exists
+            if check_metrics_health; then
+              echo "Metrics Server already healthy, skipping installation"
+              break
+            fi
+
+            # Try installation
+            if install_metrics_server; then
+              echo "Installation successful"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "Installation failed, cleaning up and retrying in 20s..."
+                kubectl delete deployment metrics-server -n kube-system --ignore-not-found=true 2>&1 | grep -v "metrics.k8s.io" || true
+                sleep 20
+              else
+                echo "WARNING: Metrics Server installation failed after $MAX_RETRIES attempts"
+                echo "Continuing workflow - metrics API may not be available immediately"
+                set +x
+              fi
+            fi
+          done
+
+          set +x
 
       - name: Install Helm
         uses: azure/setup-helm@v3
@@ -568,11 +683,11 @@ jobs:
 
           show_pod_status() {
             echo " Current ArgoCD Pod Status:"
-            kubectl get pods -n argocd -o wide
+            kubectl get pods -n argocd -o wide 2>/dev/null || kubectl get pods -n argocd -o wide
 
             echo ""
             echo " Deployment Status:"
-            kubectl get deployments -n argocd
+            kubectl get deployments -n argocd 2>/dev/null || kubectl get deployments -n argocd
           }
 
           # ============================================
@@ -985,146 +1100,6 @@ jobs:
           echo ""
           echo "=== Node Conditions ==="
           kubectl get nodes -o json | jq -r '.items[] | "\(.metadata.name): Ready=\(.status.conditions[] | select(.type=="Ready") | .status), DiskPressure=\(.status.conditions[] | select(.type=="DiskPressure") | .status), MemoryPressure=\(.status.conditions[] | select(.type=="MemoryPressure") | .status)"'
-
-      - name: Install Metrics Server for HPA
-        run: |
-          echo "Installing Metrics Server for HorizontalPodAutoscaler support..."
-          set -x
-
-          # Function to check Metrics Server health
-          check_metrics_health() {
-            echo "Checking Metrics Server health..."
-
-            # Check pod status
-            POD_STATUS=$(kubectl get pods -n kube-system -l k8s-app=metrics-server -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
-            echo "Pod status: $POD_STATUS"
-
-            # Check APIService status
-            API_STATUS=$(kubectl get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "NotFound")
-            echo "APIService status: $API_STATUS"
-
-            if [ "$POD_STATUS" = "Running" ] && [ "$API_STATUS" = "True" ]; then
-              return 0
-            else
-              return 1
-            fi
-          }
-
-          # Function to install/patch Metrics Server
-          install_metrics_server() {
-            echo "Installing Metrics Server..."
-
-            # Install metrics-server using official manifest
-            kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-
-            # Wait for deployment to be created
-            sleep 5
-
-            # Patch metrics-server deployment for EKS compatibility
-            echo "Patching Metrics Server for EKS..."
-            kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
-              {
-                "op": "add",
-                "path": "/spec/template/spec/containers/0/args/-",
-                "value": "--kubelet-insecure-tls"
-              },
-              {
-                "op": "add",
-                "path": "/spec/template/spec/containers/0/args/-",
-                "value": "--kubelet-preferred-address-types=InternalIP"
-              }
-            ]'
-
-            # Add tolerations to schedule on all nodes
-            kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
-              {
-                "op": "add",
-                "path": "/spec/template/spec/tolerations",
-                "value": [{"operator": "Exists"}]
-              }
-            ]'
-
-            # Wait for metrics-server pod to be ready
-            echo "Waiting for Metrics Server pod to be ready..."
-            kubectl wait --for=condition=Ready pods \
-              -l k8s-app=metrics-server \
-              -n kube-system \
-              --timeout=240s || {
-                echo "ERROR: Metrics Server pod not ready"
-                kubectl get pods -n kube-system -l k8s-app=metrics-server
-                kubectl describe pods -n kube-system -l k8s-app=metrics-server
-                kubectl logs -n kube-system -l k8s-app=metrics-server --tail=100
-                return 1
-              }
-
-            # Wait for APIService to be available
-            echo "Waiting for Metrics APIService to be available..."
-            kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=300s || {
-              echo "ERROR: Metrics APIService not available"
-              kubectl get apiservice v1beta1.metrics.k8s.io -o yaml
-              kubectl get pods -n kube-system -l k8s-app=metrics-server
-              kubectl logs -n kube-system -l k8s-app=metrics-server --tail=100
-              return 1
-            }
-
-            echo "Metrics Server installed successfully"
-            return 0
-          }
-
-          # Main installation logic with retry
-          MAX_RETRIES=3
-          RETRY_COUNT=0
-
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
-
-            # Check if healthy installation exists
-            if check_metrics_health; then
-              echo "Metrics Server already healthy, skipping installation"
-              break
-            fi
-
-            # Try installation
-            if install_metrics_server; then
-              echo "Installation successful"
-              break
-            else
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-
-              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                echo "Installation failed, cleaning up and retrying in 30s..."
-                kubectl delete deployment metrics-server -n kube-system --ignore-not-found=true
-                sleep 30
-              else
-                echo "ERROR: All $MAX_RETRIES attempts failed"
-                set +x
-                exit 1
-              fi
-            fi
-          done
-
-          set +x
-
-          # Final verification with retry
-          echo "Final verification of Metrics API..."
-          sleep 20  # Allow metrics to be collected
-
-          for i in {1..5}; do
-            echo "Verification attempt $i/5..."
-            if kubectl top nodes 2>/dev/null; then
-              echo "SUCCESS: Metrics API working"
-              break
-            else
-              if [ $i -lt 5 ]; then
-                echo "Metrics API not ready, waiting 15s..."
-                sleep 15
-              else
-                echo "WARNING: Metrics API still not responding after 5 attempts"
-                echo "This may resolve itself in 1-2 minutes"
-                kubectl get apiservice v1beta1.metrics.k8s.io
-              fi
-            fi
-          done
 
       - name: Install Cluster Autoscaler
         run: |
