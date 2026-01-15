@@ -660,9 +660,19 @@ jobs:
       - name: Ensure ArgoCD applications exist
         run: |
           echo "Checking ArgoCD applications..."
+          set -e  # Exit on any error
 
           # Create prod namespace if it doesn't exist
           kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
+
+          # Verify ArgoCD Application CRD exists
+          echo "Verifying ArgoCD CRDs..."
+          if ! kubectl get crd applications.argoproj.io &>/dev/null; then
+            echo "ERROR: ArgoCD Application CRD not found!"
+            echo "ArgoCD may not be installed correctly"
+            exit 1
+          fi
+          echo "SUCCESS: ArgoCD CRDs present"
 
           # Create ArgoCD applications for each service
           declare -A services
@@ -674,16 +684,20 @@ jobs:
             ["frontend"]="helm/frontend"
           )
 
+          CREATED_APPS=()
+          FAILED_APPS=()
+
           for service in "${!services[@]}"; do
             APP_NAME="${service}-prod"
             HELM_PATH="${services[$service]}"
 
             if kubectl get application "$APP_NAME" -n argocd &>/dev/null; then
-              echo " Application $APP_NAME already exists"
+              echo "Application $APP_NAME already exists"
+              CREATED_APPS+=("$APP_NAME")
             else
-              echo " Creating ArgoCD application: $APP_NAME (path: $HELM_PATH)"
+              echo "Creating ArgoCD application: $APP_NAME (path: $HELM_PATH)"
 
-              cat <<EOF | kubectl apply -f -
+              if cat <<EOF | kubectl apply -f -
           apiVersion: argoproj.io/v1alpha1
           kind: Application
           metadata:
@@ -710,11 +724,25 @@ jobs:
               syncOptions:
                 - CreateNamespace=true
           EOF
+              then
+                # Verify creation succeeded
+                sleep 2
+                if kubectl get application "$APP_NAME" -n argocd &>/dev/null; then
+                  echo "SUCCESS: Application $APP_NAME created"
+                  CREATED_APPS+=("$APP_NAME")
+                else
+                  echo "ERROR: Application $APP_NAME not found after creation"
+                  FAILED_APPS+=("$APP_NAME")
+                fi
+              else
+                echo "ERROR: Failed to create application $APP_NAME"
+                FAILED_APPS+=("$APP_NAME")
+              fi
             fi
           done
 
           # Setup monitoring prerequisites
-          echo " Setting up monitoring prerequisites..."
+          echo "Setting up monitoring prerequisites..."
 
           # Create namespace (ArgoCD will also create it, but we need it for secret)
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
@@ -726,37 +754,174 @@ jobs:
               --from-literal=admin-user=admin \
               --from-literal=admin-password="$GRAFANA_PASSWORD" \
               -n monitoring
-            echo " Grafana secret created"
+            echo "Grafana secret created"
           else
-            echo " Grafana secret already exists"
+            echo "Grafana secret already exists"
           fi
 
-          # Apply monitoring ArgoCD application (ArgoCD handles the rest!)
-          echo " Applying monitoring ArgoCD application..."
-          kubectl apply -f argocd/applications/monitoring-production-ready.yaml
-          echo " Monitoring application created - ArgoCD will handle deployment"
+          # Verify monitoring application file exists
+          if [ ! -f "argocd/applications/monitoring-production-ready.yaml" ]; then
+            echo "ERROR: argocd/applications/monitoring-production-ready.yaml not found!"
+            ls -la argocd/applications/ || echo "argocd/applications/ directory not found"
+            exit 1
+          fi
 
-          echo " All ArgoCD applications verified"
+          # Apply monitoring ArgoCD application
+          echo "Applying monitoring ArgoCD application..."
+          if kubectl apply -f argocd/applications/monitoring-production-ready.yaml; then
+            # Verify creation
+            sleep 2
+            if kubectl get application monitoring -n argocd &>/dev/null; then
+              echo "SUCCESS: Monitoring application created"
+              CREATED_APPS+=("monitoring")
+            else
+              echo "ERROR: Monitoring application not found after creation"
+              FAILED_APPS+=("monitoring")
+            fi
+          else
+            echo "ERROR: Failed to apply monitoring application"
+            FAILED_APPS+=("monitoring")
+          fi
+
+          # Summary
+          echo ""
+          echo "=== Application Creation Summary ==="
+          echo "Created/Verified: ${#CREATED_APPS[@]} applications"
+          for app in "${CREATED_APPS[@]}"; do
+            echo "  - $app"
+          done
+
+          if [ ${#FAILED_APPS[@]} -gt 0 ]; then
+            echo "FAILED: ${#FAILED_APPS[@]} applications"
+            for app in "${FAILED_APPS[@]}"; do
+              echo "  - $app"
+            done
+            echo ""
+            echo "ERROR: Some applications failed to create"
+            exit 1
+          fi
+
+          echo "SUCCESS: All applications created/verified"
 
       - name: Force sync ArgoCD applications
         run: |
           echo "Force syncing all applications..."
-          for app in api-gateway-prod exercises-prod frontend-prod scores-prod user-management-prod monitoring; do
+          set -e  # Exit on error
+
+          APPS=(
+            "api-gateway-prod"
+            "exercises-prod"
+            "frontend-prod"
+            "scores-prod"
+            "user-management-prod"
+            "monitoring"
+          )
+
+          SYNCED_APPS=()
+          FAILED_APPS=()
+
+          for app in "${APPS[@]}"; do
             echo "Syncing $app..."
-            kubectl patch application $app -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' || echo "App $app may not exist yet"
+
+            # Check if app exists first
+            if ! kubectl get application $app -n argocd &>/dev/null; then
+              echo "ERROR: Application $app does not exist"
+              FAILED_APPS+=("$app")
+              continue
+            fi
+
+            # Trigger sync
+            if kubectl patch application $app -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'; then
+              echo "SUCCESS: Sync triggered for $app"
+              SYNCED_APPS+=("$app")
+            else
+              echo "ERROR: Failed to trigger sync for $app"
+              FAILED_APPS+=("$app")
+            fi
           done
+
+          # Summary
+          echo ""
+          echo "=== Sync Summary ==="
+          echo "Synced: ${#SYNCED_APPS[@]} applications"
+          for app in "${SYNCED_APPS[@]}"; do
+            echo "  - $app"
+          done
+
+          if [ ${#FAILED_APPS[@]} -gt 0 ]; then
+            echo "FAILED: ${#FAILED_APPS[@]} applications"
+            for app in "${FAILED_APPS[@]}"; do
+              echo "  - $app"
+            done
+            echo ""
+            echo "ERROR: Some applications failed to sync"
+            exit 1
+          fi
 
           echo "Waiting 30s for ArgoCD to process sync requests..."
           sleep 30
 
-      - name: Verify monitoring app created
+      - name: Verify ArgoCD applications synced
         run: |
-          echo " Monitoring app delegated to ArgoCD"
-          echo "ArgoCD will handle deployment asynchronously"
+          echo "Verifying ArgoCD application sync status..."
+          set -e
+
+          APPS=(
+            "api-gateway-prod"
+            "exercises-prod"
+            "frontend-prod"
+            "scores-prod"
+            "user-management-prod"
+            "monitoring"
+          )
+
+          HEALTHY_APPS=()
+          UNHEALTHY_APPS=()
+
+          for app in "${APPS[@]}"; do
+            echo "Checking $app..."
+
+            # Get sync status
+            SYNC_STATUS=$(kubectl get application $app -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
+            HEALTH_STATUS=$(kubectl get application $app -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
+
+            echo "  Sync: $SYNC_STATUS, Health: $HEALTH_STATUS"
+
+            # Don't require "Synced" status immediately (may be "Progressing")
+            # Don't require "Healthy" immediately (pods may be starting)
+            # Just verify the application exists and has a status
+            if [ "$SYNC_STATUS" != "Unknown" ] && [ "$HEALTH_STATUS" != "Unknown" ]; then
+              HEALTHY_APPS+=("$app")
+            else
+              echo "  WARNING: $app has unknown status"
+              UNHEALTHY_APPS+=("$app")
+            fi
+          done
+
+          # Summary
           echo ""
-          echo "Check status with:"
-          echo "  kubectl get application monitoring -n argocd"
-          echo "  kubectl get pods -n monitoring"
+          echo "=== Application Status Summary ==="
+          echo "Verified: ${#HEALTHY_APPS[@]} applications"
+          for app in "${HEALTHY_APPS[@]}"; do
+            echo "  - $app"
+          done
+
+          if [ ${#UNHEALTHY_APPS[@]} -gt 0 ]; then
+            echo "Unknown Status: ${#UNHEALTHY_APPS[@]} applications"
+            for app in "${UNHEALTHY_APPS[@]}"; do
+              echo "  - $app"
+            done
+            echo ""
+            echo "ERROR: Some applications have unknown status"
+            exit 1
+          fi
+
+          echo ""
+          echo "SUCCESS: All applications have valid status"
+          echo "NOTE: Applications may still be syncing/deploying"
+          echo ""
+          echo "Check detailed status:"
+          kubectl get applications -n argocd
 
       - name: Check cluster capacity
         run: |
@@ -826,14 +991,34 @@ jobs:
           echo "Installing Metrics Server for HorizontalPodAutoscaler support..."
           set -x
 
-          # Check if metrics-server already exists
-          if kubectl get deployment metrics-server -n kube-system &>/dev/null; then
-            echo "Metrics Server already installed"
-          else
+          # Function to check Metrics Server health
+          check_metrics_health() {
+            echo "Checking Metrics Server health..."
+
+            # Check pod status
+            POD_STATUS=$(kubectl get pods -n kube-system -l k8s-app=metrics-server -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
+            echo "Pod status: $POD_STATUS"
+
+            # Check APIService status
+            API_STATUS=$(kubectl get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "NotFound")
+            echo "APIService status: $API_STATUS"
+
+            if [ "$POD_STATUS" = "Running" ] && [ "$API_STATUS" = "True" ]; then
+              return 0
+            else
+              return 1
+            fi
+          }
+
+          # Function to install/patch Metrics Server
+          install_metrics_server() {
             echo "Installing Metrics Server..."
 
             # Install metrics-server using official manifest
             kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+            # Wait for deployment to be created
+            sleep 5
 
             # Patch metrics-server deployment for EKS compatibility
             echo "Patching Metrics Server for EKS..."
@@ -859,27 +1044,87 @@ jobs:
               }
             ]'
 
-            # Wait for metrics-server to be ready
-            echo "Waiting for Metrics Server to be ready..."
+            # Wait for metrics-server pod to be ready
+            echo "Waiting for Metrics Server pod to be ready..."
             kubectl wait --for=condition=Ready pods \
               -l k8s-app=metrics-server \
               -n kube-system \
-              --timeout=180s || {
-                echo "WARNING: Metrics Server not ready yet"
+              --timeout=240s || {
+                echo "ERROR: Metrics Server pod not ready"
                 kubectl get pods -n kube-system -l k8s-app=metrics-server
                 kubectl describe pods -n kube-system -l k8s-app=metrics-server
-                kubectl logs -n kube-system -l k8s-app=metrics-server --tail=50
+                kubectl logs -n kube-system -l k8s-app=metrics-server --tail=100
+                return 1
               }
 
-            echo "Metrics Server installed"
-          fi
+            # Wait for APIService to be available
+            echo "Waiting for Metrics APIService to be available..."
+            kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=300s || {
+              echo "ERROR: Metrics APIService not available"
+              kubectl get apiservice v1beta1.metrics.k8s.io -o yaml
+              kubectl get pods -n kube-system -l k8s-app=metrics-server
+              kubectl logs -n kube-system -l k8s-app=metrics-server --tail=100
+              return 1
+            }
+
+            echo "Metrics Server installed successfully"
+            return 0
+          }
+
+          # Main installation logic with retry
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+
+            # Check if healthy installation exists
+            if check_metrics_health; then
+              echo "Metrics Server already healthy, skipping installation"
+              break
+            fi
+
+            # Try installation
+            if install_metrics_server; then
+              echo "Installation successful"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "Installation failed, cleaning up and retrying in 30s..."
+                kubectl delete deployment metrics-server -n kube-system --ignore-not-found=true
+                sleep 30
+              else
+                echo "ERROR: All $MAX_RETRIES attempts failed"
+                set +x
+                exit 1
+              fi
+            fi
+          done
 
           set +x
 
-          # Verify metrics API is available
-          echo "Verifying Metrics API..."
-          sleep 15  # Allow metrics to be collected
-          kubectl top nodes || echo "WARNING: Metrics API not ready yet (this is normal, may take 1-2 minutes)"
+          # Final verification with retry
+          echo "Final verification of Metrics API..."
+          sleep 20  # Allow metrics to be collected
+
+          for i in {1..5}; do
+            echo "Verification attempt $i/5..."
+            if kubectl top nodes 2>/dev/null; then
+              echo "SUCCESS: Metrics API working"
+              break
+            else
+              if [ $i -lt 5 ]; then
+                echo "Metrics API not ready, waiting 15s..."
+                sleep 15
+              else
+                echo "WARNING: Metrics API still not responding after 5 attempts"
+                echo "This may resolve itself in 1-2 minutes"
+                kubectl get apiservice v1beta1.metrics.k8s.io
+              fi
+            fi
+          done
 
       - name: Install Cluster Autoscaler
         run: |
