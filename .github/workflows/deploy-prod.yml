@@ -89,7 +89,7 @@ jobs:
 
       - name: Validate EKS cluster connectivity
         run: |
-          echo "🔍 Validating EKS cluster connectivity..."
+          echo " Validating EKS cluster connectivity..."
           echo "Target cluster: ${{ env.EKS_CLUSTER_NAME }}"
           echo "Region: ${{ env.AWS_REGION }}"
 
@@ -103,7 +103,7 @@ jobs:
           echo "Cluster status: $CLUSTER_STATUS"
 
           if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
-            echo "❌ ERROR: EKS cluster is not ACTIVE (status: $CLUSTER_STATUS)"
+            echo "ERROR: ERROR: EKS cluster is not ACTIVE (status: $CLUSTER_STATUS)"
             exit 1
           fi
 
@@ -118,7 +118,7 @@ jobs:
           # Test connection
           echo "Testing cluster connection..."
           kubectl cluster-info || {
-            echo "❌ ERROR: Cannot connect to EKS cluster"
+            echo "ERROR: ERROR: Cannot connect to EKS cluster"
             echo "Possible causes:"
             echo "  1. IAM user lacks EKS access entry"
             echo "  2. Security group blocking access"
@@ -126,7 +126,7 @@ jobs:
             exit 1
           }
 
-          echo "✅ EKS cluster validated and kubectl configured"
+          echo " EKS cluster validated and kubectl configured"
 
       - name: Get RDS endpoint and password
         id: rds-info
@@ -134,17 +134,17 @@ jobs:
           # Get RDS endpoint from AWS
           RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier nt114-postgres-prod --region ${{ env.AWS_REGION }} --query 'DBInstances[0].Endpoint.Address' --output text)
           echo "endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
-          echo "✅ RDS Endpoint: $RDS_ENDPOINT"
+          echo " RDS Endpoint: $RDS_ENDPOINT"
 
           # Use RDS password from GitHub Secrets (managed manually)
           echo "password=${{ secrets.RDS_PASSWORD }}" >> $GITHUB_OUTPUT
-          echo "✅ RDS Password retrieved from GitHub Secrets"
+          echo " RDS Password retrieved from GitHub Secrets"
 
       - name: Create prod namespace
         run: |
           echo "Creating prod namespace..."
           kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
-          echo "✅ Namespace prod ready"
+          echo " Namespace prod ready"
 
       - name: Create database secrets
         run: |
@@ -153,7 +153,7 @@ jobs:
               -e "s/RDS_PASSWORD_PLACEHOLDER/${{ steps.rds-info.outputs.password }}/g" \
               k8s/manifests/db-secrets-prod.yaml | kubectl apply -f -
 
-          echo "✅ Database secrets created successfully with Terraform password"
+          echo " Database secrets created successfully with Terraform password"
 
       - name: Create ECR secret in prod namespace
         run: |
@@ -171,10 +171,10 @@ jobs:
             --namespace=prod \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          echo "✅ ECR secret created for registry: $ECR_REGISTRY"
+          echo " ECR secret created for registry: $ECR_REGISTRY"
 
           # Verify
-          kubectl get secret ecr-secret -n prod && echo "✅ Secret verified"
+          kubectl get secret ecr-secret -n prod && echo " Secret verified"
 
   # Build and push backend services to ECR
   build-backend:
@@ -223,13 +223,13 @@ jobs:
           command: |
             cd ${{ matrix.service.path }}
 
-            echo "🔨 Building Docker image for ${{ matrix.service.name }}..."
+            echo " Building Docker image for ${{ matrix.service.name }}..."
             docker buildx build --platform linux/amd64 \
               -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:${{ github.sha }} \
               -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:prod-latest \
               --push .
 
-            echo "✅ Image pushed to ECR:"
+            echo " Image pushed to ECR:"
             echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:${{ github.sha }}"
             echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:prod-latest"
 
@@ -271,7 +271,7 @@ jobs:
           command: |
             cd frontend
 
-            echo "🔨 Building Frontend Docker image..."
+            echo " Building Frontend Docker image..."
             docker buildx build --platform linux/amd64 \
               -f Dockerfile.prod \
               --build-arg VITE_API_URL="" \
@@ -281,7 +281,7 @@ jobs:
               -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/frontend:prod-latest \
               --push .
 
-            echo "✅ Frontend image pushed to ECR"
+            echo " Frontend image pushed to ECR"
 
   # Update Helm values in Git (sequential to avoid conflicts)
   update-helm-values:
@@ -304,32 +304,32 @@ jobs:
           if [ "${{ needs.detect-changes.outputs.api-gateway }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/api-gateway/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}api-gateway, "
-            echo "✅ Updated helm/api-gateway/values-prod.yaml"
+            echo " Updated helm/api-gateway/values-prod.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.exercises }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/exercises-service/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}exercises-service, "
-            echo "✅ Updated helm/exercises-service/values-prod.yaml"
+            echo " Updated helm/exercises-service/values-prod.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.scores }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/scores-service/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}scores-service, "
-            echo "✅ Updated helm/scores-service/values-prod.yaml"
+            echo " Updated helm/scores-service/values-prod.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.user-management }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/user-management-service/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}user-management-service, "
-            echo "✅ Updated helm/user-management-service/values-prod.yaml"
+            echo " Updated helm/user-management-service/values-prod.yaml"
           fi
 
           # Update frontend
           if [ "${{ needs.detect-changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/frontend/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}frontend, "
-            echo "✅ Updated helm/frontend/values-prod.yaml"
+            echo " Updated helm/frontend/values-prod.yaml"
           fi
 
           # Save updated services list
@@ -509,36 +509,36 @@ jobs:
           # ============================================
 
           check_argocd_tolerations() {
-            echo "🔍 Checking if ArgoCD tolerations are already configured..."
+            echo " Checking if ArgoCD tolerations are already configured..."
 
             if ! kubectl get deployment argocd-server -n argocd &>/dev/null; then
-              echo "❌ ArgoCD not installed"
+              echo "ERROR: ArgoCD not installed"
               return 1
             fi
 
             CURRENT_TOLERATIONS=$(kubectl get deployment argocd-server -n argocd -o jsonpath='{.spec.template.spec.tolerations}' 2>/dev/null)
 
             if echo "$CURRENT_TOLERATIONS" | grep -q "workload.*argocd"; then
-              echo "✅ ArgoCD already has correct tolerations configured"
+              echo " ArgoCD already has correct tolerations configured"
               return 0
             else
-              echo "⚠️  ArgoCD needs toleration update"
+              echo "WARNING:  ArgoCD needs toleration update"
               return 1
             fi
           }
 
           wait_for_critical_components() {
-            echo "⏳ Waiting for critical ArgoCD components..."
+            echo " Waiting for critical ArgoCD components..."
 
             # Note: argocd-application-controller is a StatefulSet, not a Deployment
             # Changed in ArgoCD v1.8+ for sharding support
 
             # Wait for StatefulSet (application controller)
-            echo "  ├─ Waiting for argocd-application-controller (StatefulSet)..."
+            echo "   Waiting for argocd-application-controller (StatefulSet)..."
             if kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=180s; then
-              echo "  ├─ ✅ argocd-application-controller ready"
+              echo "    argocd-application-controller ready"
             else
-              echo "  ├─ ❌ argocd-application-controller failed to become ready"
+              echo "   ERROR: argocd-application-controller failed to become ready"
               kubectl describe statefulset/argocd-application-controller -n argocd
               kubectl logs -n argocd -l app.kubernetes.io/name=argocd-application-controller --tail=50 || true
               return 1
@@ -551,27 +551,27 @@ jobs:
             )
 
             for deployment in "${CRITICAL_DEPLOYMENTS[@]}"; do
-              echo "  ├─ Waiting for $deployment (Deployment)..."
+              echo "   Waiting for $deployment (Deployment)..."
               if kubectl rollout status deployment/$deployment -n argocd --timeout=120s; then
-                echo "  ├─ ✅ $deployment ready"
+                echo "    $deployment ready"
               else
-                echo "  ├─ ❌ $deployment failed to become ready"
+                echo "   ERROR: $deployment failed to become ready"
                 kubectl describe deployment/$deployment -n argocd
                 kubectl logs -n argocd -l app.kubernetes.io/name=$deployment --tail=50 || true
                 return 1
               fi
             done
 
-            echo "✅ All critical components ready"
+            echo " All critical components ready"
             return 0
           }
 
           show_pod_status() {
-            echo "📊 Current ArgoCD Pod Status:"
+            echo " Current ArgoCD Pod Status:"
             kubectl get pods -n argocd -o wide
 
             echo ""
-            echo "📋 Deployment Status:"
+            echo " Deployment Status:"
             kubectl get deployments -n argocd
           }
 
@@ -579,31 +579,31 @@ jobs:
           # Main Logic
           # ============================================
 
-          echo "🚀 Starting ArgoCD installation/upgrade process (Production)..."
+          echo " Starting ArgoCD installation/upgrade process (Production)..."
 
           # Check if ArgoCD exists and if upgrade is needed
           if kubectl get deployment argocd-server -n argocd &>/dev/null; then
             if check_argocd_tolerations; then
-              echo "✅ ArgoCD already configured correctly, skipping upgrade"
+              echo " ArgoCD already configured correctly, skipping upgrade"
               show_pod_status
               exit 0
             fi
 
-            echo "📦 ArgoCD installed but needs configuration update..."
+            echo " ArgoCD installed but needs configuration update..."
             HELM_ACTION="upgrade"
           else
-            echo "📦 Installing ArgoCD for the first time (Production)..."
+            echo " Installing ArgoCD for the first time (Production)..."
             kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
             HELM_ACTION="install"
           fi
 
           # Add ArgoCD Helm repository
-          echo "📚 Adding ArgoCD Helm repository..."
+          echo " Adding ArgoCD Helm repository..."
           helm repo add argo https://argoproj.github.io/argo-helm
           helm repo update
 
           # Execute Helm command with production values
-          echo "⚙️  Executing Helm $HELM_ACTION with production configuration..."
+          echo "  Executing Helm $HELM_ACTION with production configuration..."
           if [ "$HELM_ACTION" = "upgrade" ]; then
             helm upgrade argocd argo/argo-cd \
               --namespace argocd \
@@ -621,18 +621,18 @@ jobs:
               --atomic
           fi
 
-          echo "✅ Helm command completed successfully"
+          echo " Helm command completed successfully"
 
           # Wait for critical components only (not all pods)
           if ! wait_for_critical_components; then
-            echo "❌ ArgoCD deployment verification failed"
+            echo "ERROR: ArgoCD deployment verification failed"
             show_pod_status
             exit 1
           fi
 
           # Final status report
           echo ""
-          echo "🎉 ArgoCD installation/upgrade completed successfully (Production)!"
+          echo " ArgoCD installation/upgrade completed successfully (Production)!"
           show_pod_status
 
       - name: Validate ArgoCD Helm management
@@ -679,9 +679,9 @@ jobs:
             HELM_PATH="${services[$service]}"
 
             if kubectl get application "$APP_NAME" -n argocd &>/dev/null; then
-              echo "✅ Application $APP_NAME already exists"
+              echo " Application $APP_NAME already exists"
             else
-              echo "📝 Creating ArgoCD application: $APP_NAME (path: $HELM_PATH)"
+              echo " Creating ArgoCD application: $APP_NAME (path: $HELM_PATH)"
 
               cat <<EOF | kubectl apply -f -
           apiVersion: argoproj.io/v1alpha1
@@ -714,7 +714,7 @@ jobs:
           done
 
           # Setup monitoring prerequisites
-          echo "📝 Setting up monitoring prerequisites..."
+          echo " Setting up monitoring prerequisites..."
 
           # Create namespace (ArgoCD will also create it, but we need it for secret)
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
@@ -726,17 +726,17 @@ jobs:
               --from-literal=admin-user=admin \
               --from-literal=admin-password="$GRAFANA_PASSWORD" \
               -n monitoring
-            echo "✅ Grafana secret created"
+            echo " Grafana secret created"
           else
-            echo "✅ Grafana secret already exists"
+            echo " Grafana secret already exists"
           fi
 
           # Apply monitoring ArgoCD application (ArgoCD handles the rest!)
-          echo "📝 Applying monitoring ArgoCD application..."
+          echo " Applying monitoring ArgoCD application..."
           kubectl apply -f argocd/applications/monitoring-production-ready.yaml
-          echo "✅ Monitoring application created - ArgoCD will handle deployment"
+          echo " Monitoring application created - ArgoCD will handle deployment"
 
-          echo "✅ All ArgoCD applications verified"
+          echo " All ArgoCD applications verified"
 
       - name: Force sync ArgoCD applications
         run: |
@@ -751,7 +751,7 @@ jobs:
 
       - name: Verify monitoring app created
         run: |
-          echo "✅ Monitoring app delegated to ArgoCD"
+          echo " Monitoring app delegated to ArgoCD"
           echo "ArgoCD will handle deployment asynchronously"
           echo ""
           echo "Check status with:"
@@ -773,42 +773,118 @@ jobs:
 
           echo ""
           echo "=== Cluster Autoscaler Status ==="
-          kubectl get deployment cluster-autoscaler -n kube-system || echo "⚠️ Cluster Autoscaler not found!"
+          kubectl get deployment cluster-autoscaler -n kube-system || echo "WARNING: Cluster Autoscaler not found!"
           kubectl logs -n kube-system -l app.kubernetes.io/name=cluster-autoscaler --tail=20 || echo "No logs"
+
+      - name: Wait for nodes to be ready
+        run: |
+          echo "Waiting for cluster nodes to be Ready..."
+          set -x
+
+          # Wait for at least 2 nodes to be Ready (max 10 minutes)
+          MAX_WAIT=600
+          ELAPSED=0
+          INTERVAL=15
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
+            TOTAL_NODES=$(kubectl get nodes --no-headers 2>/dev/null | wc -l || echo "0")
+
+            echo "[$ELAPSED s] Ready nodes: $READY_NODES/$TOTAL_NODES"
+
+            if [ "$READY_NODES" -ge 2 ]; then
+              echo "SUCCESS: $READY_NODES nodes are Ready"
+              kubectl get nodes -o wide
+              break
+            fi
+
+            if [ $ELAPSED -ge $MAX_WAIT ]; then
+              echo "ERROR: Timeout waiting for nodes to be Ready"
+              kubectl get nodes -o wide
+              kubectl describe nodes
+              exit 1
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          set +x
+
+          # Check node capacity
+          echo ""
+          echo "=== Node Capacity ==="
+          kubectl describe nodes | grep -A 5 "Allocated resources"
+
+          # Verify nodes can schedule pods
+          echo ""
+          echo "=== Node Conditions ==="
+          kubectl get nodes -o json | jq -r '.items[] | "\(.metadata.name): Ready=\(.status.conditions[] | select(.type=="Ready") | .status), DiskPressure=\(.status.conditions[] | select(.type=="DiskPressure") | .status), MemoryPressure=\(.status.conditions[] | select(.type=="MemoryPressure") | .status)"'
 
       - name: Install Metrics Server for HPA
         run: |
-          echo "📊 Installing Metrics Server for HorizontalPodAutoscaler support..."
+          echo "Installing Metrics Server for HorizontalPodAutoscaler support..."
+          set -x
 
           # Check if metrics-server already exists
           if kubectl get deployment metrics-server -n kube-system &>/dev/null; then
-            echo "✅ Metrics Server already installed"
+            echo "Metrics Server already installed"
           else
-            echo "📦 Installing Metrics Server..."
+            echo "Installing Metrics Server..."
 
             # Install metrics-server using official manifest
             kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
 
+            # Patch metrics-server deployment for EKS compatibility
+            echo "Patching Metrics Server for EKS..."
+            kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
+              {
+                "op": "add",
+                "path": "/spec/template/spec/containers/0/args/-",
+                "value": "--kubelet-insecure-tls"
+              },
+              {
+                "op": "add",
+                "path": "/spec/template/spec/containers/0/args/-",
+                "value": "--kubelet-preferred-address-types=InternalIP"
+              }
+            ]'
+
+            # Add tolerations to schedule on all nodes
+            kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
+              {
+                "op": "add",
+                "path": "/spec/template/spec/tolerations",
+                "value": [{"operator": "Exists"}]
+              }
+            ]'
+
             # Wait for metrics-server to be ready
-            echo "⏳ Waiting for Metrics Server to be ready..."
+            echo "Waiting for Metrics Server to be ready..."
             kubectl wait --for=condition=Ready pods \
               -l k8s-app=metrics-server \
               -n kube-system \
-              --timeout=120s || {
-                echo "⚠️ Metrics Server not ready yet, continuing..."
+              --timeout=180s || {
+                echo "WARNING: Metrics Server not ready yet"
                 kubectl get pods -n kube-system -l k8s-app=metrics-server
+                kubectl describe pods -n kube-system -l k8s-app=metrics-server
+                kubectl logs -n kube-system -l k8s-app=metrics-server --tail=50
               }
 
-            echo "✅ Metrics Server installed"
+            echo "Metrics Server installed"
           fi
 
+          set +x
+
           # Verify metrics API is available
-          echo "🔍 Verifying Metrics API..."
-          kubectl top nodes || echo "⚠️ Metrics API not ready yet (this is normal, may take 1-2 minutes)"
+          echo "Verifying Metrics API..."
+          sleep 15  # Allow metrics to be collected
+          kubectl top nodes || echo "WARNING: Metrics API not ready yet (this is normal, may take 1-2 minutes)"
 
       - name: Install Cluster Autoscaler
         run: |
           echo "[Step 1] Installing Cluster Autoscaler for automatic node scaling..."
+          set -x
 
           # Check if Cluster Autoscaler already exists
           if kubectl get deployment cluster-autoscaler -n kube-system &>/dev/null; then
@@ -821,6 +897,12 @@ jobs:
             sed "s/<YOUR CLUSTER NAME>/eks-prod/g" | \
             kubectl apply -f -
 
+            # Verify deployment was created
+            if ! kubectl get deployment cluster-autoscaler -n kube-system &>/dev/null; then
+              echo "ERROR: Cluster Autoscaler deployment not created"
+              exit 1
+            fi
+
             # Add annotation to skip eviction (prevent autoscaler from being evicted)
             kubectl -n kube-system annotate deployment.apps/cluster-autoscaler \
               cluster-autoscaler.kubernetes.io/safe-to-evict="false" --overwrite
@@ -829,21 +911,34 @@ jobs:
             kubectl -n kube-system set image deployment/cluster-autoscaler \
               cluster-autoscaler=registry.k8s.io/autoscaling/cluster-autoscaler:v1.33.0
 
+            # Add tolerations to schedule on all nodes
+            kubectl -n kube-system patch deployment cluster-autoscaler --type='json' -p='[
+              {
+                "op": "add",
+                "path": "/spec/template/spec/tolerations",
+                "value": [{"operator": "Exists"}]
+              }
+            ]'
+
             # Add options for better autoscaling behavior
             kubectl -n kube-system patch deployment cluster-autoscaler \
               -p '{"spec":{"template":{"spec":{"containers":[{"name":"cluster-autoscaler","command":["./cluster-autoscaler","--v=4","--stderrthreshold=info","--cloud-provider=aws","--skip-nodes-with-local-storage=false","--expander=least-waste","--node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/eks-prod","--balance-similar-node-groups","--skip-nodes-with-system-pods=false"]}]}}}}'
 
             echo "[Step 3] Waiting for Cluster Autoscaler to be ready..."
             kubectl wait --for=condition=available \
-              --timeout=180s \
+              --timeout=240s \
               deployment/cluster-autoscaler \
               -n kube-system || {
                 echo "WARNING: Cluster Autoscaler not ready yet"
                 kubectl get pods -n kube-system -l app=cluster-autoscaler
+                kubectl describe pods -n kube-system -l app=cluster-autoscaler
+                kubectl logs -n kube-system -l app=cluster-autoscaler --tail=50
               }
 
             echo "SUCCESS: Cluster Autoscaler installed"
           fi
+
+          set +x
 
           echo "[Step 4] Verifying Cluster Autoscaler status..."
           kubectl get deployment cluster-autoscaler -n kube-system
@@ -1022,7 +1117,7 @@ jobs:
             fi
 
             if [ "$i" == "30" ]; then
-              echo "⚠️ Warning: Not all pods ready after 5 minutes"
+              echo "WARNING: Warning: Not all pods ready after 5 minutes"
               echo ""
               echo "=== Pod Status ==="
               kubectl get pods -n prod
@@ -1060,7 +1155,7 @@ jobs:
 
             if [ -n "$ARGOCD_URL" ]; then
               echo "ArgoCD Internal ALB found: $ARGOCD_URL"
-              ARGOCD_URL="http://$ARGOCD_URL (⚠️ Internal VPC only)"
+              ARGOCD_URL="http://$ARGOCD_URL (WARNING: Internal VPC only)"
               break
             fi
             echo "Waiting for ArgoCD Internal ALB... ($i/18)"
@@ -1091,7 +1186,7 @@ jobs:
       - name: Get monitoring info
         id: monitoring-info
         run: |
-          echo "⏳ Checking monitoring stack status (deployed by ArgoCD)..."
+          echo " Checking monitoring stack status (deployed by ArgoCD)..."
 
           # Wait briefly for Grafana Internal ALB (max 30s, non-blocking)
           GRAFANA_URL=""
@@ -1099,8 +1194,8 @@ jobs:
             GRAFANA_URL=$(kubectl get ingress monitoring-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
 
             if [ -n "$GRAFANA_URL" ]; then
-              echo "✅ Grafana Internal ALB found: $GRAFANA_URL"
-              GRAFANA_URL="http://$GRAFANA_URL (⚠️ Internal VPC only)"
+              echo " Grafana Internal ALB found: $GRAFANA_URL"
+              GRAFANA_URL="http://$GRAFANA_URL (WARNING: Internal VPC only)"
               break
             fi
             echo "Attempt $i/6: Waiting for Grafana Internal ALB..."
@@ -1136,12 +1231,12 @@ jobs:
       - name: Get monitoring info
         id: monitoring-info
         run: |
-          echo "⏳ Checking monitoring stack status (deployed by ArgoCD)..."
+          echo " Checking monitoring stack status (deployed by ArgoCD)..."
 
           # Wait briefly for Grafana credentials (max 30s, non-blocking)
           for i in {1..6}; do
             if kubectl get secret grafana-admin-credentials -n monitoring &>/dev/null; then
-              echo "✅ Grafana credentials ready"
+              echo " Grafana credentials ready"
               break
             fi
             echo "Attempt $i/6: Waiting for Grafana credentials..."
@@ -1185,9 +1280,9 @@ jobs:
 
       - name: Deployment summary
         run: |
-          echo "## 🚀 Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "##  Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
+          echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Frontend Application (Public):**" >> $GITHUB_STEP_SUMMARY
           echo "- http://${{ needs.sync-and-verify.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
@@ -1196,36 +1291,36 @@ jobs:
           echo "- URL: ${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
           echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
           echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- ⚠️ **Note:** Only accessible from within VPC (bastion host or VPN required)" >> $GITHUB_STEP_SUMMARY
+          echo "- WARNING: **Note:** Only accessible from within VPC (bastion host or VPN required)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Monitoring Stack (Managed by ArgoCD)" >> $GITHUB_STEP_SUMMARY
+          echo "###  Monitoring Stack (Managed by ArgoCD)" >> $GITHUB_STEP_SUMMARY
           echo "**Grafana Dashboard (Internal ALB - VPC only):**" >> $GITHUB_STEP_SUMMARY
           echo "- Get URL: \`kubectl get ingress monitoring-grafana -n monitoring\`" >> $GITHUB_STEP_SUMMARY
           echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
           echo "- Password: \`${{ steps.monitoring-info.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- ⚠️ **Note:** Only accessible from within VPC (bastion host or VPN required)" >> $GITHUB_STEP_SUMMARY
+          echo "- WARNING: **Note:** Only accessible from within VPC (bastion host or VPN required)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Prometheus:**" >> $GITHUB_STEP_SUMMARY
           echo "- Access via: \`kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090\`" >> $GITHUB_STEP_SUMMARY
           echo "- Then visit: http://localhost:9090" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🗄️ RDS PostgreSQL Database" >> $GITHUB_STEP_SUMMARY
+          echo "### ️ RDS PostgreSQL Database" >> $GITHUB_STEP_SUMMARY
           echo "- Host: \`${{ needs.sync-and-verify.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Port: \`5432\`" >> $GITHUB_STEP_SUMMARY
           echo "- Database: \`postgres\`" >> $GITHUB_STEP_SUMMARY
           echo "- Username: \`postgres\`" >> $GITHUB_STEP_SUMMARY
           echo "- Password: **(stored in GitHub Secret: RDS_PASSWORD)**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 💡 To get password: Go to Settings → Secrets → RDS_PASSWORD" >> $GITHUB_STEP_SUMMARY
+          echo ">  To get password: Go to Settings → Secrets → RDS_PASSWORD" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "###  Deployment Details" >> $GITHUB_STEP_SUMMARY
           echo "- **Environment:** Production" >> $GITHUB_STEP_SUMMARY
           echo "- **Cluster:** eks-prod" >> $GITHUB_STEP_SUMMARY
           echo "- **Namespace:** prod" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ✅ What Was Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "###  What Was Deployed" >> $GITHUB_STEP_SUMMARY
           echo "- Docker images built and pushed to ECR (production repositories)" >> $GITHUB_STEP_SUMMARY
           echo "- Helm values updated with new image tags" >> $GITHUB_STEP_SUMMARY
           echo "- ArgoCD applications synced (including monitoring stack)" >> $GITHUB_STEP_SUMMARY
