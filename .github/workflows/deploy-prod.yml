@@ -1246,10 +1246,37 @@ jobs:
               echo "EBS CSI Driver IAM policy already exists"
             fi
 
-            # Create IAM service account for EBS CSI Driver
+            # Create/update IAM service account for EBS CSI Driver
+            # IMPORTANT: Always run this to ensure K8s ServiceAccount exists
             ROLE_NAME="AmazonEKSEBSCSIDriverRole-prod"
-            if ! aws iam get-role --role-name ${ROLE_NAME} &>/dev/null; then
-              echo "Creating EBS CSI Driver IAM service account..."
+
+            # Check if K8s ServiceAccount exists
+            if kubectl get serviceaccount ebs-csi-controller-sa -n kube-system &>/dev/null; then
+              echo "K8s ServiceAccount already exists, checking IAM annotation..."
+
+              # Check if it has the correct IAM role annotation
+              CURRENT_ROLE=$(kubectl get serviceaccount ebs-csi-controller-sa -n kube-system -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "")
+              EXPECTED_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
+
+              if [ "$CURRENT_ROLE" = "$EXPECTED_ROLE" ]; then
+                echo "ServiceAccount has correct IAM role annotation"
+              else
+                echo "ServiceAccount IAM annotation incorrect or missing, recreating..."
+                kubectl delete serviceaccount ebs-csi-controller-sa -n kube-system --ignore-not-found=true
+
+                # Create using eksctl
+                eksctl create iamserviceaccount \
+                  --cluster=eks-prod \
+                  --namespace=kube-system \
+                  --name=ebs-csi-controller-sa \
+                  --role-name ${ROLE_NAME} \
+                  --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
+                  --approve \
+                  --override-existing-serviceaccounts \
+                  --region us-east-1
+              fi
+            else
+              echo "Creating EBS CSI Driver IAM service account with K8s ServiceAccount..."
               eksctl create iamserviceaccount \
                 --cluster=eks-prod \
                 --namespace=kube-system \
@@ -1260,9 +1287,14 @@ jobs:
                 --override-existing-serviceaccounts \
                 --region us-east-1
               echo "EBS CSI Driver IAM service account created"
-            else
-              echo "EBS CSI Driver IAM service account already exists"
             fi
+
+            # Verify ServiceAccount exists
+            if ! kubectl get serviceaccount ebs-csi-controller-sa -n kube-system &>/dev/null; then
+              echo "ERROR: ServiceAccount not created successfully"
+              exit 1
+            fi
+            echo "ServiceAccount verified"
 
             # Install EBS CSI Driver using Helm
             echo "Installing EBS CSI Driver via Helm..."
@@ -1349,11 +1381,37 @@ jobs:
               echo "IAM policy already exists"
             fi
 
-            # Create IAM service account using eksctl
+            # Create/update IAM service account using eksctl
+            # IMPORTANT: Always run this to ensure K8s ServiceAccount exists
             ROLE_NAME="AmazonEKSLoadBalancerControllerRole-prod"
 
-            if ! aws iam get-role --role-name ${ROLE_NAME} &>/dev/null; then
-              echo "Creating IAM service account..."
+            # Check if K8s ServiceAccount exists
+            if kubectl get serviceaccount aws-load-balancer-controller -n kube-system &>/dev/null; then
+              echo "K8s ServiceAccount already exists, checking IAM annotation..."
+
+              # Check if it has the correct IAM role annotation
+              CURRENT_ROLE=$(kubectl get serviceaccount aws-load-balancer-controller -n kube-system -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "")
+              EXPECTED_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
+
+              if [ "$CURRENT_ROLE" = "$EXPECTED_ROLE" ]; then
+                echo "ServiceAccount has correct IAM role annotation"
+              else
+                echo "ServiceAccount IAM annotation incorrect or missing, recreating..."
+                kubectl delete serviceaccount aws-load-balancer-controller -n kube-system --ignore-not-found=true
+
+                # Create using eksctl
+                eksctl create iamserviceaccount \
+                  --cluster=eks-prod \
+                  --namespace=kube-system \
+                  --name=aws-load-balancer-controller \
+                  --role-name ${ROLE_NAME} \
+                  --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
+                  --approve \
+                  --override-existing-serviceaccounts \
+                  --region us-east-1
+              fi
+            else
+              echo "Creating IAM service account with K8s ServiceAccount..."
               eksctl create iamserviceaccount \
                 --cluster=eks-prod \
                 --namespace=kube-system \
@@ -1364,9 +1422,14 @@ jobs:
                 --override-existing-serviceaccounts \
                 --region us-east-1
               echo "IAM service account created"
-            else
-              echo "IAM service account already exists"
             fi
+
+            # Verify ServiceAccount exists
+            if ! kubectl get serviceaccount aws-load-balancer-controller -n kube-system &>/dev/null; then
+              echo "ERROR: ServiceAccount not created successfully"
+              exit 1
+            fi
+            echo "ServiceAccount verified"
 
             # Install ALB controller via Helm with retry logic
             echo "Installing Helm chart..."
