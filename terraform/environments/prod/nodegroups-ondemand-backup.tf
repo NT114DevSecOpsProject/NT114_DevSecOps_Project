@@ -10,7 +10,7 @@
 module "eks_nodegroup_app_ondemand" {
   source = "../../modules/eks-nodegroup"
 
-  node_group_name      = "${var.cluster_name}-app-nodegroup-ondemand"
+  node_group_name      = "${var.cluster_name}-app-od"
   cluster_name         = module.eks_cluster.cluster_name
   cluster_version      = var.cluster_version
   cluster_service_cidr = "172.20.0.0/16"
@@ -62,7 +62,7 @@ module "eks_nodegroup_app_ondemand" {
 module "eks_nodegroup_argocd_ondemand" {
   source = "../../modules/eks-nodegroup"
 
-  node_group_name      = "${var.cluster_name}-argocd-nodegroup-ondemand"
+  node_group_name      = "${var.cluster_name}-argocd-od"
   cluster_name         = module.eks_cluster.cluster_name
   cluster_version      = var.cluster_version
   cluster_service_cidr = "172.20.0.0/16"
@@ -112,7 +112,7 @@ module "eks_nodegroup_argocd_ondemand" {
 module "eks_nodegroup_monitoring_ondemand" {
   source = "../../modules/eks-nodegroup"
 
-  node_group_name      = "${var.cluster_name}-monitoring-nodegroup-ondemand"
+  node_group_name      = "${var.cluster_name}-monitor-od"
   cluster_name         = module.eks_cluster.cluster_name
   cluster_version      = var.cluster_version
   cluster_service_cidr = "172.20.0.0/16"
