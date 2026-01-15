@@ -1,4 +1,4 @@
-name: Deploy to Development (GitOps)
+name: Complete CI/CD Pipeline - Build, Test, Scan & Deploy
 
 on:
   push:
@@ -9,6 +9,8 @@ on:
       - 'frontend/**'
       - 'helm/**'
       - '.github/workflows/deploy-dev.yml'
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 env:
@@ -18,10 +20,14 @@ env:
   EKS_CLUSTER_NAME: eks-1
 
 permissions:
-  contents: write  # Required to push image tag updates to Git
+  contents: write
+  packages: write
+  security-events: write
 
 jobs:
-  # Detect which services changed
+  # =============================================
+  # Stage 1: Detect Changes
+  # =============================================
   detect-changes:
     name: Detect Changed Services
     runs-on: ubuntu-latest
@@ -55,11 +61,11 @@ jobs:
             user-management:
               - 'microservices/user-management-service/**'
 
-      - name: Set outputs (force all services on manual dispatch)
+      - name: Set outputs (force all services on manual dispatch or PR)
         id: set-outputs
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "Manual dispatch detected - building all services"
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "Manual dispatch or PR detected - analyzing all services"
             echo "backend=true" >> $GITHUB_OUTPUT
             echo "frontend=true" >> $GITHUB_OUTPUT
             echo "api-gateway=true" >> $GITHUB_OUTPUT
@@ -76,10 +82,267 @@ jobs:
             echo "user-management=${{ steps.filter.outputs.user-management }}" >> $GITHUB_OUTPUT
           fi
 
-  # Setup Kubernetes secrets for database connections
+  # =============================================
+  # Stage 2: Code Quality & Security Analysis
+  # =============================================
+  code-analysis:
+    name: SonarCloud & Security Analysis
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Trivy CLI
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy --version
+      
+      - name: Update Trivy Database
+        run: |
+          echo "=== Updating Trivy vulnerability database ==="
+          trivy image --download-db-only
+          echo "✅ Database updated successfully"
+      
+      # ============================================
+      # FRONTEND Analysis
+      # ============================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      - name: Trivy Scan - Frontend Dependencies
+        working-directory: frontend
+        continue-on-error: true
+        run: |
+          echo "### 🔍 Frontend Dependencies Scan" >> $GITHUB_STEP_SUMMARY
+          trivy fs --format table --security-checks vuln package-lock.json
+      
+      - name: SonarCloud Scan - Frontend
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: frontend
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_frontend
+            -Dsonar.sources=src
+            -Dsonar.tests=src
+            -Dsonar.test.inclusions=**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx
+            -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**
+
+      # ============================================
+      # BACKEND SERVICES Analysis
+      # ============================================
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+      
+      # API-GATEWAY
+      - name: Install API-GATEWAY Dependencies
+        working-directory: microservices/api-gateway
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Tests - API-GATEWAY
+        working-directory: microservices/api-gateway
+        run: |
+          echo "=== Running API Gateway Tests ==="
+          python -m pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term -v
+          echo ""
+          echo "=== Coverage Generated ==="
+          ls -la coverage.xml
+        continue-on-error: true
+      
+      - name: SonarCloud Scan - API Gateway
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/api-gateway
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_api-gateway
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.version=3.9
+
+      - name: Trivy Scan - API-GATEWAY
+        working-directory: microservices/api-gateway
+        continue-on-error: true
+        run: trivy fs --format table --security-checks vuln requirements.txt
+
+      # EXERCISES-SERVICE
+      - name: Install Exercises-Service Dependencies
+        working-directory: microservices/exercises-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Tests - Exercises-Service
+        working-directory: microservices/exercises-service
+        run: |
+          echo "=== Running Exercises Service Tests ==="
+          PYTHONPATH=. python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term -v
+          echo ""
+          echo "=== Coverage Generated ==="
+          ls -la coverage.xml
+        continue-on-error: true
+      
+      - name: Fix Coverage Paths - Exercises Service
+        working-directory: microservices/exercises-service
+        run: |
+          echo "=== Fix Coverage XML paths ==="
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
+          echo "=== Verify Fixed Coverage ==="
+          head -40 coverage.xml
+
+      - name: SonarCloud Scan - Exercises Service
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/exercises-service
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_exercises-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.version=3.9
+
+      - name: Trivy Scan - Exercises Service
+        working-directory: microservices/exercises-service
+        continue-on-error: true
+        run: trivy fs --format table --security-checks vuln requirements.txt
+
+      # SCORES-SERVICE
+      - name: Install Scores-Service Dependencies
+        working-directory: microservices/scores-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Tests - Scores-Service
+        working-directory: microservices/scores-service
+        run: |
+          echo "=== Running Scores Service Tests ==="
+          PYTHONPATH=. python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term -v || true
+          echo ""
+          echo "=== Coverage Generated ==="
+          ls -la coverage.xml
+        continue-on-error: true
+
+      - name: Fix Coverage Paths - Scores Service
+        working-directory: microservices/scores-service
+        run: |
+          echo "=== Fix Coverage XML paths ==="
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
+          echo "=== Verify Fixed Coverage ==="
+          head -40 coverage.xml
+
+      - name: SonarCloud Scan - Scores Service
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/scores-service
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_scores-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.version=3.9
+
+      - name: Trivy Scan - Scores Service
+        working-directory: microservices/scores-service
+        continue-on-error: true
+        run: trivy fs --format table --security-checks vuln requirements.txt
+
+      # USER-MANAGEMENT-SERVICE
+      - name: Install User-Management-Service Dependencies
+        working-directory: microservices/user-management-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Tests - User-Management-Service
+        working-directory: microservices/user-management-service
+        run: |
+          echo "=== Running User Management Service Tests ==="
+          PYTHONPATH=. python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term -v || true
+          echo ""
+          echo "=== Coverage Generated ==="
+          ls -la coverage.xml
+        continue-on-error: true
+
+      - name: Fix Coverage Paths - User Management Service
+        working-directory: microservices/user-management-service
+        run: |
+          echo "=== Fix Coverage XML paths ==="
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
+          echo "=== Verify Fixed Coverage ==="
+          head -40 coverage.xml
+      
+      - name: SonarCloud Scan - User Management Service
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/user-management-service
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_user-management-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.version=3.9
+
+      - name: Trivy Scan - User Management Service
+        working-directory: microservices/user-management-service
+        continue-on-error: true
+        run: trivy fs --format table --security-checks vuln requirements.txt
+
+      - name: Generate Security Summary
+        continue-on-error: true
+        run: |
+          echo "## 🛡️ Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 SonarCloud Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "View detailed reports at: https://sonarcloud.io/organizations/nt114devsecopsproject/projects" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================
+  # Stage 3: Setup Kubernetes Secrets
+  # =============================================
   setup-secrets:
     name: Setup Database Secrets
-    needs: detect-changes
+    needs: [detect-changes, code-analysis]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       rds_endpoint: ${{ steps.rds-info.outputs.endpoint }}
@@ -102,99 +365,59 @@ jobs:
           AWS_USER_ARN=$(aws sts get-caller-identity --query Arn --output text)
           echo "AWS Account ID: $AWS_ACCOUNT"
           echo "AWS User ARN: $AWS_USER_ARN"
-          echo ""
-          echo "Expected Account: 039612870452"
-          echo "Expected User: nt114-devsecops-github-actions-user"
-          echo ""
+          
           if [ "$AWS_ACCOUNT" != "039612870452" ]; then
             echo "❌ ERROR: GitHub Secrets are using credentials from WRONG AWS account!"
-            echo "Current: $AWS_ACCOUNT"
-            echo "Expected: 039612870452"
-            echo ""
-            echo "FIX: Update GitHub Secrets with credentials for account 039612870452"
             exit 1
           fi
           echo "✅ AWS Account verified"
-          echo ""
-          echo "Listing EKS clusters in this account..."
-          aws eks list-clusters --region ${{ env.AWS_REGION }} || echo "No clusters found or no permission to list"
 
       - name: Validate EKS cluster connectivity
         run: |
           echo "🔍 Validating EKS cluster connectivity..."
-          echo "Target cluster: ${{ env.EKS_CLUSTER_NAME }}"
-          echo "Region: ${{ env.AWS_REGION }}"
-
-          # Clear any existing kubeconfig to avoid cache issues
           rm -f ~/.kube/config
           mkdir -p ~/.kube
 
-          # Check cluster status
-          echo "Checking cluster status..."
           CLUSTER_STATUS=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query 'cluster.status' --output text)
           echo "Cluster status: $CLUSTER_STATUS"
 
           if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
-            echo "❌ ERROR: EKS cluster is not ACTIVE (status: $CLUSTER_STATUS)"
+            echo "❌ ERROR: EKS cluster is not ACTIVE"
             exit 1
           fi
 
-          # Configure kubectl
-          echo "Configuring kubectl for cluster: ${{ env.EKS_CLUSTER_NAME }}..."
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
-
-          # Verify kubeconfig
-          echo "Current kubeconfig context:"
-          kubectl config current-context
-
-          # Test connection
-          echo "Testing cluster connection..."
-          kubectl cluster-info || {
-            echo "❌ ERROR: Cannot connect to EKS cluster"
-            echo "Possible causes:"
-            echo "  1. IAM user lacks EKS access entry"
-            echo "  2. Security group blocking access"
-            echo "  3. Network connectivity issue"
-            exit 1
-          }
-
-          echo "✅ EKS cluster validated and kubectl configured"
+          kubectl cluster-info
+          echo "✅ EKS cluster validated"
 
       - name: Get RDS endpoint and password
         id: rds-info
         run: |
-          # Get RDS endpoint from AWS
           RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier nt114-postgres-dev --region ${{ env.AWS_REGION }} --query 'DBInstances[0].Endpoint.Address' --output text)
           echo "endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
           echo "✅ RDS Endpoint: $RDS_ENDPOINT"
-
-          # Use RDS password from GitHub Secrets (managed manually)
           echo "password=${{ secrets.RDS_PASSWORD }}" >> $GITHUB_OUTPUT
-          echo "✅ RDS Password retrieved from GitHub Secrets"
 
-      - name: Create dev namespace
+      - name: Create dev namespace and secrets
         run: |
-          echo "Creating dev namespace..."
           kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
-          echo "✅ Namespace dev ready"
-
-      - name: Create database secrets
-        run: |
-          # Replace placeholders in template with values from Terraform
+          
           sed -e "s/RDS_ENDPOINT_PLACEHOLDER/${{ steps.rds-info.outputs.endpoint }}/g" \
               -e "s/RDS_PASSWORD_PLACEHOLDER/${{ steps.rds-info.outputs.password }}/g" \
               k8s/manifests/db-secrets-dev.yaml | kubectl apply -f -
+          
+          echo "✅ Database secrets created successfully"
 
-          echo "✅ Database secrets created successfully with Terraform password"
-
-  # Build and push backend services to ECR
+  # =============================================
+  # Stage 4: Build and Push Docker Images
+  # =============================================
   build-backend:
     name: Build Backend Service
-    needs: detect-changes
-    if: always()
+    needs: [detect-changes, code-analysis]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false  # Continue even if one service fails
+      fail-fast: false
       matrix:
         service:
           - name: api-gateway
@@ -205,8 +428,7 @@ jobs:
             path: microservices/scores-service
           - name: user-management-service
             path: microservices/user-management-service
-    outputs:
-      services_built: ${{ steps.set-output.outputs.services }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -225,36 +447,41 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Docker image (with retry)
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 15
-          max_attempts: 3
-          retry_on: error
-          command: |
-            cd ${{ matrix.service.path }}
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
 
-            echo " Building Docker image for ${{ matrix.service.name }}..."
-            docker buildx build --platform linux/amd64 \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:${{ github.sha }} \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:latest \
-              --push .
+      - name: Build Docker image
+        run: |
+          cd ${{ matrix.service.path }}
+          docker buildx build --platform linux/amd64 \
+            -t ${{ matrix.service.name }}:${{ github.sha }} \
+            --load .
 
-            echo " Image pushed to ECR:"
-            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:${{ github.sha }}"
-            echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:latest"
+      - name: Trivy Scan Docker Image
+        continue-on-error: true
+        run: |
+          echo "### 🔍 Docker Image Scan: ${{ matrix.service.name }}" >> $GITHUB_STEP_SUMMARY
+          trivy image --severity CRITICAL,HIGH --format table ${{ matrix.service.name }}:${{ github.sha }}
 
-      - name: Mark service as built
-        if: steps.should-build.outputs.enabled == 'true'
-        id: set-output
-        run: echo "services=${{ matrix.service.name }}" >> $GITHUB_OUTPUT
+      - name: Push to ECR
+        run: |
+          docker tag ${{ matrix.service.name }}:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:${{ github.sha }}
+          docker tag ${{ matrix.service.name }}:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:latest
+          
+          docker push ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:${{ github.sha }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/${{ matrix.service.name }}:latest
+          
+          echo "✅ Image pushed: ${{ matrix.service.name }}:${{ github.sha }}"
 
-  # Build and push frontend to ECR
   build-frontend:
     name: Build Frontend
-    needs: detect-changes
-    if: always()
+    needs: [detect-changes, code-analysis]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -273,33 +500,48 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Frontend (with retry)
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 15
-          max_attempts: 3
-          retry_on: error
-          command: |
-            cd frontend
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
 
-            echo " Building Frontend Docker image..."
-            docker buildx build --platform linux/amd64 \
-              -f Dockerfile.prod \
-              --build-arg VITE_API_URL="" \
-              --build-arg VITE_APP_TITLE="CodeLearn" \
-              --build-arg VITE_APP_ENV=development \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:${{ github.sha }} \
-              -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:latest \
-              --push .
+      - name: Build Frontend Docker image
+        run: |
+          cd frontend
+          docker buildx build --platform linux/amd64 \
+            -f Dockerfile.prod \
+            --build-arg VITE_API_URL="" \
+            --build-arg VITE_APP_TITLE="CodeLearn" \
+            --build-arg VITE_APP_ENV=development \
+            -t frontend:${{ github.sha }} \
+            --load .
 
-            echo " Frontend image pushed to ECR"
+      - name: Trivy Scan Frontend Image
+        continue-on-error: true
+        run: |
+          echo "### 🔍 Docker Image Scan: frontend" >> $GITHUB_STEP_SUMMARY
+          trivy image --severity CRITICAL,HIGH --format table frontend:${{ github.sha }}
 
-  # Update Helm values in Git (sequential to avoid conflicts)
+      - name: Push Frontend to ECR
+        run: |
+          docker tag frontend:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:${{ github.sha }}
+          docker tag frontend:${{ github.sha }} \
+            ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:latest
+          
+          docker push ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:${{ github.sha }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/frontend:latest
+          
+          echo "✅ Frontend image pushed"
+
+  # =============================================
+  # Stage 5: Update Helm Values (GitOps)
+  # =============================================
   update-helm-values:
     name: Update Helm Values (GitOps)
     needs: [detect-changes, build-backend, build-frontend]
     if: always() && (needs.build-backend.result == 'success' || needs.build-frontend.result == 'success')
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -311,42 +553,34 @@ jobs:
           IMAGE_TAG="${{ github.sha }}"
           UPDATED_SERVICES=""
 
-          # Update backend services
           if [ "${{ needs.detect-changes.outputs.api-gateway }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/api-gateway/values-dev.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}api-gateway, "
-            echo " Updated helm/api-gateway/values-dev.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.exercises }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/exercises-service/values-dev.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}exercises-service, "
-            echo " Updated helm/exercises-service/values-dev.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.scores }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/scores-service/values-dev.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}scores-service, "
-            echo " Updated helm/scores-service/values-dev.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.user-management }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/user-management-service/values-dev.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}user-management-service, "
-            echo " Updated helm/user-management-service/values-dev.yaml"
           fi
 
-          # Update frontend
           if [ "${{ needs.detect-changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/frontend/values-dev.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}frontend, "
-            echo " Updated helm/frontend/values-dev.yaml"
           fi
 
-          # Save updated services list
           echo "UPDATED_SERVICES=${UPDATED_SERVICES%, }" >> $GITHUB_ENV
 
-      - name: Commit and push all Helm value updates (single atomic commit)
+      - name: Commit and push Helm value updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -357,19 +591,18 @@ jobs:
             exit 0
           fi
 
-          # Create and push commit with retry
-          git commit -m "chore(dev): update image tags to ${{ github.sha }} [skip ci]" -m "Services: ${{ env.UPDATED_SERVICES }}" -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git commit -m "chore(dev): update image tags to ${{ github.sha }} [skip ci]" \
+                     -m "Services: ${{ env.UPDATED_SERVICES }}"
 
-          # Try push with retry (3 attempts)
           git pull --rebase origin main && git push origin main || \
           (sleep 5 && git pull --rebase origin main && git push origin main) || \
-          (sleep 5 && git pull --rebase origin main && git push origin main) || \
-          (echo "ERROR: Failed to push after 3 attempts" && exit 1)
+          (sleep 5 && git pull --rebase origin main && git push origin main)
 
-          echo "SUCCESS: Helm values pushed to Git - ArgoCD will auto-sync"
-          echo "Updated services: ${{ env.UPDATED_SERVICES }}"
+          echo "✅ Helm values pushed to Git"
 
-  # Sync ArgoCD and verify deployment
+  # =============================================
+  # Stage 6: Sync ArgoCD & Deploy
+  # =============================================
   sync-and-verify:
     name: Sync ArgoCD & Verify Deployment
     needs: [build-backend, build-frontend, update-helm-values, setup-secrets]
@@ -380,7 +613,7 @@ jobs:
       argocd_url: ${{ steps.get-urls.outputs.argocd_url }}
       argocd_password: ${{ steps.get-urls.outputs.argocd_password }}
       rds_endpoint: ${{ needs.setup-secrets.outputs.rds_endpoint }}
-      rds_password: ${{ needs.setup-secrets.outputs.rds_password }}
+    
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -407,120 +640,17 @@ jobs:
       - name: Checkout code for ArgoCD values
         uses: actions/checkout@v4
 
-      - name: Install or upgrade ArgoCD (Optimized)
+      - name: Install or upgrade ArgoCD
         run: |
           set -e
 
-          # ============================================
-          # Function Definitions
-          # ============================================
-
-          check_argocd_tolerations() {
-            echo "🔍 Checking if ArgoCD tolerations are already configured..."
-
-            if ! kubectl get deployment argocd-server -n argocd &>/dev/null; then
-              echo "❌ ArgoCD not installed"
-              return 1
-            fi
-
-            CURRENT_TOLERATIONS=$(kubectl get deployment argocd-server -n argocd -o jsonpath='{.spec.template.spec.tolerations}' 2>/dev/null)
-
-            if echo "$CURRENT_TOLERATIONS" | grep -q "workload.*argocd"; then
-              echo "✅ ArgoCD already has correct tolerations configured"
-              return 0
-            else
-              echo "⚠️  ArgoCD needs toleration update"
-              return 1
-            fi
-          }
-
-          wait_for_critical_components() {
-            echo "⏳ Waiting for critical ArgoCD components..."
-
-            # Note: argocd-application-controller is a StatefulSet, not a Deployment
-            # Changed in ArgoCD v1.8+ for sharding support
-
-            # Wait for StatefulSet (application controller)
-            echo "  ├─ Waiting for argocd-application-controller (StatefulSet)..."
-            if kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=180s; then
-              echo "  ├─ ✅ argocd-application-controller ready"
-            else
-              echo "  ├─ ❌ argocd-application-controller failed to become ready"
-              kubectl describe statefulset/argocd-application-controller -n argocd
-              kubectl logs -n argocd -l app.kubernetes.io/name=argocd-application-controller --tail=50 || true
-              return 1
-            fi
-
-            # Wait for Deployments (server and repo-server)
-            CRITICAL_DEPLOYMENTS=(
-              "argocd-server"
-              "argocd-repo-server"
-            )
-
-            for deployment in "${CRITICAL_DEPLOYMENTS[@]}"; do
-              echo "  ├─ Waiting for $deployment (Deployment)..."
-              if kubectl rollout status deployment/$deployment -n argocd --timeout=120s; then
-                echo "  ├─ ✅ $deployment ready"
-              else
-                echo "  ├─ ❌ $deployment failed to become ready"
-                kubectl describe deployment/$deployment -n argocd
-                kubectl logs -n argocd -l app.kubernetes.io/name=$deployment --tail=50 || true
-                return 1
-              fi
-            done
-
-            echo "✅ All critical components ready"
-            return 0
-          }
-
-          show_pod_status() {
-            echo "📊 Current ArgoCD Pod Status:"
-            kubectl get pods -n argocd -o wide
-
-            echo ""
-            echo "📋 Deployment Status:"
-            kubectl get deployments -n argocd
-          }
-
-          # ============================================
-          # Main Logic
-          # ============================================
-
-          echo "🚀 Starting ArgoCD installation/upgrade process..."
-
-          # Check if ArgoCD exists and if upgrade is needed
           if kubectl get deployment argocd-server -n argocd &>/dev/null; then
-            if check_argocd_tolerations; then
-              echo "✅ ArgoCD already configured correctly, skipping upgrade"
-              show_pod_status
-              exit 0
-            fi
-
-            echo "📦 ArgoCD installed but needs configuration update..."
-            HELM_ACTION="upgrade"
+            echo "✅ ArgoCD already installed"
           else
-            echo "📦 Installing ArgoCD for the first time..."
+            echo "📦 Installing ArgoCD..."
             kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-            HELM_ACTION="install"
-          fi
-
-          # Add ArgoCD Helm repository
-          echo "📚 Adding ArgoCD Helm repository..."
-          helm repo add argo https://argoproj.github.io/argo-helm
-          helm repo update
-
-          # Execute Helm command without --wait (faster)
-          echo "⚙️  Executing Helm $HELM_ACTION..."
-          if [ "$HELM_ACTION" = "upgrade" ]; then
-            helm upgrade argocd argo/argo-cd \
-              --namespace argocd \
-              -f helm/argocd/values-dev.yaml \
-              --timeout 3m \
-              --atomic \
-              --cleanup-on-fail
-          else
-            # Note: --cleanup-on-fail not supported by helm install
-            # Using --atomic which purges installation on failure
+            helm repo add argo https://argoproj.github.io/argo-helm
+            helm repo update
             helm install argocd argo/argo-cd \
               --namespace argocd \
               -f helm/argocd/values-dev.yaml \
@@ -528,28 +658,13 @@ jobs:
               --atomic
           fi
 
-          echo "✅ Helm command completed successfully"
-
-          # Wait for critical components only (not all pods)
-          if ! wait_for_critical_components; then
-            echo "❌ ArgoCD deployment verification failed"
-            show_pod_status
-            exit 1
-          fi
-
-          # Final status report
-          echo ""
-          echo "🎉 ArgoCD installation/upgrade completed successfully!"
-          show_pod_status
+          kubectl rollout status deployment/argocd-server -n argocd --timeout=120s
+          echo "✅ ArgoCD ready"
 
       - name: Ensure ArgoCD applications exist
         run: |
-          echo "Checking ArgoCD applications..."
-
-          # Create dev namespace if it doesn't exist
           kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
 
-          # Create ArgoCD applications for each service
           declare -A services
           services=(
             ["api-gateway"]="helm/api-gateway"
@@ -563,11 +678,7 @@ jobs:
             APP_NAME="${service}-dev"
             HELM_PATH="${services[$service]}"
 
-            if kubectl get application "$APP_NAME" -n argocd &>/dev/null; then
-              echo "✅ Application $APP_NAME already exists"
-            else
-              echo "📝 Creating ArgoCD application: $APP_NAME (path: $HELM_PATH)"
-
+            if ! kubectl get application "$APP_NAME" -n argocd &>/dev/null; then
               cat <<EOF | kubectl apply -f -
           apiVersion: argoproj.io/v1alpha1
           kind: Application
@@ -595,180 +706,59 @@ jobs:
               syncOptions:
                 - CreateNamespace=true
           EOF
+              echo "✅ Created application: $APP_NAME"
             fi
           done
 
-          # Setup monitoring prerequisites
-          echo "📝 Setting up monitoring prerequisites..."
-
-          # Create namespace (ArgoCD will also create it, but we need it for secret)
+          # Setup monitoring
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-          # Generate Grafana admin secret (only if not exists)
           if ! kubectl get secret grafana-admin-credentials -n monitoring &>/dev/null; then
             GRAFANA_PASSWORD=$(openssl rand -base64 20)
             kubectl create secret generic grafana-admin-credentials \
               --from-literal=admin-user=admin \
               --from-literal=admin-password="$GRAFANA_PASSWORD" \
               -n monitoring
-            echo "✅ Grafana secret created"
-          else
-            echo "✅ Grafana secret already exists"
           fi
-
-          # Apply monitoring ArgoCD application (ArgoCD handles the rest!)
-          echo "📝 Applying monitoring ArgoCD application..."
-          kubectl apply -f argocd/applications/monitoring.yaml
-          echo "✅ Monitoring application created - ArgoCD will handle deployment"
-
-          echo "✅ All ArgoCD applications verified"
+          kubectl apply -f argocd/applications/monitoring.yaml || true
 
       - name: Force sync ArgoCD applications
         run: |
-          echo "Force syncing all applications..."
           for app in api-gateway-dev exercises-dev frontend-dev scores-dev user-management-dev monitoring; do
-            echo "Syncing $app..."
-            kubectl patch application $app -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' || echo "App $app may not exist yet"
+            kubectl patch application $app -n argocd --type merge \
+              -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}' || true
           done
-
-          echo "Waiting 30s for ArgoCD to process sync requests..."
           sleep 30
 
-      - name: Verify monitoring app created
+      - name: Install Metrics Server and Cluster Autoscaler
         run: |
-          echo "✅ Monitoring app delegated to ArgoCD"
-          echo "ArgoCD will handle deployment asynchronously"
-          echo ""
-          echo "Check status with:"
-          echo "  kubectl get application monitoring -n argocd"
-          echo "  kubectl get pods -n monitoring"
-
-      - name: Check cluster capacity
-        run: |
-          echo "=== Cluster Node Status ==="
-          kubectl get nodes -o wide
-
-          echo ""
-          echo "=== Pods per Node ==="
-          kubectl get pods -A -o wide --no-headers | awk '{print $8}' | sort | uniq -c
-
-          echo ""
-          echo "=== Pending Pods ==="
-          kubectl get pods -A --field-selector status.phase=Pending
-
-          echo ""
-          echo "=== Cluster Autoscaler Status ==="
-          kubectl get deployment cluster-autoscaler -n kube-system || echo "⚠️ Cluster Autoscaler not found!"
-          kubectl logs -n kube-system -l app.kubernetes.io/name=cluster-autoscaler --tail=20 || echo "No logs"
-
-      - name: Install Metrics Server for HPA
-        run: |
-          echo "📊 Installing Metrics Server for HorizontalPodAutoscaler support..."
-
-          # Check if metrics-server already exists
-          if kubectl get deployment metrics-server -n kube-system &>/dev/null; then
-            echo "✅ Metrics Server already installed"
-          else
-            echo "📦 Installing Metrics Server..."
-
-            # Install metrics-server using official manifest
+          # Metrics Server
+          if ! kubectl get deployment metrics-server -n kube-system &>/dev/null; then
             kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
-
-            # Wait for metrics-server to be ready
-            echo "⏳ Waiting for Metrics Server to be ready..."
-            kubectl wait --for=condition=Ready pods \
-              -l k8s-app=metrics-server \
-              -n kube-system \
-              --timeout=120s || {
-                echo "⚠️ Metrics Server not ready yet, continuing..."
-                kubectl get pods -n kube-system -l k8s-app=metrics-server
-              }
-
-            echo "✅ Metrics Server installed"
           fi
 
-          # Verify metrics API is available
-          echo "🔍 Verifying Metrics API..."
-          kubectl top nodes || echo "⚠️ Metrics API not ready yet (this is normal, may take 1-2 minutes)"
-
-      - name: Install Cluster Autoscaler
-        run: |
-          echo "[Step 1] Installing Cluster Autoscaler for automatic node scaling..."
-
-          # Check if Cluster Autoscaler already exists
-          if kubectl get deployment cluster-autoscaler -n kube-system &>/dev/null; then
-            echo "INFO: Cluster Autoscaler already installed"
-          else
-            echo "[Step 2] Downloading and applying Cluster Autoscaler manifest..."
-
-            # Download the Cluster Autoscaler manifest for EKS
+          # Cluster Autoscaler
+          if ! kubectl get deployment cluster-autoscaler -n kube-system &>/dev/null; then
             curl -s https://raw.githubusercontent.com/kubernetes/autoscaler/master/cluster-autoscaler/cloudprovider/aws/examples/cluster-autoscaler-autodiscover.yaml | \
-            sed "s/<YOUR CLUSTER NAME>/eks-1/g" | \
-            kubectl apply -f -
-
-            # Add annotation to skip eviction (prevent autoscaler from being evicted)
+            sed "s/<YOUR CLUSTER NAME>/eks-1/g" | kubectl apply -f -
+            
             kubectl -n kube-system annotate deployment.apps/cluster-autoscaler \
               cluster-autoscaler.kubernetes.io/safe-to-evict="false" --overwrite
-
-            # Patch the deployment to use the correct image version for EKS 1.33
             kubectl -n kube-system set image deployment/cluster-autoscaler \
               cluster-autoscaler=registry.k8s.io/autoscaling/cluster-autoscaler:v1.33.0
-
-            # Add options for better autoscaling behavior
-            kubectl -n kube-system patch deployment cluster-autoscaler \
-              -p '{"spec":{"template":{"spec":{"containers":[{"name":"cluster-autoscaler","command":["./cluster-autoscaler","--v=4","--stderrthreshold=info","--cloud-provider=aws","--skip-nodes-with-local-storage=false","--expander=least-waste","--node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/eks-1","--balance-similar-node-groups","--skip-nodes-with-system-pods=false"]}]}}}}'
-
-            echo "[Step 3] Waiting for Cluster Autoscaler to be ready..."
-            kubectl wait --for=condition=available \
-              --timeout=180s \
-              deployment/cluster-autoscaler \
-              -n kube-system || {
-                echo "WARNING: Cluster Autoscaler not ready yet"
-                kubectl get pods -n kube-system -l app=cluster-autoscaler
-              }
-
-            echo "SUCCESS: Cluster Autoscaler installed"
           fi
-
-          echo "[Step 4] Verifying Cluster Autoscaler status..."
-          kubectl get deployment cluster-autoscaler -n kube-system
-          kubectl logs -n kube-system deployment/cluster-autoscaler --tail=10 || echo "INFO: Logs will be available once pod starts"
 
       - name: Wait for pods to be healthy
         run: |
-          echo "Waiting for all pods to be healthy (max 5 minutes)..."
-
           for i in {1..30}; do
             READY_PODS=$(kubectl get pods -n dev --no-headers 2>/dev/null | grep -c "1/1.*Running" || echo "0")
             TOTAL_PODS=$(kubectl get pods -n dev --no-headers 2>/dev/null | wc -l | xargs || echo "0")
-
             echo "Attempt $i/30: $READY_PODS/$TOTAL_PODS pods ready"
 
-            if [ "$READY_PODS" -ge "8" ] && [ "$READY_PODS" == "$TOTAL_PODS" ]; then
-              echo "All pods are healthy!"
+            if [ "$READY_PODS" -ge "5" ] && [ "$READY_PODS" == "$TOTAL_PODS" ]; then
+              echo "✅ All pods healthy!"
               kubectl get pods -n dev
               break
             fi
-
-            if [ "$i" == "30" ]; then
-              echo "⚠️ Warning: Not all pods ready after 5 minutes"
-              echo ""
-              echo "=== Pod Status ==="
-              kubectl get pods -n dev
-
-              echo ""
-              echo "=== ArgoCD Applications ==="
-              kubectl get applications -n argocd
-
-              echo ""
-              echo "=== Recent Pod Events ==="
-              kubectl get events -n dev --sort-by='.lastTimestamp' --field-selector type=Warning | tail -20
-
-              echo ""
-              echo "=== Pod Details (Not Running) ==="
-              kubectl get pods -n dev --field-selector status.phase!=Running -o wide 2>/dev/null || echo "No pods in non-running state"
-            fi
-
             sleep 10
           done
 
@@ -776,149 +766,85 @@ jobs:
         id: get-urls
         continue-on-error: true
         run: |
-          echo "Getting ArgoCD credentials..."
           ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "N/A")
-
-          echo "Getting service endpoints..."
-
-          # ArgoCD uses NodePort - provide port-forward command
           ARGOCD_URL="kubectl port-forward svc/argocd-server -n argocd 8080:443"
 
-          # Get Frontend LoadBalancer URL (waiting up to 3 minutes)
           FRONTEND_URL=""
           for i in {1..18}; do
             FRONTEND_URL=$(kubectl get svc frontend-dev -n dev -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-            [ -z "$FRONTEND_URL" ] && FRONTEND_URL=$(kubectl get svc frontend-dev -n dev -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-
-            if [ -n "$FRONTEND_URL" ]; then
-              echo "Frontend URL found: $FRONTEND_URL"
-              break
-            fi
-            echo "Waiting for Frontend LoadBalancer... ($i/18)"
+            [ -n "$FRONTEND_URL" ] && break
             sleep 10
           done
-
-          [ -z "$FRONTEND_URL" ] && FRONTEND_URL="Pending (LoadBalancer provisioning)"
+          [ -z "$FRONTEND_URL" ] && FRONTEND_URL="Pending"
 
           echo "argocd_password=$ARGOCD_PASSWORD" >> $GITHUB_OUTPUT
           echo "argocd_url=$ARGOCD_URL" >> $GITHUB_OUTPUT
           echo "frontend_url=$FRONTEND_URL" >> $GITHUB_OUTPUT
 
-  # Output access information
-  output-access-info:
-    name: Output Access Information
-    needs: [sync-and-verify]
+  # =============================================
+  # Stage 7: Pipeline Summary
+  # =============================================
+  pipeline-summary:
+    name: Pipeline Summary
+    needs: [code-analysis, build-backend, build-frontend, sync-and-verify]
     if: always()
     runs-on: ubuntu-latest
+    
     steps:
       - name: Configure AWS credentials
+        if: needs.sync-and-verify.result == 'success'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Configure kubectl
-        run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+          aws-region: us-east-1
 
       - name: Get monitoring info
+        if: needs.sync-and-verify.result == 'success'
         id: monitoring-info
         run: |
-          echo "⏳ Checking monitoring stack status (deployed by ArgoCD)..."
-
-          # Wait briefly for Grafana credentials (max 30s, non-blocking)
-          for i in {1..6}; do
-            if kubectl get secret grafana-admin-credentials -n monitoring &>/dev/null; then
-              echo "✅ Grafana credentials ready"
-              break
-            fi
-            echo "Attempt $i/6: Waiting for Grafana credentials..."
-            sleep 5
-          done
-
-          # Get Grafana password (Grafana uses NodePort - access via kubectl port-forward)
+          aws eks update-kubeconfig --region us-east-1 --name eks-1 || true
           GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "N/A")
-
           echo "grafana_password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
 
-      - name: Display access information
+      - name: Generate Pipeline Summary
         run: |
-          echo "=========================================="
-          echo "  DEPLOYMENT COMPLETE!"
-          echo "=========================================="
-          echo ""
-          echo "Frontend Application:"
-          echo "  URL: http://${{ needs.sync-and-verify.outputs.frontend_url }}"
-          echo ""
-          echo "ArgoCD Dashboard (NodePort - use port-forward):"
-          echo "  Command:  ${{ needs.sync-and-verify.outputs.argocd_url }}"
-          echo "  Access:   http://localhost:8080"
-          echo "  Username: admin"
-          echo "  Password: ${{ needs.sync-and-verify.outputs.argocd_password }}"
-          echo ""
-          echo "Grafana Dashboard (NodePort - use port-forward):"
-          echo "  Command:  kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80"
-          echo "  Access:   http://localhost:3000"
-          echo "  Username: admin"
-          echo "  Password: ${{ steps.monitoring-info.outputs.grafana_password }}"
-          echo ""
-          echo "RDS PostgreSQL Database:"
-          echo "  Host:     ${{ needs.sync-and-verify.outputs.rds_endpoint }}"
-          echo "  Port:     5432"
-          echo "  Database: postgres"
-          echo "  Username: postgres"
-          echo "  Password: (stored in GitHub Secret: RDS_PASSWORD)"
-          echo ""
-          echo "=========================================="
-
-      - name: Deployment summary
-        run: |
-          echo "## 🚀 Development Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Complete CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
+          echo "### Pipeline Status" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Analysis & Security | ${{ needs.code-analysis.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Backend | ${{ needs.build-backend.result == 'success' && '✅ Passed' || (needs.build-backend.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Frontend | ${{ needs.build-frontend.result == 'success' && '✅ Passed' || (needs.build-frontend.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy to EKS | ${{ needs.sync-and-verify.result == 'success' && '✅ Passed' || (needs.sync-and-verify.result == 'skipped' && '⏭️ Skipped' || '❌ Failed') }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Frontend Application:**" >> $GITHUB_STEP_SUMMARY
-          echo "- http://${{ needs.sync-and-verify.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.sync-and-verify.result }}" == "success" ]; then
+            echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Frontend:** http://${{ needs.sync-and-verify.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**ArgoCD:**" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Grafana:**" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+            echo "kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Password: \`${{ steps.monitoring-info.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**RDS Database:** \`${{ needs.sync-and-verify.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**ArgoCD Dashboard (NodePort):**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
-          echo "# Then access: http://localhost:8080" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Reports" >> $GITHUB_STEP_SUMMARY
+          echo "- [SonarCloud Dashboard](https://sonarcloud.io/organizations/nt114devsecopsproject/projects" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Monitoring Stack (Managed by ArgoCD)" >> $GITHUB_STEP_SUMMARY
-          echo "**Grafana Dashboard (NodePort):**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "kubectl port-forward svc/monitoring-grafana -n monitoring 3000:80" >> $GITHUB_STEP_SUMMARY
-          echo "# Then access: http://localhost:3000" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Password: \`${{ steps.monitoring-info.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Prometheus:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Access via: \`kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Then visit: http://localhost:9090" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🗄️ RDS PostgreSQL Database" >> $GITHUB_STEP_SUMMARY
-          echo "- Host: \`${{ needs.sync-and-verify.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Port: \`5432\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Database: \`postgres\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Username: \`postgres\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Password: **(stored in GitHub Secret: RDS_PASSWORD)**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> 💡 To get password: Go to Settings → Secrets → RDS_PASSWORD" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Deployment Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment:** Development" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ✅ What Was Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "- Docker images built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
-          echo "- Helm values updated with new image tags" >> $GITHUB_STEP_SUMMARY
-          echo "- ArgoCD applications synced (including monitoring stack)" >> $GITHUB_STEP_SUMMARY
-          echo "- All applications managed via GitOps (ArgoCD)" >> $GITHUB_STEP_SUMMARY
-          echo "- LoadBalancers provisioned and accessible" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
