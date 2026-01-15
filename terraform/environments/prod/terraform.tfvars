@@ -15,25 +15,26 @@ public_subnets     = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 cluster_name    = "eks-prod"
 cluster_version = "1.33"
 
-# Application Node Group - min=2, desired=3, max=6 (Spot Fleet with diverse instance types)
-# Multiple instance types increase spot availability chances
-app_node_instance_types = ["t3.medium", "t3a.medium", "t3.small", "t3a.small", "t2.medium", "t2.small"]
+# Application Node Group - min=2, desired=3, max=6 (Spot Fleet with diverse medium+ types)
+# Only medium+ instances (2+ vCPU) for production workload performance
+# Diversified across T3, T3a, T2 families for better spot availability
+app_node_instance_types = ["t3.medium", "t3a.medium", "t2.medium", "t3.large", "t3a.large"]
 app_node_capacity_type  = "SPOT"
 app_node_min_size       = 2
 app_node_desired_size   = 3
 app_node_max_size       = 6
 
 # ArgoCD Node Group - min=1, desired=1, max=2 (Spot Fleet - Dedicated with taints)
-# Diversified instance types to avoid capacity exhaustion
-argocd_node_instance_types = ["t3.medium", "t3a.medium", "t3.small", "t3a.small", "t2.medium"]
+# Medium+ instances only for ArgoCD controllers (resource-intensive)
+argocd_node_instance_types = ["t3.medium", "t3a.medium", "t2.medium", "t3.large"]
 argocd_node_capacity_type  = "SPOT"
 argocd_node_min_size       = 1
 argocd_node_desired_size   = 2
 argocd_node_max_size       = 2
 
 # Monitoring Node Group - min=1, desired=1, max=2 (Spot Fleet - Dedicated with taints)
-# Diversified instance types to avoid capacity exhaustion
-monitoring_node_instance_types = ["t3.medium", "t3a.medium", "t3.small", "t3a.small", "t2.medium"]
+# Medium+ instances for Prometheus/Grafana (memory-intensive workloads)
+monitoring_node_instance_types = ["t3.medium", "t3a.medium", "t2.medium", "t3.large"]
 monitoring_node_capacity_type  = "SPOT"
 monitoring_node_min_size       = 1
 monitoring_node_desired_size   = 1
