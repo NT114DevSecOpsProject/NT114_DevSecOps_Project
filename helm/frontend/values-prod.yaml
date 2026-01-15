@@ -9,7 +9,7 @@ replicaCount: 3
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/frontend
   pullPolicy: IfNotPresent
-  tag: "6a68ce04edf0063a3b0f512b0a07314d34e7277a"
+  tag: "0af06a5b77c4c97ee3a9f78ed56d111066fff488"
 
 imagePullSecrets:
   - name: ecr-secret
