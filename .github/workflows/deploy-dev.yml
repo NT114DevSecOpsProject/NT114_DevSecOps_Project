@@ -342,10 +342,6 @@ jobs:
   setup-secrets:
     name: Setup Database Secrets
     needs: [detect-changes, code-analysis]
-    if: |
-      (needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.frontend == 'true') ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     outputs:
       rds_endpoint: ${{ steps.rds-info.outputs.endpoint }}
@@ -417,10 +413,6 @@ jobs:
   build-backend:
     name: Build Backend Service
     needs: [detect-changes, code-analysis]
-    if: |
-      needs.detect-changes.outputs.backend == 'true' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -485,10 +477,6 @@ jobs:
   build-frontend:
     name: Build Frontend
     needs: [detect-changes, code-analysis]
-    if: |
-      needs.detect-changes.outputs.frontend == 'true' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     
     steps:
