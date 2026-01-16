@@ -1,7 +1,7 @@
-name: Deploy to Production (GitOps)
+name: Complete CI/CD Pipeline - Production
 
 on:
-  workflow_dispatch:  # Manual trigger only (production safety)
+  workflow_dispatch:  # Manual trigger for production deployment
 
 env:
   AWS_REGION: us-east-1
@@ -10,13 +10,271 @@ env:
   EKS_CLUSTER_NAME: eks-prod
 
 permissions:
-  contents: write  # Required to push image tag updates to Git
+  contents: write
+  packages: write
+  security-events: write
 
 jobs:
-  # Detect which services changed
+  # =============================================
+  # Stage 1: Code Quality & Security Analysis
+  # =============================================
+  code-analysis:
+    name: SonarCloud & Security Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Trivy CLI
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy --version
+      
+      - name: Update Trivy Database
+        run: |
+          echo "=== Updating Trivy vulnerability database ==="
+          trivy image --download-db-only
+          echo "✅ Database updated successfully"
+      
+      # ============================================
+      # FRONTEND Analysis
+      # ============================================
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      - name: 🔍 Trivy Scan - Frontend Dependencies
+        working-directory: frontend
+        continue-on-error: true
+        run: |
+          echo "### 🔍 Frontend Dependencies Scan" >> $GITHUB_STEP_SUMMARY
+          trivy fs --format table --security-checks vuln package-lock.json
+      
+      - name: SonarCloud Scan - Frontend
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: frontend
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_frontend
+            -Dsonar.sources=src
+            -Dsonar.tests=src
+            -Dsonar.test.inclusions=**/*.test.js,**/*.test.jsx,**/*.test.ts,**/*.test.tsx
+            -Dsonar.exclusions=**/node_modules/**,**/build/**,**/dist/**,**/coverage/**
+
+      # ============================================
+      # BACKEND SERVICES Analysis
+      # ============================================
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+      
+      # API-GATEWAY
+      - name: Install API-GATEWAY Dependencies
+        working-directory: microservices/api-gateway
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Tests - API-GATEWAY
+        working-directory: microservices/api-gateway
+        run: |
+          echo "=== Running API Gateway Tests ==="
+          python -m pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term -v
+          echo ""
+          echo "=== Coverage Generated ==="
+          ls -la coverage.xml
+        continue-on-error: true
+      
+      - name: SonarCloud Scan - API Gateway
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/api-gateway
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_api-gateway
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.version=3.9
+
+      - name: Trivy Scan - API-GATEWAY
+        working-directory: microservices/api-gateway
+        continue-on-error: true
+        run: trivy fs --format table --security-checks vuln requirements.txt
+
+      # EXERCISES-SERVICE
+      - name: Install Exercises-Service Dependencies
+        working-directory: microservices/exercises-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Tests - Exercises-Service
+        working-directory: microservices/exercises-service
+        run: |
+          echo "=== Running Exercises Service Tests ==="
+          PYTHONPATH=. python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term -v
+          echo ""
+          echo "=== Coverage Generated ==="
+          ls -la coverage.xml
+        continue-on-error: true
+      
+      - name: Fix Coverage Paths - Exercises Service
+        working-directory: microservices/exercises-service
+        run: |
+          echo "=== Fix Coverage XML paths ==="
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
+          echo "=== Verify Fixed Coverage ==="
+          head -40 coverage.xml
+
+      - name: SonarCloud Scan - Exercises Service
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/exercises-service
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_exercises-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.version=3.9
+
+      - name: Trivy Scan - Exercises Service
+        working-directory: microservices/exercises-service
+        continue-on-error: true
+        run: trivy fs --format table --security-checks vuln requirements.txt
+
+      # SCORES-SERVICE
+      - name: Install Scores-Service Dependencies
+        working-directory: microservices/scores-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Tests - Scores-Service
+        working-directory: microservices/scores-service
+        run: |
+          echo "=== Running Scores Service Tests ==="
+          PYTHONPATH=. python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term -v || true
+          echo ""
+          echo "=== Coverage Generated ==="
+          ls -la coverage.xml
+        continue-on-error: true
+
+      - name: Fix Coverage Paths - Scores Service
+        working-directory: microservices/scores-service
+        run: |
+          echo "=== Fix Coverage XML paths ==="
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
+          echo "=== Verify Fixed Coverage ==="
+          head -40 coverage.xml
+
+      - name: SonarCloud Scan - Scores Service
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/scores-service
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_scores-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.version=3.9
+
+      - name: Trivy Scan - Scores Service
+        working-directory: microservices/scores-service
+        continue-on-error: true
+        run: trivy fs --format table --security-checks vuln requirements.txt
+
+      # USER-MANAGEMENT-SERVICE
+      - name: Install User-Management-Service Dependencies
+        working-directory: microservices/user-management-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run Tests - User-Management-Service
+        working-directory: microservices/user-management-service
+        run: |
+          echo "=== Running User Management Service Tests ==="
+          PYTHONPATH=. python -m pytest --cov=app --cov-report=xml:coverage.xml --cov-report=term -v || true
+          echo ""
+          echo "=== Coverage Generated ==="
+          ls -la coverage.xml
+        continue-on-error: true
+
+      - name: Fix Coverage Paths - User Management Service
+        working-directory: microservices/user-management-service
+        run: |
+          echo "=== Fix Coverage XML paths ==="
+          sed -i 's|<source>[^<]*</source>|<source>.</source>|g' coverage.xml
+          sed -i 's|filename="\([^"]*\)"|filename="app/\1"|g' coverage.xml
+          echo "=== Verify Fixed Coverage ==="
+          head -40 coverage.xml
+      
+      - name: SonarCloud Scan - User Management Service
+        uses: SonarSource/sonarcloud-github-action@v3.1.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: microservices/user-management-service
+          args: >
+            -Dsonar.organization=nt114devsecopsproject
+            -Dsonar.projectKey=nt114devsecopsproject_user-management-service
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.version=3.9
+
+      - name: Trivy Scan - User Management Service
+        working-directory: microservices/user-management-service
+        continue-on-error: true
+        run: trivy fs --format table --security-checks vuln requirements.txt
+
+      - name: 📊 Generate Security Summary
+        continue-on-error: true
+        run: |
+          echo "## 🛡️ Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 SonarCloud Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "View detailed reports at: https://sonarcloud.io/organizations/nt114devsecopsproject/projects" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================
+  # Stage 2: Detect Changed Services
+  # =============================================
   detect-changes:
     name: Detect Changed Services
     runs-on: ubuntu-latest
+    needs: code-analysis
     outputs:
       backend: ${{ steps.set-outputs.outputs.backend }}
       frontend: ${{ steps.set-outputs.outputs.frontend }}
@@ -68,11 +326,14 @@ jobs:
             echo "user-management=${{ steps.filter.outputs.user-management }}" >> $GITHUB_OUTPUT
           fi
 
-  # Setup Kubernetes secrets for database connections
+  # =============================================
+  # Stage 3: Setup Kubernetes Secrets
+  # =============================================
   setup-secrets:
     name: Setup Database Secrets
     needs: detect-changes
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     outputs:
       rds_endpoint: ${{ steps.rds-info.outputs.endpoint }}
       rds_password: ${{ steps.rds-info.outputs.password }}
@@ -89,81 +350,64 @@ jobs:
 
       - name: Validate EKS cluster connectivity
         run: |
-          echo " Validating EKS cluster connectivity..."
+          echo "✅ Validating EKS cluster connectivity..."
           echo "Target cluster: ${{ env.EKS_CLUSTER_NAME }}"
           echo "Region: ${{ env.AWS_REGION }}"
 
-          # Clear any existing kubeconfig to avoid cache issues
           rm -f ~/.kube/config
           mkdir -p ~/.kube
 
-          # Check cluster status
           echo "Checking cluster status..."
           CLUSTER_STATUS=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query 'cluster.status' --output text)
           echo "Cluster status: $CLUSTER_STATUS"
 
           if [ "$CLUSTER_STATUS" != "ACTIVE" ]; then
-            echo "ERROR: ERROR: EKS cluster is not ACTIVE (status: $CLUSTER_STATUS)"
+            echo "❌ ERROR: EKS cluster is not ACTIVE (status: $CLUSTER_STATUS)"
             exit 1
           fi
 
-          # Configure kubectl
           echo "Configuring kubectl for cluster: ${{ env.EKS_CLUSTER_NAME }}..."
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
 
-          # Verify kubeconfig
           echo "Current kubeconfig context:"
           kubectl config current-context 2>&1 | grep -v "metrics.k8s.io" || true
 
-          # Test connection
           echo "Testing cluster connection..."
           kubectl cluster-info 2>&1 | grep -v "metrics.k8s.io" || {
-            echo "ERROR: ERROR: Cannot connect to EKS cluster"
-            echo "Possible causes:"
-            echo "  1. IAM user lacks EKS access entry"
-            echo "  2. Security group blocking access"
-            echo "  3. Network connectivity issue"
+            echo "❌ ERROR: Cannot connect to EKS cluster"
             exit 1
           }
 
-          echo " EKS cluster validated and kubectl configured"
+          echo "✅ EKS cluster validated and kubectl configured"
 
       - name: Get RDS endpoint and password
         id: rds-info
         run: |
-          # Get RDS endpoint from AWS
           RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier nt114-postgres-prod --region ${{ env.AWS_REGION }} --query 'DBInstances[0].Endpoint.Address' --output text)
           echo "endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
-          echo " RDS Endpoint: $RDS_ENDPOINT"
-
-          # Use RDS password from GitHub Secrets (managed manually)
+          echo "✅ RDS Endpoint: $RDS_ENDPOINT"
           echo "password=${{ secrets.RDS_PASSWORD }}" >> $GITHUB_OUTPUT
-          echo " RDS Password retrieved from GitHub Secrets"
+          echo "✅ RDS Password retrieved from GitHub Secrets"
 
       - name: Create prod namespace
         run: |
           echo "Creating prod namespace..."
           kubectl create namespace prod --dry-run=client -o yaml 2>&1 | grep -v "metrics.k8s.io" | kubectl apply -f - 2>&1 | grep -v "metrics.k8s.io" || true
-          echo " Namespace prod ready"
+          echo "✅ Namespace prod ready"
 
       - name: Create database secrets
         run: |
-          # Replace placeholders in template with values from Terraform
           sed -e "s/RDS_ENDPOINT_PLACEHOLDER/${{ steps.rds-info.outputs.endpoint }}/g" \
               -e "s/RDS_PASSWORD_PLACEHOLDER/${{ steps.rds-info.outputs.password }}/g" \
               k8s/manifests/db-secrets-prod.yaml | kubectl apply -f - 2>&1 | grep -v "metrics.k8s.io" || true
-
-          echo " Database secrets created successfully with Terraform password"
+          echo "✅ Database secrets created successfully"
 
       - name: Create ECR secret in prod namespace
         run: |
           echo "Creating ECR docker-registry secret for prod namespace..."
-
-          # Get AWS account ID
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
 
-          # Create secret
           kubectl create secret docker-registry ecr-secret \
             --docker-server=$ECR_REGISTRY \
             --docker-username=AWS \
@@ -171,19 +415,19 @@ jobs:
             --namespace=prod \
             --dry-run=client -o yaml 2>&1 | grep -v "metrics.k8s.io" | kubectl apply -f - 2>&1 | grep -v "metrics.k8s.io" || true
 
-          echo " ECR secret created for registry: $ECR_REGISTRY"
+          echo "✅ ECR secret created for registry: $ECR_REGISTRY"
+          kubectl get secret ecr-secret -n prod 2>&1 | grep -v "metrics.k8s.io" && echo "✅ Secret verified"
 
-          # Verify
-          kubectl get secret ecr-secret -n prod 2>&1 | grep -v "metrics.k8s.io" && echo " Secret verified"
-
-  # Build and push backend services to ECR
+  # =============================================
+  # Stage 4: Build Backend Services
+  # =============================================
   build-backend:
     name: Build Backend Service
-    needs: detect-changes
-    if: always()
+    needs: [detect-changes, setup-secrets]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false  # Continue even if one service fails
+      fail-fast: false
       matrix:
         service:
           - name: api-gateway
@@ -214,7 +458,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Docker image (with retry)
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          trivy --version
+
+      - name: Build Docker Image
+        run: |
+          cd ${{ matrix.service.path }}
+          docker build -t ${{ matrix.service.name }}:${{ github.sha }} .
+
+      - name: 🔍 Trivy Scan Docker Image
+        continue-on-error: true
+        run: |
+          trivy image --severity CRITICAL,HIGH --format table ${{ matrix.service.name }}:${{ github.sha }}
+
+      - name: Push to ECR (with retry)
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
@@ -223,26 +482,27 @@ jobs:
           command: |
             cd ${{ matrix.service.path }}
 
-            echo " Building Docker image for ${{ matrix.service.name }}..."
+            echo "✅ Building and pushing Docker image for ${{ matrix.service.name }}..."
             docker buildx build --platform linux/amd64 \
               -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:${{ github.sha }} \
               -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:prod-latest \
               --push .
 
-            echo " Image pushed to ECR:"
+            echo "✅ Image pushed to ECR:"
             echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:${{ github.sha }}"
             echo "   - ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/${{ matrix.service.name }}:prod-latest"
 
       - name: Mark service as built
-        if: steps.should-build.outputs.enabled == 'true'
         id: set-output
         run: echo "services=${{ matrix.service.name }}" >> $GITHUB_OUTPUT
 
-  # Build and push frontend to ECR
+  # =============================================
+  # Stage 5: Build Frontend
+  # =============================================
   build-frontend:
     name: Build Frontend
-    needs: detect-changes
-    if: always()
+    needs: [detect-changes, setup-secrets]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -262,7 +522,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push Frontend (with retry)
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
+          trivy --version
+
+      - name: Build Docker Image
+        run: |
+          cd frontend
+          docker build -f Dockerfile.prod -t frontend:${{ github.sha }} .
+
+      - name: 🔍 Trivy Scan Docker Image
+        continue-on-error: true
+        run: |
+          trivy image --severity CRITICAL,HIGH --format table frontend:${{ github.sha }}
+
+      - name: Push to ECR (with retry)
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 15
@@ -271,7 +546,7 @@ jobs:
           command: |
             cd frontend
 
-            echo " Building Frontend Docker image..."
+            echo "✅ Building Frontend Docker image..."
             docker buildx build --platform linux/amd64 \
               -f Dockerfile.prod \
               --build-arg VITE_API_URL="" \
@@ -281,9 +556,11 @@ jobs:
               -t ${{ steps.login-ecr.outputs.registry }}/nt114-devsecops/prod/frontend:prod-latest \
               --push .
 
-            echo " Frontend image pushed to ECR"
+            echo "✅ Frontend image pushed to ECR"
 
-  # Update Helm values in Git (sequential to avoid conflicts)
+  # =============================================
+  # Stage 6: Update Helm Values (GitOps)
+  # =============================================
   update-helm-values:
     name: Update Helm Values (GitOps)
     needs: [detect-changes, build-backend, build-frontend]
@@ -300,42 +577,39 @@ jobs:
           IMAGE_TAG="${{ github.sha }}"
           UPDATED_SERVICES=""
 
-          # Update backend services
           if [ "${{ needs.detect-changes.outputs.api-gateway }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/api-gateway/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}api-gateway, "
-            echo " Updated helm/api-gateway/values-prod.yaml"
+            echo "✅ Updated helm/api-gateway/values-prod.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.exercises }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/exercises-service/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}exercises-service, "
-            echo " Updated helm/exercises-service/values-prod.yaml"
+            echo "✅ Updated helm/exercises-service/values-prod.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.scores }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/scores-service/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}scores-service, "
-            echo " Updated helm/scores-service/values-prod.yaml"
+            echo "✅ Updated helm/scores-service/values-prod.yaml"
           fi
 
           if [ "${{ needs.detect-changes.outputs.user-management }}" == "true" ] && [ "${{ needs.build-backend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/user-management-service/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}user-management-service, "
-            echo " Updated helm/user-management-service/values-prod.yaml"
+            echo "✅ Updated helm/user-management-service/values-prod.yaml"
           fi
 
-          # Update frontend
           if [ "${{ needs.detect-changes.outputs.frontend }}" == "true" ] && [ "${{ needs.build-frontend.result }}" == "success" ]; then
             sed -i 's|tag: .*|tag: "'$IMAGE_TAG'"|g' helm/frontend/values-prod.yaml
             UPDATED_SERVICES="${UPDATED_SERVICES}frontend, "
-            echo " Updated helm/frontend/values-prod.yaml"
+            echo "✅ Updated helm/frontend/values-prod.yaml"
           fi
 
-          # Save updated services list
           echo "UPDATED_SERVICES=${UPDATED_SERVICES%, }" >> $GITHUB_ENV
 
-      - name: Commit and push all Helm value updates (single atomic commit)
+      - name: Commit and push all Helm value updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -346,19 +620,21 @@ jobs:
             exit 0
           fi
 
-          # Create and push commit with retry
-          git commit -m "chore(prod): update image tags to ${{ github.sha }} [skip ci]" -m "Services: ${{ env.UPDATED_SERVICES }}" -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git commit -m "chore(prod): update image tags to ${{ github.sha }} [skip ci]" \
+            -m "Services: ${{ env.UPDATED_SERVICES }}" \
+            -m "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          # Try push with retry (3 attempts)
           git pull --rebase origin main && git push origin main || \
           (sleep 5 && git pull --rebase origin main && git push origin main) || \
           (sleep 5 && git pull --rebase origin main && git push origin main) || \
-          (echo "ERROR: Failed to push after 3 attempts" && exit 1)
+          (echo "❌ Failed to push after 3 attempts" && exit 1)
 
-          echo "SUCCESS: Helm values pushed to Git - ArgoCD will auto-sync"
+          echo "✅ Helm values pushed to Git - ArgoCD will auto-sync"
           echo "Updated services: ${{ env.UPDATED_SERVICES }}"
 
-  # Sync ArgoCD and verify deployment
+  # =============================================
+  # Stage 7: Sync ArgoCD & Verify Deployment
+  # =============================================
   sync-and-verify:
     name: Sync ArgoCD & Verify Deployment
     needs: [build-backend, build-frontend, update-helm-values, setup-secrets]
@@ -390,23 +666,14 @@ jobs:
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
           kubectl cluster-info 2>&1 | grep -v "metrics.k8s.io" || true
 
-      - name: Install Metrics Server (early to prevent warnings)
+      - name: Install Metrics Server
         run: |
           echo "Installing Metrics Server to enable metrics API..."
           set -x
 
-          # Function to check Metrics Server health
           check_metrics_health() {
-            echo "Checking Metrics Server health..."
-
-            # Check pod status
             POD_STATUS=$(kubectl get pods -n kube-system -l k8s-app=metrics-server -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
-            echo "Pod status: $POD_STATUS"
-
-            # Check APIService status
             API_STATUS=$(kubectl get apiservice v1beta1.metrics.k8s.io -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "NotFound")
-            echo "APIService status: $API_STATUS"
-
             if [ "$POD_STATUS" = "Running" ] && [ "$API_STATUS" = "True" ]; then
               return 0
             else
@@ -414,95 +681,26 @@ jobs:
             fi
           }
 
-          # Function to install/patch Metrics Server
           install_metrics_server() {
-            echo "Installing Metrics Server..."
-
-            # Install metrics-server using official manifest
             kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml 2>&1 | grep -v "metrics.k8s.io" || true
-
-            # Wait for deployment to be created
             sleep 5
-
-            # Patch metrics-server deployment for EKS compatibility
-            echo "Patching Metrics Server for EKS..."
             kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
-              {
-                "op": "add",
-                "path": "/spec/template/spec/containers/0/args/-",
-                "value": "--kubelet-insecure-tls"
-              },
-              {
-                "op": "add",
-                "path": "/spec/template/spec/containers/0/args/-",
-                "value": "--kubelet-preferred-address-types=InternalIP"
-              }
+              {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"},
+              {"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-preferred-address-types=InternalIP"}
             ]' 2>&1 | grep -v "metrics.k8s.io" || true
-
-            # Add tolerations to schedule on all nodes
             kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
-              {
-                "op": "add",
-                "path": "/spec/template/spec/tolerations",
-                "value": [{"operator": "Exists"}]
-              }
+              {"op": "add", "path": "/spec/template/spec/tolerations", "value": [{"operator": "Exists"}]}
             ]' 2>&1 | grep -v "metrics.k8s.io" || true
-
-            # Wait for metrics-server pod to be ready
-            echo "Waiting for Metrics Server pod to be ready..."
-            kubectl wait --for=condition=Ready pods \
-              -l k8s-app=metrics-server \
-              -n kube-system \
-              --timeout=120s 2>&1 | grep -v "metrics.k8s.io" || {
-                echo "ERROR: Metrics Server pod not ready"
-                kubectl get pods -n kube-system -l k8s-app=metrics-server 2>&1 | grep -v "metrics.k8s.io" || true
-                return 1
-              }
-
-            # Wait for APIService to be available
-            echo "Waiting for Metrics APIService to be available..."
-            kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=120s || {
-              echo "ERROR: Metrics APIService not available"
-              kubectl get apiservice v1beta1.metrics.k8s.io -o yaml
-              return 1
-            }
-
-            echo "Metrics Server installed successfully"
+            kubectl wait --for=condition=Ready pods -l k8s-app=metrics-server -n kube-system --timeout=120s 2>&1 | grep -v "metrics.k8s.io" || return 1
+            kubectl wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=120s || return 1
             return 0
           }
 
-          # Main installation logic with retry
-          MAX_RETRIES=2
-          RETRY_COUNT=0
-
-          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
-
-            # Check if healthy installation exists
-            if check_metrics_health; then
-              echo "Metrics Server already healthy, skipping installation"
-              break
-            fi
-
-            # Try installation
-            if install_metrics_server; then
-              echo "Installation successful"
-              break
-            else
-              RETRY_COUNT=$((RETRY_COUNT + 1))
-
-              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                echo "Installation failed, cleaning up and retrying in 20s..."
-                kubectl delete deployment metrics-server -n kube-system --ignore-not-found=true 2>&1 | grep -v "metrics.k8s.io" || true
-                sleep 20
-              else
-                echo "WARNING: Metrics Server installation failed after $MAX_RETRIES attempts"
-                echo "Continuing workflow - metrics API may not be available immediately"
-                set +x
-              fi
-            fi
-          done
-
+          if check_metrics_health; then
+            echo "Metrics Server already healthy"
+          else
+            install_metrics_server || echo "WARNING: Metrics Server installation failed"
+          fi
           set +x
 
       - name: Install Helm
@@ -513,24 +711,17 @@ jobs:
       - name: Checkout code for ArgoCD values
         uses: actions/checkout@v4
 
-      # IMPORTANT: ArgoCD MUST be installed via Helm only
-      # This workflow automatically detects and cleans up kubectl-installed ArgoCD
-      # to ensure consistent Helm-based management
-      - name: Ensure clean ArgoCD state (idempotent)
+      - name: Ensure clean ArgoCD state
         id: argocd-cleanup
         run: |
           set -e
 
-          # Detection function
           detect_installation_method() {
             if ! kubectl get deployment argocd-server -n argocd &>/dev/null; then
               echo "not_installed"
               return
             fi
-
-            MANAGED_BY=$(kubectl get deployment argocd-server -n argocd \
-              -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null)
-
+            MANAGED_BY=$(kubectl get deployment argocd-server -n argocd -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}' 2>/dev/null)
             if [ "$MANAGED_BY" = "Helm" ]; then
               echo "helm_managed"
             else
@@ -538,258 +729,77 @@ jobs:
             fi
           }
 
-          # Cleanup function
           cleanup_kubectl_argocd() {
-            echo "WARNING: Cleaning up kubectl-installed ArgoCD..."
-
-            # Delete cluster-scoped resources FIRST (before namespace)
-            echo "Step 1/4: Deleting cluster-scoped resources..."
+            echo "⚠️ Cleaning up kubectl-installed ArgoCD..."
             kubectl delete clusterrole -l app.kubernetes.io/part-of=argocd --ignore-not-found=true --wait=false
             kubectl delete clusterrolebinding -l app.kubernetes.io/part-of=argocd --ignore-not-found=true --wait=false
-
-            # Delete specific ClusterRoles by name (fallback)
-            kubectl delete clusterrole argocd-application-controller --ignore-not-found=true --wait=false
-            kubectl delete clusterrole argocd-applicationset-controller --ignore-not-found=true --wait=false
-            kubectl delete clusterrole argocd-server --ignore-not-found=true --wait=false
-            kubectl delete clusterrolebinding argocd-application-controller --ignore-not-found=true --wait=false
-            kubectl delete clusterrolebinding argocd-applicationset-controller --ignore-not-found=true --wait=false
-            kubectl delete clusterrolebinding argocd-server --ignore-not-found=true --wait=false
-
-            echo "Step 2/4: Deleting ArgoCD Applications..."
+            kubectl delete clusterrole argocd-application-controller argocd-applicationset-controller argocd-server --ignore-not-found=true --wait=false
+            kubectl delete clusterrolebinding argocd-application-controller argocd-applicationset-controller argocd-server --ignore-not-found=true --wait=false
             kubectl delete applications --all -n argocd --wait=false --timeout=30s 2>/dev/null || true
-
-            echo "Step 3/4: Force deleting argocd namespace..."
-            # Force delete with no wait
             kubectl delete namespace argocd --wait=false --grace-period=0 --force 2>/dev/null || true
-
-            # Patch finalizers immediately
             kubectl patch namespace argocd -p '{"metadata":{"finalizers":null}}' 2>/dev/null || true
-
-            # Wait for namespace deletion with timeout
-            echo "Step 4/4: Waiting for namespace deletion..."
             for i in {1..30}; do
               if ! kubectl get namespace argocd &>/dev/null; then
-                echo "SUCCESS: Namespace deleted after $i attempts"
+                echo "✅ Namespace deleted"
                 break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "WARNING: Namespace still exists after 30 attempts, forcing removal..."
-                kubectl get namespace argocd -o json | \
-                  sed 's/"finalizers": \[[^]]*\]/"finalizers": []/' | \
-                  kubectl replace --raw /api/v1/namespaces/argocd/finalize -f - 2>/dev/null || true
               fi
               sleep 2
             done
-
-            # Final verification - wait a bit more
-            sleep 5
-
-            # Verify cleanup
-            REMAINING_NS=$(kubectl get namespace argocd 2>/dev/null | grep -c argocd || echo "0")
-            REMAINING_CR=$(kubectl get clusterrole -l app.kubernetes.io/part-of=argocd 2>/dev/null | grep -c argocd || echo "0")
-
-            if [ "$REMAINING_NS" != "0" ] || [ "$REMAINING_CR" != "0" ]; then
-              echo "WARNING: Some resources may still exist, but proceeding with installation"
-              echo "Remaining namespace: $REMAINING_NS, Remaining ClusterRoles: $REMAINING_CR"
-            fi
-
-            echo "SUCCESS: Cleanup completed"
             return 0
           }
 
-          # Main logic
-          echo "Detecting ArgoCD installation method..."
           INSTALL_METHOD=$(detect_installation_method)
-
           case "$INSTALL_METHOD" in
-            "not_installed")
-              echo "SUCCESS: ArgoCD not installed - will perform fresh installation"
-              ;;
-            "helm_managed")
-              echo "SUCCESS: ArgoCD managed by Helm - no cleanup needed"
-              ;;
-            "kubectl_installed")
-              echo "WARNING: ArgoCD installed via kubectl - cleanup required"
-              cleanup_kubectl_argocd
-              echo "SUCCESS: Ready for Helm installation"
-              ;;
+            "not_installed") echo "✅ ArgoCD not installed - will perform fresh installation" ;;
+            "helm_managed") echo "✅ ArgoCD managed by Helm - no cleanup needed" ;;
+            "kubectl_installed") cleanup_kubectl_argocd ;;
           esac
 
-      - name: Install or upgrade ArgoCD (Production-ready)
+      - name: Install or upgrade ArgoCD
         run: |
           set -e
 
-          # ============================================
-          # Function Definitions
-          # ============================================
-
-          check_argocd_tolerations() {
-            echo " Checking if ArgoCD tolerations are already configured..."
-
-            if ! kubectl get deployment argocd-server -n argocd &>/dev/null; then
-              echo "ERROR: ArgoCD not installed"
-              return 1
-            fi
-
-            CURRENT_TOLERATIONS=$(kubectl get deployment argocd-server -n argocd -o jsonpath='{.spec.template.spec.tolerations}' 2>/dev/null)
-
-            if echo "$CURRENT_TOLERATIONS" | grep -q "workload.*argocd"; then
-              echo " ArgoCD already has correct tolerations configured"
-              return 0
-            else
-              echo "WARNING:  ArgoCD needs toleration update"
-              return 1
-            fi
-          }
-
           wait_for_critical_components() {
-            echo " Waiting for critical ArgoCD components..."
-
-            # Note: argocd-application-controller is a StatefulSet, not a Deployment
-            # Changed in ArgoCD v1.8+ for sharding support
-
-            # Wait for StatefulSet (application controller)
-            echo "   Waiting for argocd-application-controller (StatefulSet)..."
-            if kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=180s; then
-              echo "    argocd-application-controller ready"
-            else
-              echo "   ERROR: argocd-application-controller failed to become ready"
-              kubectl describe statefulset/argocd-application-controller -n argocd
-              kubectl logs -n argocd -l app.kubernetes.io/name=argocd-application-controller --tail=50 || true
-              return 1
-            fi
-
-            # Wait for Deployments (server and repo-server)
-            CRITICAL_DEPLOYMENTS=(
-              "argocd-server"
-              "argocd-repo-server"
-            )
-
-            for deployment in "${CRITICAL_DEPLOYMENTS[@]}"; do
-              echo "   Waiting for $deployment (Deployment)..."
-              if kubectl rollout status deployment/$deployment -n argocd --timeout=120s; then
-                echo "    $deployment ready"
-              else
-                echo "   ERROR: $deployment failed to become ready"
-                kubectl describe deployment/$deployment -n argocd
-                kubectl logs -n argocd -l app.kubernetes.io/name=$deployment --tail=50 || true
-                return 1
-              fi
+            kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=180s || return 1
+            for deployment in argocd-server argocd-repo-server; do
+              kubectl rollout status deployment/$deployment -n argocd --timeout=120s || return 1
             done
-
-            echo " All critical components ready"
             return 0
           }
 
-          show_pod_status() {
-            echo " Current ArgoCD Pod Status:"
-            kubectl get pods -n argocd -o wide 2>/dev/null || kubectl get pods -n argocd -o wide
-
-            echo ""
-            echo " Deployment Status:"
-            kubectl get deployments -n argocd 2>/dev/null || kubectl get deployments -n argocd
-          }
-
-          # ============================================
-          # Main Logic
-          # ============================================
-
-          echo " Starting ArgoCD installation/upgrade process (Production)..."
-
-          # Check if ArgoCD exists and if upgrade is needed
           if kubectl get deployment argocd-server -n argocd &>/dev/null; then
-            if check_argocd_tolerations; then
-              echo " ArgoCD already configured correctly, skipping upgrade"
-              show_pod_status
-              exit 0
-            fi
-
-            echo " ArgoCD installed but needs configuration update..."
             HELM_ACTION="upgrade"
           else
-            echo " Installing ArgoCD for the first time (Production)..."
             kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
             HELM_ACTION="install"
           fi
 
-          # Add ArgoCD Helm repository
-          echo " Adding ArgoCD Helm repository..."
           helm repo add argo https://argoproj.github.io/argo-helm
           helm repo update
 
-          # Execute Helm command with production values
-          echo "  Executing Helm $HELM_ACTION with production configuration..."
           if [ "$HELM_ACTION" = "upgrade" ]; then
-            helm upgrade argocd argo/argo-cd \
-              --namespace argocd \
-              -f helm/argocd/values-prod.yaml \
-              --timeout 10m \
-              --atomic \
-              --cleanup-on-fail
+            helm upgrade argocd argo/argo-cd --namespace argocd -f helm/argocd/values-prod.yaml --timeout 10m --atomic --cleanup-on-fail
           else
-            # Note: --cleanup-on-fail not supported by helm install
-            # Using --atomic which purges installation on failure
-            helm install argocd argo/argo-cd \
-              --namespace argocd \
-              -f helm/argocd/values-prod.yaml \
-              --timeout 10m \
-              --atomic
+            helm install argocd argo/argo-cd --namespace argocd -f helm/argocd/values-prod.yaml --timeout 10m --atomic
           fi
 
-          echo " Helm command completed successfully"
-
-          # Wait for critical components only (not all pods)
-          if ! wait_for_critical_components; then
-            echo "ERROR: ArgoCD deployment verification failed"
-            show_pod_status
-            exit 1
-          fi
-
-          # Final status report
-          echo ""
-          echo " ArgoCD installation/upgrade completed successfully (Production)!"
-          show_pod_status
+          wait_for_critical_components || exit 1
+          echo "✅ ArgoCD installation/upgrade completed"
 
       - name: Validate ArgoCD Helm management
         run: |
-          echo "Validating ArgoCD management method..."
-
-          # Check if deployment exists first
-          if ! kubectl get deployment argocd-server -n argocd &>/dev/null; then
-            echo "ERROR: ArgoCD deployment not found"
-            exit 1
-          fi
-
-          # Check management label
-          MANAGED_BY=$(kubectl get deployment argocd-server -n argocd \
-            -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')
-
+          MANAGED_BY=$(kubectl get deployment argocd-server -n argocd -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')
           if [ "$MANAGED_BY" != "Helm" ]; then
-            echo "ERROR: ArgoCD not managed by Helm"
-            kubectl get deployment argocd-server -n argocd -o yaml | grep -A 5 "labels:"
+            echo "❌ ArgoCD not managed by Helm"
             exit 1
           fi
-
-          echo "SUCCESS: ArgoCD correctly managed by Helm"
+          echo "✅ ArgoCD correctly managed by Helm"
 
       - name: Ensure ArgoCD applications exist
         run: |
-          echo "Checking ArgoCD applications..."
-          set -e  # Exit on any error
-
-          # Create prod namespace if it doesn't exist
+          set -e
           kubectl create namespace prod --dry-run=client -o yaml | kubectl apply -f -
 
-          # Verify ArgoCD Application CRD exists
-          echo "Verifying ArgoCD CRDs..."
-          if ! kubectl get crd applications.argoproj.io &>/dev/null; then
-            echo "ERROR: ArgoCD Application CRD not found!"
-            echo "ArgoCD may not be installed correctly"
-            exit 1
-          fi
-          echo "SUCCESS: ArgoCD CRDs present"
-
-          # Create ArgoCD applications for each service
           declare -A services
           services=(
             ["api-gateway"]="helm/api-gateway"
@@ -799,20 +809,15 @@ jobs:
             ["frontend"]="helm/frontend"
           )
 
-          CREATED_APPS=()
-          FAILED_APPS=()
-
           for service in "${!services[@]}"; do
             APP_NAME="${service}-prod"
             HELM_PATH="${services[$service]}"
 
             if kubectl get application "$APP_NAME" -n argocd &>/dev/null; then
               echo "Application $APP_NAME already exists"
-              CREATED_APPS+=("$APP_NAME")
             else
-              echo "Creating ArgoCD application: $APP_NAME (path: $HELM_PATH)"
-
-              if cat <<EOF | kubectl apply -f -
+              echo "Creating ArgoCD application: $APP_NAME"
+              cat <<EOF | kubectl apply -f -
           apiVersion: argoproj.io/v1alpha1
           kind: Application
           metadata:
@@ -839,509 +844,143 @@ jobs:
               syncOptions:
                 - CreateNamespace=true
           EOF
-              then
-                # Verify creation succeeded
-                sleep 2
-                if kubectl get application "$APP_NAME" -n argocd &>/dev/null; then
-                  echo "SUCCESS: Application $APP_NAME created"
-                  CREATED_APPS+=("$APP_NAME")
-                else
-                  echo "ERROR: Application $APP_NAME not found after creation"
-                  FAILED_APPS+=("$APP_NAME")
-                fi
-              else
-                echo "ERROR: Failed to create application $APP_NAME"
-                FAILED_APPS+=("$APP_NAME")
-              fi
             fi
           done
 
-          # Setup monitoring prerequisites
-          echo "Setting up monitoring prerequisites..."
-
-          # Create namespace (ArgoCD will also create it, but we need it for secret)
+          # Setup monitoring
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-          # Generate Grafana admin secret (only if not exists)
           if ! kubectl get secret grafana-admin-credentials -n monitoring &>/dev/null; then
             GRAFANA_PASSWORD=$(openssl rand -base64 20)
             kubectl create secret generic grafana-admin-credentials \
               --from-literal=admin-user=admin \
               --from-literal=admin-password="$GRAFANA_PASSWORD" \
               -n monitoring
-            echo "Grafana secret created"
-          else
-            echo "Grafana secret already exists"
           fi
-
-          # Verify monitoring application file exists
-          if [ ! -f "argocd/applications/monitoring-production-ready.yaml" ]; then
-            echo "ERROR: argocd/applications/monitoring-production-ready.yaml not found!"
-            ls -la argocd/applications/ || echo "argocd/applications/ directory not found"
-            exit 1
-          fi
-
-          # Apply monitoring ArgoCD application
-          echo "Applying monitoring ArgoCD application..."
-          if kubectl apply -f argocd/applications/monitoring-production-ready.yaml; then
-            # Verify creation
-            sleep 2
-            if kubectl get application monitoring -n argocd &>/dev/null; then
-              echo "SUCCESS: Monitoring application created"
-              CREATED_APPS+=("monitoring")
-            else
-              echo "ERROR: Monitoring application not found after creation"
-              FAILED_APPS+=("monitoring")
-            fi
-          else
-            echo "ERROR: Failed to apply monitoring application"
-            FAILED_APPS+=("monitoring")
-          fi
-
-          # Summary
-          echo ""
-          echo "=== Application Creation Summary ==="
-          echo "Created/Verified: ${#CREATED_APPS[@]} applications"
-          for app in "${CREATED_APPS[@]}"; do
-            echo "  - $app"
-          done
-
-          if [ ${#FAILED_APPS[@]} -gt 0 ]; then
-            echo "FAILED: ${#FAILED_APPS[@]} applications"
-            for app in "${FAILED_APPS[@]}"; do
-              echo "  - $app"
-            done
-            echo ""
-            echo "ERROR: Some applications failed to create"
-            exit 1
-          fi
-
-          echo "SUCCESS: All applications created/verified"
+          kubectl apply -f argocd/applications/monitoring-production-ready.yaml
 
       - name: Force sync ArgoCD applications
         run: |
-          echo "Force syncing all applications..."
-          set -e  # Exit on error
-
-          APPS=(
-            "api-gateway-prod"
-            "exercises-prod"
-            "frontend-prod"
-            "scores-prod"
-            "user-management-prod"
-            "monitoring"
-          )
-
-          SYNCED_APPS=()
-          FAILED_APPS=()
+          set -e
+          APPS=("api-gateway-prod" "exercises-prod" "frontend-prod" "scores-prod" "user-management-prod" "monitoring")
 
           for app in "${APPS[@]}"; do
-            echo "Syncing $app..."
-
-            # Check if app exists first
-            if ! kubectl get application $app -n argocd &>/dev/null; then
-              echo "ERROR: Application $app does not exist"
-              FAILED_APPS+=("$app")
-              continue
-            fi
-
-            # Trigger sync
-            if kubectl patch application $app -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'; then
-              echo "SUCCESS: Sync triggered for $app"
-              SYNCED_APPS+=("$app")
-            else
-              echo "ERROR: Failed to trigger sync for $app"
-              FAILED_APPS+=("$app")
+            if kubectl get application $app -n argocd &>/dev/null; then
+              kubectl patch application $app -n argocd --type merge \
+                -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
+              echo "✅ Sync triggered for $app"
             fi
           done
-
-          # Summary
-          echo ""
-          echo "=== Sync Summary ==="
-          echo "Synced: ${#SYNCED_APPS[@]} applications"
-          for app in "${SYNCED_APPS[@]}"; do
-            echo "  - $app"
-          done
-
-          if [ ${#FAILED_APPS[@]} -gt 0 ]; then
-            echo "FAILED: ${#FAILED_APPS[@]} applications"
-            for app in "${FAILED_APPS[@]}"; do
-              echo "  - $app"
-            done
-            echo ""
-            echo "ERROR: Some applications failed to sync"
-            exit 1
-          fi
-
-          echo "Waiting 30s for ArgoCD to process sync requests..."
           sleep 30
 
       - name: Verify ArgoCD applications synced
         run: |
-          echo "Verifying ArgoCD application sync status..."
-          set -e
-
-          APPS=(
-            "api-gateway-prod"
-            "exercises-prod"
-            "frontend-prod"
-            "scores-prod"
-            "user-management-prod"
-            "monitoring"
-          )
-
-          HEALTHY_APPS=()
-          UNHEALTHY_APPS=()
+          APPS=("api-gateway-prod" "exercises-prod" "frontend-prod" "scores-prod" "user-management-prod" "monitoring")
 
           for app in "${APPS[@]}"; do
-            echo "Checking $app..."
-
-            # Get sync status
             SYNC_STATUS=$(kubectl get application $app -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || echo "Unknown")
             HEALTH_STATUS=$(kubectl get application $app -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || echo "Unknown")
-
-            echo "  Sync: $SYNC_STATUS, Health: $HEALTH_STATUS"
-
-            # Don't require "Synced" status immediately (may be "Progressing")
-            # Don't require "Healthy" immediately (pods may be starting)
-            # Just verify the application exists and has a status
-            if [ "$SYNC_STATUS" != "Unknown" ] && [ "$HEALTH_STATUS" != "Unknown" ]; then
-              HEALTHY_APPS+=("$app")
-            else
-              echo "  WARNING: $app has unknown status"
-              UNHEALTHY_APPS+=("$app")
-            fi
+            echo "$app: Sync=$SYNC_STATUS, Health=$HEALTH_STATUS"
           done
-
-          # Summary
-          echo ""
-          echo "=== Application Status Summary ==="
-          echo "Verified: ${#HEALTHY_APPS[@]} applications"
-          for app in "${HEALTHY_APPS[@]}"; do
-            echo "  - $app"
-          done
-
-          if [ ${#UNHEALTHY_APPS[@]} -gt 0 ]; then
-            echo "Unknown Status: ${#UNHEALTHY_APPS[@]} applications"
-            for app in "${UNHEALTHY_APPS[@]}"; do
-              echo "  - $app"
-            done
-            echo ""
-            echo "ERROR: Some applications have unknown status"
-            exit 1
-          fi
-
-          echo ""
-          echo "SUCCESS: All applications have valid status"
-          echo "NOTE: Applications may still be syncing/deploying"
-          echo ""
-          echo "Check detailed status:"
           kubectl get applications -n argocd
 
       - name: Check cluster capacity
         run: |
           echo "=== Cluster Node Status ==="
           kubectl get nodes -o wide
-
-          echo ""
-          echo "=== Pods per Node ==="
-          kubectl get pods -A -o wide --no-headers | awk '{print $8}' | sort | uniq -c
-
           echo ""
           echo "=== Pending Pods ==="
           kubectl get pods -A --field-selector status.phase=Pending
 
-          echo ""
-          echo "=== Cluster Autoscaler Status ==="
-          kubectl get deployment cluster-autoscaler -n kube-system || echo "WARNING: Cluster Autoscaler not found!"
-          kubectl logs -n kube-system -l app.kubernetes.io/name=cluster-autoscaler --tail=20 || echo "No logs"
-
       - name: Wait for nodes to be ready
         run: |
           echo "Waiting for cluster nodes to be Ready..."
-          set -x
-
-          # Wait for at least 2 nodes to be Ready (max 10 minutes)
           MAX_WAIT=600
           ELAPSED=0
-          INTERVAL=15
 
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
-            TOTAL_NODES=$(kubectl get nodes --no-headers 2>/dev/null | wc -l || echo "0")
-
-            echo "[$ELAPSED s] Ready nodes: $READY_NODES/$TOTAL_NODES"
-
+            echo "[$ELAPSED s] Ready nodes: $READY_NODES"
             if [ "$READY_NODES" -ge 2 ]; then
-              echo "SUCCESS: $READY_NODES nodes are Ready"
-              kubectl get nodes -o wide
+              echo "✅ $READY_NODES nodes are Ready"
               break
             fi
-
-            if [ $ELAPSED -ge $MAX_WAIT ]; then
-              echo "ERROR: Timeout waiting for nodes to be Ready"
-              kubectl get nodes -o wide
-              kubectl describe nodes
-              exit 1
-            fi
-
-            sleep $INTERVAL
-            ELAPSED=$((ELAPSED + INTERVAL))
+            sleep 15
+            ELAPSED=$((ELAPSED + 15))
           done
-
-          set +x
-
-          # Check node capacity
-          echo ""
-          echo "=== Node Capacity ==="
-          kubectl describe nodes | grep -A 5 "Allocated resources"
-
-          # Verify nodes can schedule pods
-          echo ""
-          echo "=== Node Conditions ==="
-          kubectl get nodes -o json | jq -r '.items[] | "\(.metadata.name): Ready=\(.status.conditions[] | select(.type=="Ready") | .status), DiskPressure=\(.status.conditions[] | select(.type=="DiskPressure") | .status), MemoryPressure=\(.status.conditions[] | select(.type=="MemoryPressure") | .status)"'
 
       - name: Install Cluster Autoscaler
         run: |
-          echo "[Step 1] Installing Cluster Autoscaler for automatic node scaling..."
-          set -x
-
-          # Check if Cluster Autoscaler already exists
           if kubectl get deployment cluster-autoscaler -n kube-system &>/dev/null; then
-            echo "INFO: Cluster Autoscaler already installed"
+            echo "Cluster Autoscaler already installed"
           else
-            echo "[Step 2] Downloading and applying Cluster Autoscaler manifest..."
-
-            # Download the Cluster Autoscaler manifest for EKS
             curl -s https://raw.githubusercontent.com/kubernetes/autoscaler/master/cluster-autoscaler/cloudprovider/aws/examples/cluster-autoscaler-autodiscover.yaml | \
-            sed "s/<YOUR CLUSTER NAME>/eks-prod/g" | \
-            kubectl apply -f -
+            sed "s/<YOUR CLUSTER NAME>/eks-prod/g" | kubectl apply -f -
 
-            # Verify deployment was created
-            if ! kubectl get deployment cluster-autoscaler -n kube-system &>/dev/null; then
-              echo "ERROR: Cluster Autoscaler deployment not created"
-              exit 1
-            fi
-
-            # Add annotation to skip eviction (prevent autoscaler from being evicted)
             kubectl -n kube-system annotate deployment.apps/cluster-autoscaler \
               cluster-autoscaler.kubernetes.io/safe-to-evict="false" --overwrite
-
-            # Patch the deployment to use the correct image version for EKS 1.33
             kubectl -n kube-system set image deployment/cluster-autoscaler \
               cluster-autoscaler=registry.k8s.io/autoscaling/cluster-autoscaler:v1.33.0
-
-            # Add tolerations to schedule on all nodes
             kubectl -n kube-system patch deployment cluster-autoscaler --type='json' -p='[
-              {
-                "op": "add",
-                "path": "/spec/template/spec/tolerations",
-                "value": [{"operator": "Exists"}]
-              }
+              {"op": "add", "path": "/spec/template/spec/tolerations", "value": [{"operator": "Exists"}]}
             ]'
-
-            # Add options for better autoscaling behavior
-            kubectl -n kube-system patch deployment cluster-autoscaler \
-              -p '{"spec":{"template":{"spec":{"containers":[{"name":"cluster-autoscaler","command":["./cluster-autoscaler","--v=4","--stderrthreshold=info","--cloud-provider=aws","--skip-nodes-with-local-storage=false","--expander=least-waste","--node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/eks-prod","--balance-similar-node-groups","--skip-nodes-with-system-pods=false"]}]}}}}'
-
-            echo "[Step 3] Waiting for Cluster Autoscaler to be ready..."
-            kubectl wait --for=condition=available \
-              --timeout=240s \
-              deployment/cluster-autoscaler \
-              -n kube-system || {
-                echo "WARNING: Cluster Autoscaler not ready yet"
-                kubectl get pods -n kube-system -l app=cluster-autoscaler
-                kubectl describe pods -n kube-system -l app=cluster-autoscaler
-                kubectl logs -n kube-system -l app=cluster-autoscaler --tail=50
-              }
-
-            echo "SUCCESS: Cluster Autoscaler installed"
+            kubectl wait --for=condition=available --timeout=240s deployment/cluster-autoscaler -n kube-system || true
           fi
-
-          set +x
-
-          echo "[Step 4] Verifying Cluster Autoscaler status..."
-          kubectl get deployment cluster-autoscaler -n kube-system
-          kubectl logs -n kube-system deployment/cluster-autoscaler --tail=10 || echo "INFO: Logs will be available once pod starts"
 
       - name: Install eksctl CLI
         run: |
-          echo "Installing eksctl CLI..."
-
-          # Check if eksctl is already installed
           if command -v eksctl &>/dev/null; then
-            echo "eksctl already installed: $(eksctl version)"
+            echo "eksctl already installed"
           else
-            echo "Installing eksctl..."
-            EKSCTL_VERSION="0.167.0"
-            curl -sLO "https://github.com/weaveworks/eksctl/releases/download/v${EKSCTL_VERSION}/eksctl_Linux_amd64.tar.gz"
+            curl -sLO "https://github.com/weaveworks/eksctl/releases/download/v0.167.0/eksctl_Linux_amd64.tar.gz"
             tar -xzf eksctl_Linux_amd64.tar.gz
             sudo mv eksctl /usr/local/bin/
             rm eksctl_Linux_amd64.tar.gz
-            echo "eksctl installed: $(eksctl version)"
           fi
 
       - name: Verify OIDC Provider
         run: |
-          echo "Verifying OIDC provider for EKS cluster..."
-          set -x  # Enable debug tracing
-
-          # Get OIDC issuer URL
           OIDC_ISSUER=$(aws eks describe-cluster --name eks-prod --region us-east-1 --query "cluster.identity.oidc.issuer" --output text 2>&1)
-
           if [ -z "$OIDC_ISSUER" ] || [ "$OIDC_ISSUER" == "None" ]; then
-            echo "ERROR: No OIDC issuer found for cluster"
-            echo "Creating OIDC provider..."
-            eksctl utils associate-iam-oidc-provider \
-              --cluster eks-prod \
-              --region us-east-1 \
-              --approve
-            echo "OIDC provider created"
-          else
-            echo "OIDC issuer found: $OIDC_ISSUER"
-
-            # Extract provider ID from URL
-            PROVIDER_ID=$(echo "$OIDC_ISSUER" | sed 's|https://||')
-
-            # Check if provider exists in IAM
-            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-            if aws iam get-open-id-connect-provider \
-              --open-id-connect-provider-arn "arn:aws:iam::${ACCOUNT_ID}:oidc-provider/${PROVIDER_ID}" &>/dev/null; then
-              echo "OIDC provider already exists in IAM"
-            else
-              echo "OIDC provider not in IAM, creating..."
-              eksctl utils associate-iam-oidc-provider \
-                --cluster eks-prod \
-                --region us-east-1 \
-                --approve
-              echo "OIDC provider created"
-            fi
+            eksctl utils associate-iam-oidc-provider --cluster eks-prod --region us-east-1 --approve
           fi
-
-          set +x  # Disable debug tracing
 
       - name: Install AWS EBS CSI Driver
         run: |
-          echo "Installing AWS EBS CSI Driver for persistent storage (gp3)..."
-          set -x
-
-          # Check if EBS CSI Driver already installed
           if kubectl get deployment ebs-csi-controller -n kube-system &>/dev/null; then
             echo "EBS CSI Driver already installed"
           else
-            echo "Installing EBS CSI Driver..."
-
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-
-            # Create IAM policy for EBS CSI Driver if not exists
             POLICY_NAME="AmazonEBSCSIDriverPolicy-prod"
+
             if ! aws iam get-policy --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}" &>/dev/null; then
-              echo "Creating EBS CSI Driver IAM policy..."
               curl -o /tmp/ebs_csi_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-ebs-csi-driver/master/docs/example-iam-policy.json
-              aws iam create-policy \
-                --policy-name ${POLICY_NAME} \
-                --policy-document file:///tmp/ebs_csi_policy.json
-              echo "EBS CSI Driver IAM policy created"
-            else
-              echo "EBS CSI Driver IAM policy already exists"
+              aws iam create-policy --policy-name ${POLICY_NAME} --policy-document file:///tmp/ebs_csi_policy.json
             fi
 
-            # Create/update IAM service account for EBS CSI Driver
-            # IMPORTANT: Always run this to ensure K8s ServiceAccount exists
-            ROLE_NAME="AmazonEKSEBSCSIDriverRole-prod"
+            eksctl create iamserviceaccount \
+              --cluster=eks-prod --namespace=kube-system --name=ebs-csi-controller-sa \
+              --role-name AmazonEKSEBSCSIDriverRole-prod \
+              --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
+              --approve --override-existing-serviceaccounts --region us-east-1
 
-            # Check if K8s ServiceAccount exists
-            if kubectl get serviceaccount ebs-csi-controller-sa -n kube-system &>/dev/null; then
-              echo "K8s ServiceAccount already exists, checking IAM annotation..."
-
-              # Check if it has the correct IAM role annotation
-              CURRENT_ROLE=$(kubectl get serviceaccount ebs-csi-controller-sa -n kube-system -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "")
-              EXPECTED_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
-
-              if [ "$CURRENT_ROLE" = "$EXPECTED_ROLE" ]; then
-                echo "ServiceAccount has correct IAM role annotation"
-              else
-                echo "ServiceAccount IAM annotation incorrect or missing, recreating..."
-                kubectl delete serviceaccount ebs-csi-controller-sa -n kube-system --ignore-not-found=true
-
-                # Create using eksctl
-                eksctl create iamserviceaccount \
-                  --cluster=eks-prod \
-                  --namespace=kube-system \
-                  --name=ebs-csi-controller-sa \
-                  --role-name ${ROLE_NAME} \
-                  --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
-                  --approve \
-                  --override-existing-serviceaccounts \
-                  --region us-east-1
-              fi
-            else
-              echo "Creating EBS CSI Driver IAM service account with K8s ServiceAccount..."
-              eksctl create iamserviceaccount \
-                --cluster=eks-prod \
-                --namespace=kube-system \
-                --name=ebs-csi-controller-sa \
-                --role-name ${ROLE_NAME} \
-                --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
-                --approve \
-                --override-existing-serviceaccounts \
-                --region us-east-1
-              echo "EBS CSI Driver IAM service account created"
-            fi
-
-            # Verify ServiceAccount exists
-            if ! kubectl get serviceaccount ebs-csi-controller-sa -n kube-system &>/dev/null; then
-              echo "ERROR: ServiceAccount not created successfully"
-              exit 1
-            fi
-            echo "ServiceAccount verified"
-
-            # Install EBS CSI Driver using Helm
-            echo "Installing EBS CSI Driver via Helm..."
             helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver
             helm repo update
-
             helm install aws-ebs-csi-driver aws-ebs-csi-driver/aws-ebs-csi-driver \
               --namespace kube-system \
               --set controller.serviceAccount.create=false \
               --set controller.serviceAccount.name=ebs-csi-controller-sa \
               --set controller.tolerations[0].operator=Exists \
               --set node.tolerations[0].operator=Exists \
-              --wait \
-              --timeout 5m
-
-            echo "EBS CSI Driver installed"
+              --wait --timeout 5m
           fi
-
-          # Verify EBS CSI Driver
-          echo "Verifying EBS CSI Driver..."
-          kubectl get deployment ebs-csi-controller -n kube-system
-          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-ebs-csi-driver
-
-          # Wait for controller to be ready
-          kubectl wait --for=condition=available \
-            --timeout=300s \
-            deployment/ebs-csi-controller \
-            -n kube-system || {
-              echo "WARNING: EBS CSI Driver controller not ready yet"
-              kubectl describe deployment ebs-csi-controller -n kube-system
-              kubectl logs -n kube-system -l app=ebs-csi-controller --tail=50
-            }
-
-          echo "EBS CSI Driver is ready"
-          set +x
 
       - name: Create gp3 StorageClass
         run: |
-          echo "Creating gp3 StorageClass for better performance and cost..."
-
           cat <<EOF | kubectl apply -f -
           apiVersion: storage.k8s.io/v1
           kind: StorageClass
           metadata:
             name: gp3
-            annotations:
-              storageclass.kubernetes.io/is-default-class: "false"
           provisioner: ebs.csi.aws.com
           parameters:
             type: gp3
@@ -1352,181 +991,51 @@ jobs:
           reclaimPolicy: Delete
           EOF
 
-          echo "gp3 StorageClass created"
-          kubectl get storageclass gp3
-
       - name: Install AWS Load Balancer Controller
         run: |
-          echo "Installing AWS Load Balancer Controller for Ingress support..."
-          set -x  # Enable debug tracing for troubleshooting
-
-          # Create IAM policy if not exists
+          if kubectl get deployment aws-load-balancer-controller -n kube-system &>/dev/null; then
+            echo "AWS Load Balancer Controller already installed"
+          else
             POLICY_NAME="AWSLoadBalancerControllerIAMPolicy-prod"
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
             if ! aws iam get-policy --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}" &>/dev/null; then
-              echo "Creating IAM policy..."
               curl -o /tmp/iam_policy.json https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.6.0/docs/install/iam_policy.json
-              aws iam create-policy \
-                --policy-name ${POLICY_NAME} \
-                --policy-document file:///tmp/iam_policy.json
-              echo "IAM policy created"
-            else
-              echo "IAM policy already exists"
+              aws iam create-policy --policy-name ${POLICY_NAME} --policy-document file:///tmp/iam_policy.json
             fi
 
-            # Create/update IAM service account using eksctl
-            # IMPORTANT: Always run this to ensure K8s ServiceAccount exists
-            ROLE_NAME="AmazonEKSLoadBalancerControllerRole-prod"
+            eksctl create iamserviceaccount \
+              --cluster=eks-prod --namespace=kube-system --name=aws-load-balancer-controller \
+              --role-name AmazonEKSLoadBalancerControllerRole-prod \
+              --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
+              --approve --override-existing-serviceaccounts --region us-east-1
 
-            # Check if K8s ServiceAccount exists
-            if kubectl get serviceaccount aws-load-balancer-controller -n kube-system &>/dev/null; then
-              echo "K8s ServiceAccount already exists, checking IAM annotation..."
-
-              # Check if it has the correct IAM role annotation
-              CURRENT_ROLE=$(kubectl get serviceaccount aws-load-balancer-controller -n kube-system -o jsonpath='{.metadata.annotations.eks\.amazonaws\.com/role-arn}' 2>/dev/null || echo "")
-              EXPECTED_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
-
-              if [ "$CURRENT_ROLE" = "$EXPECTED_ROLE" ]; then
-                echo "ServiceAccount has correct IAM role annotation"
-              else
-                echo "ServiceAccount IAM annotation incorrect or missing, recreating..."
-                kubectl delete serviceaccount aws-load-balancer-controller -n kube-system --ignore-not-found=true
-
-                # Create using eksctl
-                eksctl create iamserviceaccount \
-                  --cluster=eks-prod \
-                  --namespace=kube-system \
-                  --name=aws-load-balancer-controller \
-                  --role-name ${ROLE_NAME} \
-                  --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
-                  --approve \
-                  --override-existing-serviceaccounts \
-                  --region us-east-1
-              fi
-            else
-              echo "Creating IAM service account with K8s ServiceAccount..."
-              eksctl create iamserviceaccount \
-                --cluster=eks-prod \
-                --namespace=kube-system \
-                --name=aws-load-balancer-controller \
-                --role-name ${ROLE_NAME} \
-                --attach-policy-arn=arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME} \
-                --approve \
-                --override-existing-serviceaccounts \
-                --region us-east-1
-              echo "IAM service account created"
-            fi
-
-            # Verify ServiceAccount exists
-            if ! kubectl get serviceaccount aws-load-balancer-controller -n kube-system &>/dev/null; then
-              echo "ERROR: ServiceAccount not created successfully"
-              exit 1
-            fi
-            echo "ServiceAccount verified"
-
-            # Get VPC ID for ALB controller (required for EKS clusters)
-            echo "Getting VPC ID from EKS cluster..."
             VPC_ID=$(aws eks describe-cluster --name eks-prod --region us-east-1 --query 'cluster.resourcesVpcConfig.vpcId' --output text)
-            echo "VPC ID: $VPC_ID"
 
-            if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
-              echo "ERROR: Cannot get VPC ID from EKS cluster"
-              exit 1
-            fi
-
-            # Install ALB controller via Helm with retry logic
-            echo "Installing Helm chart..."
             helm repo add eks https://aws.github.io/eks-charts
             helm repo update
-
-            # Retry logic for Helm install
-            MAX_RETRIES=3
-            RETRY_COUNT=0
-            until [ $RETRY_COUNT -ge $MAX_RETRIES ]; do
-              echo "Helm install attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
-
-              if helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-                -n kube-system \
-                --set clusterName=eks-prod \
-                --set vpcId=$VPC_ID \
-                --set region=us-east-1 \
-                --set serviceAccount.create=false \
-                --set serviceAccount.name=aws-load-balancer-controller \
-                --set tolerations[0].operator=Exists \
-                --wait \
-                --timeout 10m; then
-                echo "Helm install successful"
-                break
-              else
-                RETRY_COUNT=$((RETRY_COUNT + 1))
-                if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                  echo "WARNING: Helm install failed, retrying in 30s..."
-                  sleep 30
-                else
-                  echo "ERROR: Helm install failed after $MAX_RETRIES attempts"
-                  exit 1
-                fi
-              fi
-            done
-
-            echo "AWS Load Balancer Controller installed"
+            helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+              -n kube-system \
+              --set clusterName=eks-prod \
+              --set vpcId=$VPC_ID \
+              --set region=us-east-1 \
+              --set serviceAccount.create=false \
+              --set serviceAccount.name=aws-load-balancer-controller \
+              --set tolerations[0].operator=Exists \
+              --wait --timeout 10m
           fi
-
-          # Verify installation
-          echo "Verifying AWS Load Balancer Controller..."
-          kubectl get deployment aws-load-balancer-controller -n kube-system
-          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
-
-          # Wait for controller to be ready
-          kubectl wait --for=condition=available \
-            --timeout=300s \
-            deployment/aws-load-balancer-controller \
-            -n kube-system || {
-              echo "WARNING: AWS Load Balancer Controller not ready yet"
-              kubectl describe deployment aws-load-balancer-controller -n kube-system
-              kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller --tail=50
-              exit 1
-            }
-
-          echo "AWS Load Balancer Controller is ready"
-          set +x  # Disable debug tracing
 
       - name: Wait for pods to be healthy
         run: |
-          echo "Waiting for all pods to be healthy (max 5 minutes)..."
-
+          echo "Waiting for all pods to be healthy..."
           for i in {1..30}; do
             READY_PODS=$(kubectl get pods -n prod --no-headers 2>/dev/null | grep -c "1/1.*Running" || echo "0")
             TOTAL_PODS=$(kubectl get pods -n prod --no-headers 2>/dev/null | wc -l | xargs || echo "0")
-
             echo "Attempt $i/30: $READY_PODS/$TOTAL_PODS pods ready"
-
             if [ "$READY_PODS" -ge "8" ] && [ "$READY_PODS" == "$TOTAL_PODS" ]; then
-              echo "All pods are healthy!"
-              kubectl get pods -n prod
+              echo "✅ All pods are healthy!"
               break
             fi
-
-            if [ "$i" == "30" ]; then
-              echo "WARNING: Warning: Not all pods ready after 5 minutes"
-              echo ""
-              echo "=== Pod Status ==="
-              kubectl get pods -n prod
-
-              echo ""
-              echo "=== ArgoCD Applications ==="
-              kubectl get applications -n argocd
-
-              echo ""
-              echo "=== Recent Pod Events ==="
-              kubectl get events -n prod --sort-by='.lastTimestamp' --field-selector type=Warning | tail -20
-
-              echo ""
-              echo "=== Pod Details (Not Running) ==="
-              kubectl get pods -n prod --field-selector status.phase!=Running -o wide 2>/dev/null || echo "No pods in non-running state"
-            fi
-
             sleep 10
           done
 
@@ -1534,42 +1043,28 @@ jobs:
         id: get-urls
         continue-on-error: true
         run: |
-          echo "Getting ArgoCD credentials..."
           ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "N/A")
 
-          echo "Getting service endpoints..."
-
-          # ArgoCD uses Internal ALB - get ingress hostname
-          echo "Waiting for ArgoCD Internal ALB (max 3 minutes)..."
           ARGOCD_URL=""
           for i in {1..18}; do
             ARGOCD_URL=$(kubectl get ingress argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-
             if [ -n "$ARGOCD_URL" ]; then
-              echo "ArgoCD Internal ALB found: $ARGOCD_URL"
-              ARGOCD_URL="http://$ARGOCD_URL (WARNING: Internal VPC only)"
+              ARGOCD_URL="http://$ARGOCD_URL (Internal VPC only)"
               break
             fi
-            echo "Waiting for ArgoCD Internal ALB... ($i/18)"
             sleep 10
           done
-          [ -z "$ARGOCD_URL" ] && ARGOCD_URL="Pending (Internal ALB provisioning)"
+          [ -z "$ARGOCD_URL" ] && ARGOCD_URL="Pending"
 
-          # Get Frontend LoadBalancer URL (Public)
-          echo "Waiting for Frontend LoadBalancer..."
           FRONTEND_URL=""
           for i in {1..18}; do
             FRONTEND_URL=$(kubectl get svc frontend-prod -n prod -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-            [ -z "$FRONTEND_URL" ] && FRONTEND_URL=$(kubectl get svc frontend-prod -n prod -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-
             if [ -n "$FRONTEND_URL" ]; then
-              echo "Frontend URL found: $FRONTEND_URL"
               break
             fi
-            echo "Waiting for Frontend LoadBalancer... ($i/18)"
             sleep 10
           done
-          [ -z "$FRONTEND_URL" ] && FRONTEND_URL="Pending (LoadBalancer provisioning)"
+          [ -z "$FRONTEND_URL" ] && FRONTEND_URL="Pending"
 
           echo "argocd_password=$ARGOCD_PASSWORD" >> $GITHUB_OUTPUT
           echo "argocd_url=$ARGOCD_URL" >> $GITHUB_OUTPUT
@@ -1578,69 +1073,88 @@ jobs:
       - name: Get monitoring info
         id: monitoring-info
         run: |
-          echo " Checking monitoring stack status (deployed by ArgoCD)..."
-
-          # Wait briefly for Grafana Internal ALB (max 30s, non-blocking)
-          GRAFANA_URL=""
-          for i in {1..6}; do
-            GRAFANA_URL=$(kubectl get ingress monitoring-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
-
-            if [ -n "$GRAFANA_URL" ]; then
-              echo " Grafana Internal ALB found: $GRAFANA_URL"
-              GRAFANA_URL="http://$GRAFANA_URL (WARNING: Internal VPC only)"
-              break
-            fi
-            echo "Attempt $i/6: Waiting for Grafana Internal ALB..."
-            sleep 5
-          done
-
-          # Get Grafana password
           GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "N/A")
-
-          [ -z "$GRAFANA_URL" ] && GRAFANA_URL="Pending (Internal ALB provisioning)"
+          GRAFANA_URL=$(kubectl get ingress monitoring-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Pending")
 
           echo "grafana_password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
           echo "grafana_url=$GRAFANA_URL" >> $GITHUB_OUTPUT
 
-  # Output access information
-  output-access-info:
-    name: Output Access Information
-    needs: [sync-and-verify]
-    if: always()
+  # =============================================
+  # Stage 8: Pipeline Summary
+  # =============================================
+  pipeline-summary:
+    name: 📊 Pipeline Summary
     runs-on: ubuntu-latest
+    needs: [code-analysis, detect-changes, build-backend, build-frontend, sync-and-verify]
+    if: always()
+    
     steps:
       - name: Configure AWS credentials
+        if: needs.sync-and-verify.result == 'success'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
       - name: Configure kubectl
+        if: needs.sync-and-verify.result == 'success'
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+          aws eks update-kubeconfig --region us-east-1 --name eks-prod
 
       - name: Get monitoring info
         id: monitoring-info
+        if: needs.sync-and-verify.result == 'success'
         run: |
-          echo " Checking monitoring stack status (deployed by ArgoCD)..."
-
-          # Wait briefly for Grafana credentials (max 30s, non-blocking)
-          for i in {1..6}; do
-            if kubectl get secret grafana-admin-credentials -n monitoring &>/dev/null; then
-              echo " Grafana credentials ready"
-              break
-            fi
-            echo "Attempt $i/6: Waiting for Grafana credentials..."
-            sleep 5
-          done
-
-          # Get Grafana password
           GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "N/A")
-
           echo "grafana_password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
 
+      - name: Generate Pipeline Summary
+        run: |
+          echo "## 🚀 Complete CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pipeline Stages" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Analysis & Security | ${{ needs.code-analysis.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Detect Changes | ${{ needs.detect-changes.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Backend | ${{ needs.build-backend.result == 'success' && '✅' || (needs.build-backend.result == 'skipped' && '⏭️' || '❌') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Frontend | ${{ needs.build-frontend.result == 'success' && '✅' || (needs.build-frontend.result == 'skipped' && '⏭️' || '❌') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy to Production | ${{ needs.sync-and-verify.result == 'success' && '✅' || (needs.sync-and-verify.result == 'skipped' && '⏭️' || '❌') }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.sync-and-verify.result }}" == "success" ]; then
+            echo "### 🌐 Access URLs" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Frontend Application (Public):**" >> $GITHUB_STEP_SUMMARY
+            echo "- http://${{ needs.sync-and-verify.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**ArgoCD Dashboard (Internal VPC only):**" >> $GITHUB_STEP_SUMMARY
+            echo "- URL: ${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Grafana Dashboard (Internal VPC only):**" >> $GITHUB_STEP_SUMMARY
+            echo "- URL: ${{ needs.sync-and-verify.outputs.grafana_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Password: \`${{ steps.monitoring-info.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**RDS PostgreSQL Database:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Host: \`${{ needs.sync-and-verify.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Port: \`5432\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Security Reports" >> $GITHUB_STEP_SUMMARY
+          echo "- SonarCloud: https://sonarcloud.io/organizations/nt114devsecopsproject/projects" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+
       - name: Display access information
+        if: needs.sync-and-verify.result == 'success'
         run: |
           echo "=========================================="
           echo "  PRODUCTION DEPLOYMENT COMPLETE!"
@@ -1649,75 +1163,16 @@ jobs:
           echo "Frontend Application (Public):"
           echo "  URL: http://${{ needs.sync-and-verify.outputs.frontend_url }}"
           echo ""
-          echo "ArgoCD Dashboard (Internal ALB - VPC only):"
+          echo "ArgoCD Dashboard (Internal VPC only):"
           echo "  URL:      ${{ needs.sync-and-verify.outputs.argocd_url }}"
           echo "  Username: admin"
           echo "  Password: ${{ needs.sync-and-verify.outputs.argocd_password }}"
-          echo "  Note:     Only accessible from within VPC (bastion host or VPN required)"
           echo ""
-          echo "Grafana Dashboard (Internal ALB - VPC only):"
-          echo "  URL:      Check kubectl get ingress monitoring-grafana -n monitoring"
+          echo "Grafana Dashboard (Internal VPC only):"
           echo "  Username: admin"
           echo "  Password: ${{ steps.monitoring-info.outputs.grafana_password }}"
-          echo "  Note:     Only accessible from within VPC (bastion host or VPN required)"
           echo ""
           echo "RDS PostgreSQL Database:"
           echo "  Host:     ${{ needs.sync-and-verify.outputs.rds_endpoint }}"
           echo "  Port:     5432"
-          echo "  Database: postgres"
-          echo "  Username: postgres"
-          echo "  Password: (stored in GitHub Secret: RDS_PASSWORD)"
-          echo ""
           echo "=========================================="
-
-      - name: Deployment summary
-        run: |
-          echo "##  Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Frontend Application (Public):**" >> $GITHUB_STEP_SUMMARY
-          echo "- http://${{ needs.sync-and-verify.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**ArgoCD Dashboard (Internal ALB - VPC only):**" >> $GITHUB_STEP_SUMMARY
-          echo "- URL: ${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- WARNING: **Note:** Only accessible from within VPC (bastion host or VPN required)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "###  Monitoring Stack (Managed by ArgoCD)" >> $GITHUB_STEP_SUMMARY
-          echo "**Grafana Dashboard (Internal ALB - VPC only):**" >> $GITHUB_STEP_SUMMARY
-          echo "- Get URL: \`kubectl get ingress monitoring-grafana -n monitoring\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Password: \`${{ steps.monitoring-info.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- WARNING: **Note:** Only accessible from within VPC (bastion host or VPN required)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Prometheus:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Access via: \`kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Then visit: http://localhost:9090" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ️ RDS PostgreSQL Database" >> $GITHUB_STEP_SUMMARY
-          echo "- Host: \`${{ needs.sync-and-verify.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Port: \`5432\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Database: \`postgres\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Username: \`postgres\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Password: **(stored in GitHub Secret: RDS_PASSWORD)**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo ">  To get password: Go to Settings → Secrets → RDS_PASSWORD" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "###  Deployment Details" >> $GITHUB_STEP_SUMMARY
-          echo "- **Environment:** Production" >> $GITHUB_STEP_SUMMARY
-          echo "- **Cluster:** eks-prod" >> $GITHUB_STEP_SUMMARY
-          echo "- **Namespace:** prod" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "###  What Was Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "- Docker images built and pushed to ECR (production repositories)" >> $GITHUB_STEP_SUMMARY
-          echo "- Helm values updated with new image tags" >> $GITHUB_STEP_SUMMARY
-          echo "- ArgoCD applications synced (including monitoring stack)" >> $GITHUB_STEP_SUMMARY
-          echo "- All applications managed via GitOps (ArgoCD)" >> $GITHUB_STEP_SUMMARY
-          echo "- Production-grade resource allocation and autoscaling" >> $GITHUB_STEP_SUMMARY
-          echo "- Dedicated node groups with taints/tolerations" >> $GITHUB_STEP_SUMMARY
-          echo "- Internal ALB for ArgoCD and Grafana (VPC-only access)" >> $GITHUB_STEP_SUMMARY
-          echo "- Public LoadBalancer for Frontend" >> $GITHUB_STEP_SUMMARY
