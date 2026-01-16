@@ -333,7 +333,6 @@ jobs:
     name: Setup Database Secrets
     needs: detect-changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     outputs:
       rds_endpoint: ${{ steps.rds-info.outputs.endpoint }}
       rds_password: ${{ steps.rds-info.outputs.password }}
@@ -424,7 +423,6 @@ jobs:
   build-backend:
     name: Build Backend Service
     needs: [detect-changes, setup-secrets]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -502,7 +500,6 @@ jobs:
   build-frontend:
     name: Build Frontend
     needs: [detect-changes, setup-secrets]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
