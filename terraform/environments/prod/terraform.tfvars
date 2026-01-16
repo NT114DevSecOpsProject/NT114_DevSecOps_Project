@@ -19,21 +19,21 @@ cluster_version = "1.33"
 # t3.medium (2 vCPU, 4 GB) + t3a.medium (AMD, cheaper)
 # Diversified for better spot availability
 app_node_instance_types = ["t3.medium", "t3a.medium"]
-app_node_capacity_type  = "SPOT"
+app_node_capacity_type  = "ON_DEMAND"
 app_node_min_size       = 2
 app_node_desired_size   = 3
 app_node_max_size       = 6
 
-# ArgoCD Node Group - min=1, desired=1, max=2 (Spot Fleet - Dedicated with taints)
+# ArgoCD Node Group - min=1, desired=1, max=2 (ON_DEMAND - Dedicated with taints)
 argocd_node_instance_types = ["t3.medium", "t3a.medium"]
-argocd_node_capacity_type  = "SPOT"
+argocd_node_capacity_type  = "ON_DEMAND"
 argocd_node_min_size       = 1
 argocd_node_desired_size   = 2
 argocd_node_max_size       = 2
 
-# Monitoring Node Group - min=1, desired=1, max=2 (Spot Fleet - Dedicated with taints)
+# Monitoring Node Group - min=1, desired=1, max=2 (ON_DEMAND - Dedicated with taints)
 monitoring_node_instance_types = ["t3.medium", "t3a.medium"]
-monitoring_node_capacity_type  = "SPOT"
+monitoring_node_capacity_type  = "ON_DEMAND"
 monitoring_node_min_size       = 1
 monitoring_node_desired_size   = 1
 monitoring_node_max_size       = 2

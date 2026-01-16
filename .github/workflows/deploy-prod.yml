@@ -1360,13 +1360,7 @@ jobs:
           echo "Installing AWS Load Balancer Controller for Ingress support..."
           set -x  # Enable debug tracing for troubleshooting
 
-          # Check if ALB controller already exists
-          if kubectl get deployment aws-load-balancer-controller -n kube-system &>/dev/null; then
-            echo "AWS Load Balancer Controller already installed"
-          else
-            echo "Installing AWS Load Balancer Controller..."
-
-            # Create IAM policy if not exists
+          # Create IAM policy if not exists
             POLICY_NAME="AWSLoadBalancerControllerIAMPolicy-prod"
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
