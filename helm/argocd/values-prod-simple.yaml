@@ -1,0 +1,108 @@
+# ArgoCD Helm Values for Production - Simplified (No ALB required)
+
+## Global Configuration - Remove tolerations to allow scheduling on any node
+global:
+  tolerations: []
+
+## Server Configuration
+server:
+  tolerations: []
+
+  # Use LoadBalancer service type for direct access
+  service:
+    type: LoadBalancer
+
+  # Disable ingress (no ALB controller needed)
+  ingress:
+    enabled: false
+
+  # Resource limits
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  replicas: 1  # Reduce to 1 for simplicity
+
+## Repo Server Configuration
+repoServer:
+  tolerations: []
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+  replicas: 1  # Reduce to 1 for simplicity
+
+## Application Controller Configuration
+controller:
+  tolerations: []
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+  replicas: 1
+
+## Redis Configuration
+redis:
+  tolerations: []
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+## Dex Server Configuration
+dex:
+  enabled: false  # Disable for simplicity
+  tolerations: []
+
+## ApplicationSet Controller Configuration
+applicationSet:
+  tolerations: []
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  replicas: 1  # Reduce to 1 for simplicity
+
+## Notifications Controller Configuration
+notifications:
+  enabled: false  # Disable for simplicity
+  tolerations: []
+
+## Config Management
+configs:
+  params:
+    # Enable insecure mode (HTTP)
+    server.insecure: true
+
+  repositories: {}
+
+  rbac:
+    policy.default: role:readonly
+    policy.csv: |
+      p, role:admin, applications, *, */*, allow
+      p, role:admin, clusters, *, *, allow
+      p, role:admin, repositories, *, *, allow
+      g, admin, role:admin
