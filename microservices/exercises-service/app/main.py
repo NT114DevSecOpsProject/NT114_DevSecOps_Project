@@ -69,8 +69,10 @@ def create_app():
             ):
                 return abort(401)
     
-    # Register blueprints
-    app.register_blueprint(exercises_blueprint, url_prefix="/api/exercises")
+    # Register blueprints (strict_slashes=False to allow both /api/exercises and /api/exercises/)
+    exercises_blueprint.url_prefix = "/api/exercises"
+    app.register_blueprint(exercises_blueprint)
+    app.url_map.strict_slashes = False
     
     # Health check endpoint
     @app.route('/health', methods=['GET'])
