@@ -5,7 +5,7 @@ Hệ thống web quản lý bài tập lập trình sử dụng kiến trúc mic
 ## 👥 Nhóm phát triển
 
 - **Sinh viên**: [Hồ Công Hiếu] - [22520433]
-- **Sinh viên**: [Tên sinh viên 2] - [22521151] 
+- **Sinh viên**: [Hồ Văn Phước] - [22521151] 
 
 ## 🛠️ Công nghệ sử dụng
 
