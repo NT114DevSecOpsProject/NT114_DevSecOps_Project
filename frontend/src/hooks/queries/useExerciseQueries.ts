@@ -24,7 +24,7 @@ export const useExercise = (id: number) => {
   });
 };
 
-// Mutation để tạo exercise mới (admin only)
+// Mutation để tạo exercise mới
 export const useCreateExercise = () => {
   const queryClient = useQueryClient();
   
@@ -106,7 +106,7 @@ export const useValidateCode = () => {
   });
 };
 
-// Mutation để update exercise (admin only)
+// Mutation để update exercise
 export const useUpdateExercise = () => {
   const queryClient = useQueryClient();
   

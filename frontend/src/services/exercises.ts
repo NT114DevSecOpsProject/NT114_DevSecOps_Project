@@ -50,7 +50,7 @@ export class ExerciseService {
     }
   }
 
-  // Tạo bài tập mới (chỉ dành cho admin)
+  // Tạo bài tập mới
   async create(exerciseData: ExerciseCreate): Promise<SuccessResponse> {
     try {
       return await apiClient.post<SuccessResponse>('/exercises/', exerciseData, true);
@@ -60,16 +60,13 @@ export class ExerciseService {
         if (error.status === 401) {
           throw new ApiError(401, 'Bạn cần đăng nhập để tạo bài tập');
         }
-        if (error.status === 403) {
-          throw new ApiError(403, 'Chỉ admin mới có thể tạo bài tập');
-        }
         throw error;
       }
       throw new ApiError(500, 'Không thể tạo bài tập mới');
     }
   }
 
-  // Cập nhật bài tập (chỉ dành cho admin)
+  // Cập nhật bài tập
   async update(id: number, exerciseData: Partial<ExerciseCreate>): Promise<SuccessResponse> {
     try {
       return await apiClient.put<SuccessResponse>(`/exercises/${id}`, exerciseData, true);
@@ -77,9 +74,6 @@ export class ExerciseService {
       if (error instanceof ApiError) {
         if (error.status === 401) {
           throw new ApiError(401, 'Bạn cần đăng nhập để cập nhật bài tập');
-        }
-        if (error.status === 403) {
-          throw new ApiError(403, 'Chỉ admin mới có thể cập nhật bài tập');
         }
         throw error;
       }
