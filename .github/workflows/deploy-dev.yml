@@ -89,7 +89,6 @@ jobs:
     name: SonarCloud & Security Analysis
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: false  # Disabled for faster deployment
     
     steps:
       - name: Checkout
@@ -413,7 +412,7 @@ jobs:
   # =============================================
   build-backend:
     name: Build Backend Service
-    needs: [detect-changes]
+    needs: [detect-changes, code-analysis]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -447,7 +446,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Install Trivy
-        if: false  # Disabled
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
 
@@ -459,7 +457,6 @@ jobs:
             --load .
 
       - name: Trivy Scan Docker Image
-        if: false  # Disabled
         continue-on-error: true
         run: |
           echo "### 🔍 Docker Image Scan: ${{ matrix.service.name }}" >> $GITHUB_STEP_SUMMARY
@@ -479,7 +476,7 @@ jobs:
 
   build-frontend:
     name: Build Frontend
-    needs: [detect-changes]
+    needs: [detect-changes, code-analysis]
     runs-on: ubuntu-latest
     
     steps:
@@ -501,7 +498,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Install Trivy
-        if: false  # Disabled
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
 
@@ -517,7 +513,6 @@ jobs:
             --load .
 
       - name: Trivy Scan Frontend Image
-        if: false  # Disabled
         continue-on-error: true
         run: |
           echo "### 🔍 Docker Image Scan: frontend" >> $GITHUB_STEP_SUMMARY
