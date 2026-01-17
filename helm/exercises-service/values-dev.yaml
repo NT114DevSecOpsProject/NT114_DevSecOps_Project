@@ -92,6 +92,8 @@ env:
     value: "production"
   - name: PORT
     value: "5002"
+  - name: USER_MANAGEMENT_SERVICE_URL
+    value: "http://user-management-dev-user-management-service:8081"
   - name: DB_HOST
     valueFrom:
       secretKeyRef:
