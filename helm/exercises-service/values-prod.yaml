@@ -114,7 +114,7 @@ env:
   - name: PORT
     value: "5002"
   - name: USER_MANAGEMENT_SERVICE_URL
-    value: "http://user-management-prod-user-management-service:8081"
+    value: "http://user-management-prod.prod.svc.cluster.local:8081"
   - name: DB_HOST
     valueFrom:
       secretKeyRef:
