@@ -91,6 +91,8 @@ env:
     value: "5002"
   - name: USER_MANAGEMENT_SERVICE_URL
     value: "http://user-management-dev-user-management-service:8081"
+  - name: CORS_ORIGINS
+    value: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://aaf644fa14d7e47b88f077ce3ab8a3aa-105383082.us-east-1.elb.amazonaws.com,https://aaf644fa14d7e47b88f077ce3ab8a3aa-105383082.us-east-1.elb.amazonaws.com"
   - name: DB_HOST
     valueFrom:
       secretKeyRef:
