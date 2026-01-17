@@ -62,7 +62,7 @@ Hệ thống web quản lý bài tập lập trình sử dụng kiến trúc mic
 
 ### Kiến trúc tổng thể
 
-![System Architecture](readme/architecture.png)
+![System Architecture](readme/architecture_overview.png)
 
 ## 🔄 CI/CD Pipeline
 
