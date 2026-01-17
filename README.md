@@ -68,7 +68,7 @@ Hệ thống web quản lý bài tập lập trình sử dụng kiến trúc mic
 
 ### DevSecOps Pipeline Overview
 
-![DevSecOps Pipeline](readme/pipelineDevSecOps.png)
+<img src="readme/pipelineDevSecOps.png" alt="DevSecOps Pipeline" width="100%">
 
 #### Pipeline Stages
 
