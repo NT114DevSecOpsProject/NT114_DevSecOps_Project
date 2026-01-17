@@ -70,6 +70,7 @@ def create_app():
                 return abort(401)
     
     # Register blueprints (strict_slashes=False to allow both /api/exercises and /api/exercises/)
+    # Updated: Fix 403 admin issue by accepting both URL formats
     exercises_blueprint.url_prefix = "/api/exercises"
     app.register_blueprint(exercises_blueprint)
     app.url_map.strict_slashes = False
