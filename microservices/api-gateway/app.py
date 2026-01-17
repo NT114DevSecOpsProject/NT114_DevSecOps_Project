@@ -172,7 +172,7 @@ def register_exercises_routes(app, exercises_client, auth_middleware):
         return jsonify(response), status_code
 
     @app.route('/exercises/', methods=['POST'])
-    @require_admin(auth_middleware)
+    @require_auth(auth_middleware)
     def create_exercise():
         data, error_response, error_code = get_json_or_fail()
         if error_response:
@@ -182,7 +182,7 @@ def register_exercises_routes(app, exercises_client, auth_middleware):
         return jsonify(response), status_code
 
     @app.route('/exercises/<int:exercise_id>', methods=['PUT'])
-    @require_admin(auth_middleware)
+    @require_auth(auth_middleware)
     def update_exercise(exercise_id):
         data, error_response, error_code = get_json_or_fail()
         if error_response:
