@@ -1,11 +1,11 @@
-# 🎓 Hệ thống Quản lý Bài tập Lập trình - NT114 DevSecOps Project
+# 🎓 Hệ thống Học tập và Thực hành Lập Trình
 
-Hệ thống web quản lý bài tập lập trình sử dụng kiến trúc microservices, triển khai trên nền tảng AWS EKS với quy trình DevSecOps hoàn chỉnh và GitOps deployment thông qua ArgoCD.
+Hệ thống web quản lý bài tập lập trình được xây dựng với kiến trúc microservices hiện đại, triển khai trên nền tảng AWS EKS. Dự án tích hợp quy trình DevSecOps hoàn chỉnh với CI/CD pipeline tự động, bao gồm security scanning, code quality analysis và continuous deployment thông qua GitOps với ArgoCD. Hệ thống được thiết kế với mục tiêu đảm bảo tính bảo mật, khả năng mở rộng và dễ dàng bảo trì, phục vụ cho việc học tập và thực hành lập trình một cách hiệu quả.Các tính năng sử dụng còn ở mức đơn giản với mục đích thử nghiệm.
 
 ## 👥 Nhóm phát triển
 
-- **Sinh viên**: [Hồ Công Hiếu] - [22520433]
 - **Sinh viên**: [Hồ Văn Phước] - [22521151] 
+- **Sinh viên**: [Hồ Công Hiếu] - [22520433]
 
 ## 🛠️ Công nghệ sử dụng
 
