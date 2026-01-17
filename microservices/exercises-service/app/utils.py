@@ -58,7 +58,7 @@ def authenticate(f):
 def verify_token_with_user_service(token):
     """Call user-management service to verify token and return user data or None."""
     try:
-        url = f"{_get_user_service_url()}/verify"
+        url = f"{_get_user_service_url()}/api/auth/verify"
         headers = {"Authorization": f"Bearer {token}"}
         resp = requests.get(url, headers=headers, timeout=3)
         if resp.status_code != 200:
