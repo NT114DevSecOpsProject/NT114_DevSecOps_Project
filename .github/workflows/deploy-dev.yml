@@ -413,7 +413,7 @@ jobs:
   # =============================================
   build-backend:
     name: Build Backend Service
-    needs: [detect-changes, code-analysis]
+    needs: [detect-changes]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -479,7 +479,7 @@ jobs:
 
   build-frontend:
     name: Build Frontend
-    needs: [detect-changes, code-analysis]
+    needs: [detect-changes]
     runs-on: ubuntu-latest
     
     steps:
