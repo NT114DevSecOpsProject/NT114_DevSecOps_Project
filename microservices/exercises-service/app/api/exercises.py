@@ -144,17 +144,9 @@ def validate_code():
 @exercises_blueprint.route("/", methods=["POST"])
 @authenticate
 def add_exercise(user_data):
-    """Add exercise (admin only)"""
-    logger.info("Adding new exercise")
-    
-    if not is_admin(user_data):
-        logger.warning("Non-admin user attempted to add exercise")
-        response_object = {
-            "status": "fail",
-            "message": "You do not have permission to do that."
-        }
-        return jsonify(response_object), 401
-    
+    """Add exercise (anyone can create)"""
+    logger.info(f"Adding new exercise by user: {user_data.get('username', 'unknown')}")
+
     post_data = request.get_json()
     if not post_data:
         logger.warning("Empty payload received for add exercise")
@@ -206,16 +198,8 @@ def add_exercise(user_data):
 @exercises_blueprint.route("/<exercise_id>", methods=["PUT"])
 @authenticate
 def update_exercise(user_data, exercise_id):
-    """Update exercise (admin only)"""
-    logger.info(f"Updating exercise {exercise_id}")
-    
-    if not is_admin(user_data):
-        logger.warning("Non-admin user attempted to update exercise")
-        response_object = {
-            "status": "fail",
-            "message": "You do not have permission to do that."
-        }
-        return jsonify(response_object), 401
+    """Update exercise (anyone can update)"""
+    logger.info(f"Updating exercise {exercise_id} by user: {user_data.get('username', 'unknown')}")
 
     try:
         post_data = request.get_json()
