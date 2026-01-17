@@ -200,6 +200,70 @@ def get_user_status(resp):
         }
         return jsonify(response_object), 500
 
+@auth_blueprint.route("/verify", methods=["GET"])
+def verify_token():
+    """Verify token and return user data (used by other microservices)"""
+    logger.debug("Token verification request from another service")
+
+    response_object = {
+        "status": "fail",
+        "message": "Invalid token"
+    }
+
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        logger.warning("Missing Authorization header in verify request")
+        return jsonify(response_object), 401
+
+    try:
+        auth_token = auth_header.split(" ")[1]
+        logger.debug("Extracted auth token for verification")
+    except IndexError:
+        logger.warning("Invalid Authorization header format in verify request")
+        return jsonify(response_object), 401
+
+    # Decode token
+    user_id = User.decode_auth_token(auth_token)
+
+    if isinstance(user_id, str):
+        logger.warning(f"Token verification failed: {user_id}")
+        response_object["message"] = user_id
+        return jsonify(response_object), 401
+
+    # Get user from database
+    try:
+        user = User.query.filter_by(id=user_id).first()
+
+        if not user:
+            logger.error(f"User not found for token user_id: {user_id}")
+            return jsonify(response_object), 401
+
+        if not user.active:
+            logger.warning(f"Token verification for inactive user: {user.username}")
+            response_object["message"] = "User account is inactive"
+            return jsonify(response_object), 401
+
+        # Return user data with admin flag
+        logger.info(f"Token verified successfully for user: {user.username} (admin: {user.admin})")
+        response_object = {
+            "status": "success",
+            "data": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "admin": user.admin,
+                "active": user.active
+            }
+        }
+        return jsonify(response_object), 200
+
+    except Exception as e:
+        logger.error(f"Error verifying token: {str(e)}")
+        logger.exception(FULL_TRACEBACK_MSG)
+        response_object["message"] = "Internal server error"
+        return jsonify(response_object), 500
+
+
 @auth_blueprint.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint"""
