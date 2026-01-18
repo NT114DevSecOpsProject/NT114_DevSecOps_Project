@@ -52,19 +52,24 @@ Write-Host ""
 # Step 3: Add SSH key to bastion via SSM
 Write-Host "[3/4] Adding SSH key to bastion via AWS SSM..." -ForegroundColor Yellow
 
-$Commands = @(
-    "echo '$PublicKey' >> /home/ec2-user/.ssh/authorized_keys",
-    "chmod 600 /home/ec2-user/.ssh/authorized_keys"
-)
-
-# Escape for JSON
-$CommandsJson = ($Commands | ConvertTo-Json -Compress) -replace '"', '\"'
+# Create a temporary JSON file for the commands
+$TempJsonFile = "$env:TEMP\ssm-commands-$([guid]::NewGuid().ToString()).json"
+$Commands = @{
+    commands = @(
+        "echo '$PublicKey' >> /home/ec2-user/.ssh/authorized_keys",
+        "chmod 600 /home/ec2-user/.ssh/authorized_keys",
+        "cat /home/ec2-user/.ssh/authorized_keys | tail -1"
+    )
+}
+# Write JSON without BOM
+$JsonContent = $Commands | ConvertTo-Json -Depth 10
+[System.IO.File]::WriteAllText($TempJsonFile, $JsonContent)
 
 try {
     $CommandId = aws ssm send-command `
         --instance-ids $InstanceId `
         --document-name "AWS-RunShellScript" `
-        --parameters "commands=$CommandsJson" `
+        --parameters file://$TempJsonFile `
         --query 'Command.CommandId' `
         --output text
 
@@ -87,14 +92,19 @@ try {
 catch {
     Write-Host "ERROR: Failed to add SSH key via SSM" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
-    exit 1
+}
+finally {
+    # Clean up temp file
+    if (Test-Path $TempJsonFile) {
+        Remove-Item $TempJsonFile -Force
+    }
 }
 Write-Host ""
 
 # Step 4: Test SSH connection
 Write-Host "[4/4] Testing SSH connection..." -ForegroundColor Yellow
 try {
-    $TestResult = ssh -i $env:USERPROFILE\.ssh\bastion-prod ec2-user@$PublicIp echo "Connection successful!" 2>&1
+    $TestResult = ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -i $env:USERPROFILE\.ssh\bastion-prod ec2-user@$PublicIp echo "Connection successful!" 2>&1
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  Connection successful!" -ForegroundColor Green
@@ -121,10 +131,10 @@ Write-Host ""
 Write-Host "Updated tunnel commands:" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "ArgoCD (Port 8080):" -ForegroundColor Yellow
-Write-Host "  ssh -i $env:USERPROFILE\.ssh\bastion-prod -L 8080:internal-k8s-argocdinternal-79d958dfa2-2143387899.us-east-1.elb.amazonaws.com:80 ec2-user@$PublicIp -N" -ForegroundColor White
+Write-Host "  ssh -i $env:USERPROFILE\.ssh\bastion-prod -L 8080:internal-k8s-argocdinternal-79d958dfa2-76165730.us-east-1.elb.amazonaws.com:80 ec2-user@$PublicIp -N" -ForegroundColor White
 Write-Host ""
 Write-Host "Grafana (Port 3000):" -ForegroundColor Yellow
-Write-Host "  ssh -i $env:USERPROFILE\.ssh\bastion-prod -L 3000:internal-k8s-monitoringinterna-afbe3806af-302341169.us-east-1.elb.amazonaws.com:80 ec2-user@$PublicIp -N" -ForegroundColor White
+Write-Host "  ssh -i $env:USERPROFILE\.ssh\bastion-prod -L 3000:internal-k8s-internalservices-9f4d94dfbe-1161420899.us-east-1.elb.amazonaws.com:80 ec2-user@$PublicIp -N" -ForegroundColor White
 Write-Host ""
 Write-Host "Press any key to exit..." -ForegroundColor Gray
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
