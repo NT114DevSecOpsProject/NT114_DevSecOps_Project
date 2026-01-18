@@ -11,7 +11,8 @@ class Config:
     SCORES_SERVICE_URL = os.environ.get('SCORES_SERVICE_URL', 'http://scores-service:8083')
     
     # CORS Configuration
-    CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5173", "http://localhost:31184", "http://127.0.0.1:31184"]
+    CORS_ORIGINS_STR = os.environ.get('CORS_ORIGINS', "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://localhost:31184,http://127.0.0.1:31184")
+    CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS_STR.split(',')]
     
     # Rate limiting (requests per minute)
     RATE_LIMIT_PER_MINUTE = int(os.environ.get('RATE_LIMIT_PER_MINUTE', '100'))

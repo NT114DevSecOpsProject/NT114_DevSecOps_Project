@@ -126,3 +126,6 @@ env:
     value: "http://exercises-prod.prod.svc.cluster.local:8082"
   - name: SCORES_SERVICE_URL
     value: "http://scores-prod.prod.svc.cluster.local:8083"
+  # CORS allowed origins - includes production domain
+  - name: CORS_ORIGINS
+    value: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,https://production.hieuhc.online,http://ad28e5e74dc454723a5529a381c16d96-1563934304.us-east-1.elb.amazonaws.com,https://ad28e5e74dc454723a5529a381c16d96-1563934304.us-east-1.elb.amazonaws.com"
