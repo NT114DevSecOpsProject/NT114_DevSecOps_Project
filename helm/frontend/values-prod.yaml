@@ -114,5 +114,6 @@ env:
   # API_GATEWAY_URL points to production API Gateway service
   - name: API_GATEWAY_URL
     value: "http://api-gateway-prod.prod.svc.cluster.local:8080"
+  # VITE_API_URL points to external API Gateway LoadBalancer for client-side requests
   - name: VITE_API_URL
-    value: ""  # Frontend uses nginx proxy to API Gateway
+    value: "http://a82d67374d6af461a9113f8c5694f1db-587238735.us-east-1.elb.amazonaws.com:8080"
