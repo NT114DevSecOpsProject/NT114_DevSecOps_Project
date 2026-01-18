@@ -5,9 +5,9 @@ metadata:
   namespace: argocd
   annotations:
     # ALB Configuration
-    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/scheme: internal
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80},{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     # alb.ingress.kubernetes.io/certificate-arn: <ACM_CERT_ARN> # Uncomment when SSL certificate available
     # Optionally add HTTPS:
     # alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80},{"HTTPS": 443}]'
@@ -24,8 +24,8 @@ metadata:
     # Backend protocol (HTTP because server.insecure=true)
     alb.ingress.kubernetes.io/backend-protocol: HTTP
 
-    # Shared ALB with Grafana (internal services) - saves ~$16/month
-    alb.ingress.kubernetes.io/group.name: internal-services
+    # Separate ALB for ArgoCD (not shared with Grafana due to permission issues)
+    # alb.ingress.kubernetes.io/group.name: internal-services
 
     # Security (optional)
     # alb.ingress.kubernetes.io/wafv2-acl-arn: <WAF_ARN>
