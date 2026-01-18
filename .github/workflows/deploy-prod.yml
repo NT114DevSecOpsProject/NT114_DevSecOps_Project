@@ -694,9 +694,9 @@ jobs:
           set -e
 
           wait_for_critical_components() {
-            kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=180s || return 1
+            kubectl rollout status statefulset/argocd-application-controller -n argocd --timeout=300s || return 1
             for deployment in argocd-server argocd-repo-server; do
-              kubectl rollout status deployment/$deployment -n argocd --timeout=120s || return 1
+              kubectl rollout status deployment/$deployment -n argocd --timeout=240s || return 1
             done
             return 0
           }
@@ -712,9 +712,9 @@ jobs:
           helm repo update
 
           if [ "$HELM_ACTION" = "upgrade" ]; then
-            helm upgrade argocd argo/argo-cd --namespace argocd -f helm/argocd/values-prod.yaml --timeout 10m --atomic --cleanup-on-fail
+            helm upgrade argocd argo/argo-cd --namespace argocd -f helm/argocd/values-prod.yaml --timeout 20m --atomic --cleanup-on-fail
           else
-            helm install argocd argo/argo-cd --namespace argocd -f helm/argocd/values-prod.yaml --timeout 10m --atomic
+            helm install argocd argo/argo-cd --namespace argocd -f helm/argocd/values-prod.yaml --timeout 20m --atomic
           fi
 
           wait_for_critical_components || exit 1
