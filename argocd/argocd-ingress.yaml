@@ -33,7 +33,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-  - host: argocd.internal.com  # Host-based routing
+  - host: argocd.example.com  # Host-based routing
     http:
       paths:
       - path: /
