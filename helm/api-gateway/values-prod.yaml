@@ -9,7 +9,7 @@ replicaCount: 2
 image:
   repository: 039612870452.dkr.ecr.us-east-1.amazonaws.com/nt114-devsecops/prod/api-gateway
   pullPolicy: IfNotPresent
-  tag: "8f955c0863622d85addadf6adee5c6c7453db700"
+  tag: "08922af750438c54d55cb5ed813624ed7d9c8448"
 
 imagePullSecrets:
   - name: ecr-secret
