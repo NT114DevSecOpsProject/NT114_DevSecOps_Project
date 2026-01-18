@@ -116,7 +116,7 @@ env:
   - name: USER_MANAGEMENT_SERVICE_URL
     value: "http://user-management-prod.prod.svc.cluster.local:8081"
   - name: CORS_ORIGINS
-    value: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://a6ac64c8740c84ac3837287616305ea2-1708755902.us-east-1.elb.amazonaws.com,https://a6ac64c8740c84ac3837287616305ea2-1708755902.us-east-1.elb.amazonaws.com"
+    value: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://ad28e5e74dc454723a5529a381c16d96-1563934304.us-east-1.elb.amazonaws.com,https://ad28e5e74dc454723a5529a381c16d96-1563934304.us-east-1.elb.amazonaws.com"
   - name: DB_HOST
     valueFrom:
       secretKeyRef:
