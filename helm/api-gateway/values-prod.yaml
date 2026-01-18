@@ -126,8 +126,3 @@ env:
     value: "http://exercises-prod.prod.svc.cluster.local:8082"
   - name: SCORES_SERVICE_URL
     value: "http://scores-prod.prod.svc.cluster.local:8083"
-  - name: CORS_ORIGINS
-    # Pattern matching: Accepts any AWS ELB domain (http or https)
-    # Prefix 'pattern:' enables regex matching in api-gateway
-    # This solves the issue of hardcoded ALB URLs changing on redeploy
-    value: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,pattern:https?://.*\\.elb\\.amazonaws\\.com"

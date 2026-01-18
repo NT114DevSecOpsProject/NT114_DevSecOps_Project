@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import logging
 import sys
-import re
 from config import Config
 from services import UserManagementServiceClient, ExercisesServiceClient, ScoresServiceClient
 from middleware import AuthMiddleware, RequestLoggingMiddleware, require_auth, require_admin
@@ -18,32 +17,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 INVALID_PAYLOAD_MSG = "Invalid payload"
-
-def is_origin_allowed(origin, allowed_origins):
-    """
-    Check if origin is allowed by matching against exact URLs or patterns.
-    Patterns starting with 'pattern:' use regex matching.
-    Example: 'pattern:.*\\.elb\\.amazonaws\\.com$' matches any ELB domain
-    """
-    if not origin:
-        return False
-
-    for allowed in allowed_origins:
-        # Exact match
-        if origin == allowed:
-            return True
-
-        # Pattern match (prefix: pattern:)
-        if allowed.startswith("pattern:"):
-            pattern = allowed[8:]  # Remove 'pattern:' prefix
-            try:
-                if re.match(pattern, origin):
-                    return True
-            except re.error:
-                # Invalid regex, skip
-                continue
-
-    return False
 
 def get_json_or_fail():
     if not request.is_json:
@@ -281,15 +254,8 @@ def create_app():
     app = Flask(__name__)
     app.url_map.strict_slashes = False
     app.config.from_object(Config)
-
-    # CORS with pattern matching support
-    allowed_origins = app.config['CORS_ORIGINS']
-
-    def check_origin(origin, *args):
-        return is_origin_allowed(origin, allowed_origins)
-
-    CORS(app,
-         origins=check_origin,  # Use function for dynamic pattern matching
+    CORS(app, 
+         origins=app.config['CORS_ORIGINS'],
          allow_headers=['Content-Type', 'Authorization'],
          methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
          supports_credentials=True)
