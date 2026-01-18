@@ -138,9 +138,9 @@ spec:
               alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
               alb.ingress.kubernetes.io/healthcheck-path: /api/health
               alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
-              alb.ingress.kubernetes.io/group.name: monitoring-internal
+              alb.ingress.kubernetes.io/group.name: internal-services  # Shared with ArgoCD
             hosts:
-              - grafana.internal.codeland.local
+              - grafana.internal.local  # Host-based routing
             paths:
               - /
           resources:

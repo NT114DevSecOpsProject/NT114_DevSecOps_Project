@@ -24,8 +24,8 @@ metadata:
     # Backend protocol (HTTP because server.insecure=true)
     alb.ingress.kubernetes.io/backend-protocol: HTTP
 
-    # Use separate ALB for ArgoCD (optional, or share with apps)
-    alb.ingress.kubernetes.io/group.name: argocd
+    # Shared ALB with Grafana (internal services) - saves ~$16/month
+    alb.ingress.kubernetes.io/group.name: internal-services
 
     # Security (optional)
     # alb.ingress.kubernetes.io/wafv2-acl-arn: <WAF_ARN>
@@ -33,7 +33,8 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-  - http:
+  - host: argocd.internal.local  # Host-based routing
+    http:
       paths:
       - path: /
         pathType: Prefix

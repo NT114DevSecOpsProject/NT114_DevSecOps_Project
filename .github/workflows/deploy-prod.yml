@@ -1008,7 +1008,17 @@ jobs:
         id: monitoring-info
         run: |
           GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "N/A")
-          GRAFANA_URL=$(kubectl get ingress monitoring-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Pending")
+
+          # Try different possible ingress names (varies by Helm chart version)
+          GRAFANA_URL=""
+          for name in "monitoring-grafana" "kube-prometheus-stack-grafana" "grafana"; do
+            URL=$(kubectl get ingress "$name" -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            if [ -n "$URL" ]; then
+              GRAFANA_URL="http://grafana.internal.local (ALB: $URL)"
+              break
+            fi
+          done
+          [ -z "$GRAFANA_URL" ] && GRAFANA_URL="Pending"
 
           echo "grafana_password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
           echo "grafana_url=$GRAFANA_URL" >> $GITHUB_OUTPUT
@@ -1043,6 +1053,17 @@ jobs:
           GRAFANA_PASSWORD=$(kubectl get secret grafana-admin-credentials -n monitoring -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 -d || echo "N/A")
           echo "grafana_password=$GRAFANA_PASSWORD" >> $GITHUB_OUTPUT
 
+          # Get Grafana URL for summary (try different ingress names)
+          GRAFANA_URL=""
+          for name in "monitoring-grafana" "kube-prometheus-stack-grafana" "grafana"; do
+            URL=$(kubectl get ingress "$name" -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            if [ -n "$URL" ]; then
+              GRAFANA_URL="$URL"
+              break
+            fi
+          done
+          echo "grafana_url=$GRAFANA_URL" >> $GITHUB_OUTPUT
+
       - name: Generate Pipeline Summary
         run: |
           echo "## 🚀 Complete CI/CD Pipeline Summary" >> $GITHUB_STEP_SUMMARY
@@ -1063,14 +1084,19 @@ jobs:
             echo "- http://${{ needs.sync-and-verify.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**ArgoCD Dashboard (Internal VPC only):**" >> $GITHUB_STEP_SUMMARY
-            echo "- URL: ${{ needs.sync-and-verify.outputs.argocd_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Host: \`argocd.internal.local\`" >> $GITHUB_STEP_SUMMARY
+            echo "- ALB: \`${{ needs.sync-and-verify.outputs.argocd_url }}\`" >> $GITHUB_STEP_SUMMARY
             echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
             echo "- Password: \`${{ needs.sync-and-verify.outputs.argocd_password }}\`" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Grafana Dashboard (Internal VPC only):**" >> $GITHUB_STEP_SUMMARY
-            echo "- URL: ${{ needs.sync-and-verify.outputs.grafana_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "- Host: \`grafana.internal.local\`" >> $GITHUB_STEP_SUMMARY
+            if [ -n "${{ steps.monitoring-info.outputs.grafana_url }}" ]; then
+              echo "- ALB: \`${{ steps.monitoring-info.outputs.grafana_url }}\`" >> $GITHUB_STEP_SUMMARY
+            fi
             echo "- Username: \`admin\`" >> $GITHUB_STEP_SUMMARY
             echo "- Password: \`${{ steps.monitoring-info.outputs.grafana_password }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Note: Shares ALB with ArgoCD (host-based routing)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**RDS PostgreSQL Database:**" >> $GITHUB_STEP_SUMMARY
             echo "- Host: \`${{ needs.sync-and-verify.outputs.rds_endpoint }}\`" >> $GITHUB_STEP_SUMMARY
